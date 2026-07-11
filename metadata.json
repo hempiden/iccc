@@ -1,0 +1,6 @@
+{
+  "name": "Voice of Customer Dashboard",
+  "description": "An interactive, presentation-ready dashboard for parsing, analyzing, and presenting Voice of Customer (VoC) feedback and action logs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
