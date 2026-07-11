@@ -6,6 +6,14 @@ export interface TimelineEvent {
   status?: 'Completed' | 'In Progress' | 'New';
 }
 
+export interface VoCComment {
+  id: string;
+  timestamp: string;
+  author: string;
+  role: string;
+  text: string;
+}
+
 export interface ActionOwner {
   id: string;
   username: string;
@@ -13,6 +21,10 @@ export interface ActionOwner {
   role: string;
   department: string;
   avatarUrl?: string;
+  facility?: string; // Assigned Facility (e.g. PNHGTW, PNHASC, PNHSVC or 'All')
+  phoneNumber?: string;
+  phoneNumbers?: string[]; // Multiple phone numbers associated to this person
+  status?: 'approved' | 'pending'; // Approval status for user signups
 }
 
 export interface VoCRecord {
@@ -24,6 +36,7 @@ export interface VoCRecord {
   actionSummary?: string; // Optional shorter action summary written by action owner or pre-summarized
   actionDetailsRaw: string; // Raw logs string
   timeline: TimelineEvent[]; // Parsed logs
+  comments?: VoCComment[]; // In-system comment/followup conversation
   owner: string; // Follow-up owner
   status: 'New' | 'In Progress' | 'Completed'; // Case Status derived or parsed
   interaction?: string; // Interaction ID (e.g., PNHGTW)

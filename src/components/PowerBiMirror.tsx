@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { 
   Sparkles, ChevronDown, ChevronRight, Search, RotateCcw, 
   ArrowRight, ExternalLink, HelpCircle, Eye, EyeOff, Check, X,
-  TrendingUp, BarChart3, List, Award, ShieldAlert, Sliders, Calendar
+  TrendingUp, BarChart3, List, Award, ShieldAlert, Sliders, Calendar,
+  Presentation
 } from 'lucide-react';
 import { VoCRecord, TimelineEvent } from '../types';
 import { getSurveyUrl } from '../utils/parser';
@@ -54,6 +55,9 @@ export default function PowerBiMirror({ records, onSelectRecord }: PowerBiMirror
 
   // Toggle rows for comment expansions
   const [expandedComments, setExpandedComments] = useState<{ [id: string]: boolean }>({});
+
+  // --- Presentation Mode ---
+  const [presentationMode, setPresentationMode] = useState(false);
 
   // --- Dynamic Mappings & Fallback Synthesis ---
   // Ensure we include the target record from the screenshot (MINOR INSTRUMENTS SET) if not already present
@@ -296,9 +300,15 @@ export default function PowerBiMirror({ records, onSelectRecord }: PowerBiMirror
         return false;
       }
 
+      // 6. Presentation Mode: show only completed/closed cases
+      if (presentationMode) {
+        const isCompleted = r.status === 'Completed' || r.status === 'Closed';
+        if (!isCompleted) return false;
+      }
+
       return true;
     });
-  }, [mappedRecords, searchQuery, selectedWeeks, responseFeed, npsCategory, selectedChartFilter]);
+  }, [mappedRecords, searchQuery, selectedWeeks, responseFeed, npsCategory, selectedChartFilter, presentationMode]);
 
   // --- AI Summary Generator (Instant Client-side AI) ---
   const getAiSummary = (record: VoCRecord) => {
@@ -619,6 +629,20 @@ export default function PowerBiMirror({ records, onSelectRecord }: PowerBiMirror
           {/* Global Toggle & Search Tool */}
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
             
+            {/* Presentation Mode Toggle */}
+            <button
+              onClick={() => setPresentationMode(!presentationMode)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-black rounded uppercase border transition-all duration-200 select-none cursor-pointer ${
+                presentationMode 
+                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs' 
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Show only completed/resolved cases in the log below"
+            >
+              <Presentation className={`w-3.5 h-3.5 shrink-0 ${presentationMode ? 'text-white' : 'text-slate-500'}`} />
+              <span>Presentation Mode: {presentationMode ? 'ON (Only Completed)' : 'OFF'}</span>
+            </button>
+
             {/* Table Search Input */}
             <div className="relative flex-1 md:flex-initial md:w-64">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
@@ -752,7 +776,7 @@ export default function PowerBiMirror({ records, onSelectRecord }: PowerBiMirror
                         {/* 2. SURVEY DETAILS & PROFILE */}
                         <td className="px-4 py-3.5 align-top border-r border-slate-100">
                           <div className="flex flex-col gap-2">
-                            {/* Line 1: ID & Channel */}
+                            {/* Line 1: ID */}
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-extrabold font-mono text-[10px] text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                                 <a
@@ -763,9 +787,6 @@ export default function PowerBiMirror({ records, onSelectRecord }: PowerBiMirror
                                 >
                                   #{r.id}
                                 </a>
-                              </span>
-                              <span className="bg-slate-100 text-slate-800 text-[9px] font-bold px-1.5 py-0.5 rounded border border-slate-200/50 uppercase shrink-0">
-                                {r.channel}
                               </span>
                             </div>
 
@@ -855,15 +876,11 @@ export default function PowerBiMirror({ records, onSelectRecord }: PowerBiMirror
                           <div className="flex flex-col gap-2.5">
                             {/* Status & Case Owner */}
                             <div className="flex justify-between items-center gap-2 flex-wrap">
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-extrabold rounded-md uppercase border ${
-                                r.status === 'Completed' || r.status === 'Closed'
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                  : r.status === 'In Progress' || r.status === 'Pending'
-                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                  : 'bg-rose-50 text-rose-700 border-rose-200'
-                              }`}>
-                                Status: {r.status === 'Closed' ? 'Completed' : r.status === 'Pending' ? 'In Progress' : r.status}
-                              </span>
+                              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-200" title={`Status: ${r.status}`}>
+                                <div className={`w-2.5 h-2.5 rounded-full ${r.status === 'New' ? 'bg-red-500 shadow-[0_0_6px_#ef4444]' : 'bg-red-950/20'}`}></div>
+                                <div className={`w-2.5 h-2.5 rounded-full ${r.status === 'In Progress' || r.status === 'Pending' ? 'bg-yellow-400 shadow-[0_0_6px_#facc15]' : 'bg-yellow-950/20'}`}></div>
+                                <div className={`w-2.5 h-2.5 rounded-full ${r.status === 'Completed' || r.status === 'Closed' ? 'bg-green-500 shadow-[0_0_6px_#22c55e]' : 'bg-green-950/40'}`}></div>
+                              </div>
                               
                               <span className="text-[10px] text-slate-500 font-extrabold flex items-center gap-1">
                                 PIC: <strong className="text-slate-800 font-black">{r.owner || 'Unassigned'}</strong>

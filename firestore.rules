@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Enable seamless access for both Live OTP and Sandbox Mode users
+    match /voc_records/{recordId} {
+      allow read, write: if true;
+    }
+    
+    match /colleagues/{colleagueId} {
+      allow read, write: if true;
+    }
+  }
+}

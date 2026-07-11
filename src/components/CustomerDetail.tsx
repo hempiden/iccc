@@ -3,10 +3,12 @@ import {
   User, CheckCircle, ShieldAlert, Sparkles, Award, ArrowLeft, 
   Printer, Camera, Maximize2, Minimize2, Palette, Type, Clipboard, Layers,
   Calendar, LogIn, LogOut, Plus, Trash2, Edit3, Send, Users, ShieldCheck, 
-  HelpCircle, AlertCircle, Info, RefreshCw, Layout, Table, CheckSquare, Save, Eye, EyeOff, Clock
+  HelpCircle, AlertCircle, Info, RefreshCw, Layout, Table, CheckSquare, Save, Eye, EyeOff, Clock,
+  MessageSquare
 } from 'lucide-react';
-import { VoCRecord, ActionOwner, TimelineEvent } from '../types';
+import { VoCRecord, ActionOwner, TimelineEvent, VoCComment } from '../types';
 import { getSurveyUrl } from '../utils/parser';
+import { fetchColleagues } from '../utils/firebaseSync';
 import MetricCards from './MetricCards';
 import Timeline from './Timeline';
 
@@ -34,6 +36,13 @@ export default function CustomerDetail({
   onLogin, 
   onLogout 
 }: CustomerDetailProps) {
+  // Facility and Role-based Access Control
+  const recordFacility = (record.interaction || 'PNHGTW').toUpperCase();
+  const isSuperAdmin = currentUser?.role === 'superadmin';
+  const isHoD = currentUser?.role === 'HoD';
+  const isAssignedFacility = currentUser?.facility?.toUpperCase() === recordFacility || currentUser?.facility === 'All';
+  const hasEditPermission = isSuperAdmin || isHoD || isAssignedFacility;
+
   // Presentation frame customizer state controls
   const [commentBoxBg, setCommentBoxBg] = useState<'blue' | 'yellow' | 'slate' | 'white'>('yellow');
   const [commentFontSize, setCommentFontSize] = useState<'md' | 'lg' | 'xl'>('md');
@@ -54,7 +63,14 @@ export default function CustomerDetail({
   const [editActionSummary, setEditActionSummary] = useState<string>('');
   const [editFollowUpComments, setEditFollowUpComments] = useState<string>('');
   const [editTimeline, setEditTimeline] = useState<TimelineEvent[]>([]);
+  const [editComments, setEditComments] = useState<VoCComment[]>([]);
+  const [commentText, setCommentText] = useState('');
   const [isSavedNotify, setIsSavedNotify] = useState(false);
+
+  // Colleague dropdown integration for Superadmins & HoDs
+  const [colleagues, setColleagues] = useState<ActionOwner[]>([]);
+  const [selectedOwnerValue, setSelectedOwnerValue] = useState<string>('');
+  const [isCustomOwner, setIsCustomOwner] = useState<boolean>(false);
 
   // New action form state
   const [newTimestamp, setNewTimestamp] = useState('');
@@ -67,7 +83,28 @@ export default function CustomerDetail({
   const [regDept, setRegDept] = useState('Customer Experience');
   const [showAuthTab, setShowAuthTab] = useState<'login' | 'register'>('login');
 
-  // Synchronize editing states with loaded record
+  // Load all registered colleagues for ownership selector
+  useEffect(() => {
+    let active = true;
+    const loadAllColleagues = async () => {
+      try {
+        const list = await fetchColleagues();
+        if (active) {
+          setColleagues(list);
+        }
+      } catch (err) {
+        console.error('Failed to load registered colleagues:', err);
+      }
+    };
+    if (isSuperAdmin || isHoD) {
+      loadAllColleagues();
+    }
+    return () => {
+      active = false;
+    };
+  }, [isSuperAdmin, isHoD]);
+
+  // Synchronize parameter form editing states with loaded record strictly when record ID changes
   useEffect(() => {
     setEditStatus(record.status);
     setEditOwner(record.owner || '');
@@ -81,7 +118,50 @@ export default function CustomerDetail({
     // Infer a default deadline from timeline if exists, else blank
     const inferredDeadline = record.timeline[0]?.deadline || '30 Apr';
     setEditDeadline(inferredDeadline);
-  }, [record]);
+  }, [record.id]);
+
+  // Keep comments in sync with database/record changes, independent of other parameter fields
+  useEffect(() => {
+    setEditComments(record.comments || []);
+  }, [record.id, record.comments]);
+
+  // Handle owner selection syncing
+  useEffect(() => {
+    if (!editOwner) {
+      setSelectedOwnerValue('');
+      setIsCustomOwner(false);
+      return;
+    }
+
+    const found = colleagues.some(
+      c => c.fullName.trim().toLowerCase() === editOwner.trim().toLowerCase()
+    );
+
+    if (found) {
+      const colleague = colleagues.find(
+        c => c.fullName.trim().toLowerCase() === editOwner.trim().toLowerCase()
+      );
+      setSelectedOwnerValue(colleague ? colleague.fullName : editOwner);
+      setIsCustomOwner(false);
+    } else {
+      setSelectedOwnerValue('custom');
+      setIsCustomOwner(true);
+    }
+  }, [editOwner, colleagues]);
+
+  // Owner selection dropdown changer
+  const handleOwnerSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val === 'custom') {
+      setIsCustomOwner(true);
+      setSelectedOwnerValue('custom');
+      setEditOwner('');
+    } else {
+      setIsCustomOwner(false);
+      setSelectedOwnerValue(val);
+      setEditOwner(val);
+    }
+  };
 
   // Client-side automatic timeline actions summary helper
   const getCondensedTimeline = (id: string, timeline: TimelineEvent[]): TimelineEvent[] => {
@@ -177,37 +257,60 @@ export default function CustomerDetail({
     return text.substring(0, 135).trim() + '...';
   };
 
-  // Client-side automatic action summary helper
-  const getAutoActionSummary = (timeline: TimelineEvent[]) => {
-    if (timeline.length === 0) return 'No actions taken.';
-    const condensed = getCondensedTimeline(record.id, timeline);
-    return condensed.map(item => `• ${item.timestamp}: ${item.action}`).join('\n');
+  // Client-side automatic comments summary helper
+  const getAutoCommentSummary = (comments: VoCComment[]) => {
+    if (comments.length === 0) return 'No follow-up comments logged in system.';
+    return comments.map(item => `• ${item.timestamp.split(' ')[0]}: ${item.text} (${item.author})`).join('\n');
   };
 
   const activeSummary = editCustomSummary || record.customSummary || getAutoSummary(record.comment);
-  const activeActionSummary = editActionSummary || record.actionSummary || getAutoActionSummary(editTimeline);
+  const activeActionSummary = editActionSummary || record.actionSummary || getAutoCommentSummary(editComments);
 
-  // Add Action Taken Milestone to timeline
-  const handleAddTimelineBullet = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTimestamp.trim() || !newAction.trim()) return;
-
-    const newBullet: TimelineEvent = {
-      timestamp: newTimestamp.trim(),
-      action: newAction.trim(),
-      pic: editOwner || currentUser?.fullName || 'Rothana Art',
-      deadline: editDeadline || '30 Apr',
-      status: editStatus === 'Closed' ? 'Completed' : 'In Progress'
-    };
-
-    setEditTimeline([...editTimeline, newBullet]);
-    setNewTimestamp('');
-    setNewAction('');
+  const getFormattedDateTime = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   };
 
-  // Remove Timeline Bullet
-  const handleRemoveTimelineBullet = (index: number) => {
-    setEditTimeline(editTimeline.filter((_, idx) => idx !== index));
+  // Add Comment to follow-up conversation thread & save immediately
+  const handlePostComment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commentText.trim() || !currentUser) return;
+
+    const newComment: VoCComment = {
+      id: Date.now().toString(),
+      timestamp: getFormattedDateTime(),
+      author: currentUser.fullName,
+      role: currentUser.role,
+      text: commentText.trim()
+    };
+
+    const updatedComments = [...editComments, newComment];
+    setEditComments(updatedComments);
+    setCommentText('');
+
+    // Immediately persist comment update
+    onUpdateRecord({
+      ...record,
+      comments: updatedComments
+    });
+  };
+
+  // Remove comment & save immediately
+  const handleRemoveComment = (id: string) => {
+    const updatedComments = editComments.filter(c => c.id !== id);
+    setEditComments(updatedComments);
+
+    // Immediately persist comment removal
+    onUpdateRecord({
+      ...record,
+      comments: updatedComments
+    });
   };
 
   // Save changes and publish to management slide
@@ -224,7 +327,8 @@ export default function CustomerDetail({
         pic: editOwner || t.pic || 'Rothana Art',
         deadline: editDeadline || t.deadline || '30 Apr',
         status: editStatus === 'Closed' ? 'Completed' : (t.status || 'In Progress')
-      }))
+      })),
+      comments: editComments
     };
 
     onUpdateRecord(updatedRecord);
@@ -596,25 +700,28 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                   </div>
                 </div>
 
-                {/* 2. Key Actions Taken Cell */}
+                 {/* 2. Key Actions Taken Cell */}
                 <div className="col-span-6 p-5 border-r border-slate-200 bg-white flex flex-col justify-between">
                   <div>
-                    {editTimeline.length === 0 ? (
+                    {editComments.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full py-8 text-center text-slate-400 text-xs">
                         <Clock className="w-6 h-6 text-slate-300 mb-1" />
-                        <span>No actions registered yet.</span>
-                        <span className="text-[10px] text-slate-400 mt-0.5">Use the Action Owner Portal below to add actions.</span>
+                        <span>No follow-up comments registered yet.</span>
+                        <span className="text-[10px] text-slate-400 mt-0.5">Use the Action Owner Portal below to post comments.</span>
                       </div>
                     ) : showOriginalActions ? (
-                      <ul className="space-y-3.5 text-xs text-slate-700">
-                        {editTimeline.map((item, idx) => (
-                          <li key={idx} className="flex items-start gap-2.5 leading-relaxed">
+                      <ul className="space-y-3 text-xs text-slate-700">
+                        {editComments.map((item, idx) => (
+                          <li key={item.id || idx} className="flex items-start gap-2.5 leading-relaxed">
                             <span className="w-1.5 h-1.5 rounded-full bg-slate-900 mt-1.5 shrink-0"></span>
                             <div>
                               <span className="font-bold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/50 mr-1.5 font-mono text-[10px]">
-                                {item.timestamp}
+                                {item.timestamp.split(' ')[0] || item.timestamp}
                               </span>
-                              <span className="font-medium text-slate-800">{item.action}</span>
+                              <span className="font-extrabold text-slate-900 mr-1">
+                                {item.author} ({item.role}):
+                              </span>
+                              <span className="font-medium text-slate-800">{item.text}</span>
                             </div>
                           </li>
                         ))}
@@ -635,7 +742,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                     )}
                   </div>
 
-                  {editTimeline.length > 0 && (
+                  {editComments.length > 0 && (
                     <div className="mt-4 pt-3 border-t border-slate-100/60">
                       <button
                         onClick={() => setShowOriginalActions(!showOriginalActions)}
@@ -649,7 +756,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                         ) : (
                           <>
                             <Eye className="w-3.5 h-3.5" />
-                            Show All Original Timeline Logs
+                            Show Raw In-System Followups Thread
                           </>
                         )}
                       </button>
@@ -742,16 +849,65 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                   )}
                 </div>
 
-                {/* Vertical interactive Timeline Log */}
+                {/* Vertical interactive Comments Log */}
                 <div className="lg:col-span-7">
                   <div className="flex flex-col rounded-xl border-2 border-slate-200 overflow-hidden shadow-xs bg-white">
                     <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex justify-between items-center">
-                      <span className="text-xs font-extrabold uppercase tracking-widest text-slate-500">Action Resolution Log</span>
-                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">parsed live timeline</span>
+                      <span className="text-xs font-extrabold uppercase tracking-widest text-slate-500">In-System Follow-up Conversation</span>
+                      <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        Me, HoD & Facility Team
+                      </span>
                     </div>
 
-                    <div className="p-6 bg-white max-h-[500px] overflow-y-auto pr-2">
-                      <Timeline events={editTimeline} />
+                    <div className="p-6 bg-white max-h-[500px] overflow-y-auto pr-2 space-y-4">
+                      {editComments.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-center text-slate-400 text-xs">
+                          <MessageSquare className="w-8 h-8 text-slate-300 mb-2" />
+                          <span>No follow-up comments registered yet.</span>
+                          <span className="text-[10px] text-slate-400 mt-1 max-w-xs leading-relaxed">
+                            Use the Action Owner Collaboration Portal below to ask questions, log milestones, or follow up.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {editComments.map((comment, index) => {
+                            const isMe = currentUser?.fullName && comment.author.toLowerCase() === currentUser.fullName.toLowerCase();
+                            const isHodRole = comment.role.toLowerCase() === 'hod';
+                            const isSuperAdminRole = comment.role.toLowerCase() === 'superadmin';
+                            
+                            let badgeStyle = "bg-slate-100 text-slate-700 border-slate-200";
+                            if (isSuperAdminRole) badgeStyle = "bg-amber-100 text-amber-800 border-amber-300 font-black";
+                            else if (isMe) badgeStyle = "bg-blue-100 text-blue-800 border-blue-200 font-bold";
+                            else if (isHodRole) badgeStyle = "bg-purple-100 text-purple-800 border-purple-200 font-bold";
+
+                            return (
+                              <div key={comment.id || index} className={`flex gap-3 items-start ${isMe ? 'flex-row-reverse' : ''}`}>
+                                <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
+                                  {comment.author.charAt(0)}
+                                </div>
+                                <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : ''}`}>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-xs font-black text-slate-800">{comment.author}</span>
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded border ${badgeStyle} uppercase scale-90`}>
+                                      {comment.role}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 font-mono">
+                                      {comment.timestamp}
+                                    </span>
+                                  </div>
+                                  <div className={`p-3 rounded-2xl text-xs leading-relaxed ${
+                                    isMe 
+                                      ? 'bg-amber-500 text-slate-950 rounded-tr-none font-medium shadow-xs' 
+                                      : 'bg-slate-50 text-slate-800 rounded-tl-none border border-slate-100 shadow-2xs'
+                                  }`}>
+                                    {comment.text}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -760,6 +916,26 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
           )}
 
         </div>
+      </div>
+
+      {/* Excel Sourced Log Reference Panel */}
+      <div className="mt-6 bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs print:hidden">
+        <details className="group">
+          <summary className="flex justify-between items-center p-5 cursor-pointer font-bold text-sm text-slate-800 hover:bg-slate-50/50 select-none">
+            <div className="flex items-center gap-2">
+              <Clipboard className="w-4 h-4 text-slate-500" />
+              <span>📋 Reference: Excel Sourced Timeline Log ({editTimeline.length} events)</span>
+            </div>
+            <span className="text-xs font-bold text-slate-400 group-open:rotate-180 transition-transform duration-200">
+              ▼
+            </span>
+          </summary>
+          <div className="p-6 border-t border-slate-100 bg-slate-50/30">
+            <div className="bg-white rounded-xl border border-slate-200/60 p-4 max-h-[350px] overflow-y-auto">
+              <Timeline events={editTimeline} />
+            </div>
+          </div>
+        </details>
       </div>
 
       {/* Save Success Banner */}
@@ -916,7 +1092,8 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                 {editOwner.toLowerCase() !== currentUser.fullName.toLowerCase() && (
                   <button
                     onClick={() => setEditOwner(currentUser.fullName)}
-                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold rounded-lg cursor-pointer transition-all"
+                    disabled={!hasEditPermission}
+                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed text-amber-800 border border-amber-300 text-xs font-bold rounded-lg cursor-pointer transition-all"
                   >
                     Claim Case (Self-Assign as PIC)
                   </button>
@@ -930,6 +1107,18 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                 </button>
               </div>
             </div>
+
+            {!hasEditPermission && (
+              <div className="flex items-start gap-3.5 p-4 bg-rose-50 border border-rose-200/60 rounded-xl text-rose-950">
+                <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-rose-800">Read-Only Facility Restricted Access</h4>
+                  <p className="text-xs text-rose-700 mt-1 leading-relaxed">
+                    This case is assigned to Facility <span className="font-extrabold">{recordFacility}</span>. Your account is assigned to Facility <span className="font-extrabold">{currentUser?.facility || 'None'}</span>. Only colleagues assigned to <span className="font-extrabold">{recordFacility}</span>, Head of Department (HoD), or Superadmin roles can log actions or publish updates for this case.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Editing workspace columns */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -947,7 +1136,8 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                     <select
                       value={editStatus}
                       onChange={(e) => setEditStatus(e.target.value as VoCRecord['status'])}
-                      className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden"
+                      disabled={!hasEditPermission}
+                      className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       <option value="New">New</option>
                       <option value="In Progress">In Progress</option>
@@ -961,20 +1151,56 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                       value={editDeadline}
                       onChange={(e) => setEditDeadline(e.target.value)}
                       placeholder="e.g. 30 Apr"
-                      className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden"
+                      disabled={!hasEditPermission}
+                      className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Case Owner / PIC Assigned</label>
-                  <input
-                    type="text"
-                    value={editOwner}
-                    onChange={(e) => setEditOwner(e.target.value)}
-                    placeholder="e.g. Rothana Art"
-                    className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden"
-                  />
+                  {(isSuperAdmin || isHoD) ? (
+                    <div className="space-y-2">
+                      <select
+                        value={selectedOwnerValue}
+                        onChange={handleOwnerSelectChange}
+                        disabled={!hasEditPermission}
+                        className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden disabled:opacity-60 disabled:cursor-not-allowed font-medium text-slate-800"
+                      >
+                        <option value="">-- Select Registered Colleague --</option>
+                        {colleagues.map((c) => (
+                          <option key={c.id} value={c.fullName}>
+                            {c.fullName} ({c.role} {c.department ? `· ${c.department}` : ''})
+                          </option>
+                        ))}
+                        <option value="custom">Other / Custom Name...</option>
+                      </select>
+                      {isCustomOwner && (
+                        <div className="animate-fade-in space-y-1">
+                          <input
+                            type="text"
+                            value={editOwner}
+                            onChange={(e) => setEditOwner(e.target.value)}
+                            placeholder="Type colleague's full name"
+                            disabled={!hasEditPermission}
+                            className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden disabled:opacity-60 disabled:cursor-not-allowed placeholder-slate-400 font-medium text-slate-800"
+                          />
+                          <span className="text-[10px] text-slate-400 block leading-tight">
+                            Type custom name for colleagues who don't have a portal account yet.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={editOwner}
+                      onChange={(e) => setEditOwner(e.target.value)}
+                      placeholder="e.g. Rothana Art"
+                      disabled={!hasEditPermission}
+                      className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden disabled:opacity-60 disabled:cursor-not-allowed font-medium text-slate-800"
+                    />
+                  )}
                 </div>
 
                 <div>
@@ -987,26 +1213,29 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                     value={editCustomSummary}
                     onChange={(e) => setEditCustomSummary(e.target.value)}
                     placeholder="Draft a highly condensed, professional summary of the customer complaint (retaining all original meaning) so management doesn't have to scroll..."
-                    className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden leading-relaxed"
+                    disabled={!hasEditPermission}
+                    className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden leading-relaxed disabled:opacity-60 disabled:cursor-not-allowed"
                   />
-                  <div className="flex gap-2 mt-1">
-                    <button
-                      type="button"
-                      onClick={() => setEditCustomSummary(getAutoSummary(record.comment))}
-                      className="text-[9px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2 py-1 rounded cursor-pointer"
-                    >
-                      Auto-Generate Concise Summary
-                    </button>
-                    {editCustomSummary && (
+                  {hasEditPermission && (
+                    <div className="flex gap-2 mt-1">
                       <button
                         type="button"
-                        onClick={() => setEditCustomSummary('')}
-                        className="text-[9px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                        onClick={() => setEditCustomSummary(getAutoSummary(record.comment))}
+                        className="text-[9px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2 py-1 rounded cursor-pointer"
                       >
-                        Reset to Original
+                        Auto-Generate Concise Summary
                       </button>
-                    )}
-                  </div>
+                      {editCustomSummary && (
+                        <button
+                          type="button"
+                          onClick={() => setEditCustomSummary('')}
+                          className="text-[9px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                        >
+                          Reset to Original
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1019,26 +1248,29 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                     value={editActionSummary}
                     onChange={(e) => setEditActionSummary(e.target.value)}
                     placeholder="Draft or auto-generate a highly concise, professional executive summary of actions taken..."
-                    className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden leading-relaxed"
+                    disabled={!hasEditPermission}
+                    className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden leading-relaxed disabled:opacity-60 disabled:cursor-not-allowed"
                   />
-                  <div className="flex gap-2 mt-1">
-                    <button
-                      type="button"
-                      onClick={() => setEditActionSummary(getAutoActionSummary(editTimeline))}
-                      className="text-[9px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2 py-1 rounded cursor-pointer"
-                    >
-                      Auto-Generate Action Summary
-                    </button>
-                    {editActionSummary && (
+                  {hasEditPermission && (
+                    <div className="flex gap-2 mt-1">
                       <button
                         type="button"
-                        onClick={() => setEditActionSummary('')}
-                        className="text-[9px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                        onClick={() => setEditActionSummary(getAutoCommentSummary(editComments))}
+                        className="text-[9px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2 py-1 rounded cursor-pointer"
                       >
-                        Reset to Original
+                        Auto-Generate Action Summary
                       </button>
-                    )}
-                  </div>
+                      {editActionSummary && (
+                        <button
+                          type="button"
+                          onClick={() => setEditActionSummary('')}
+                          className="text-[9px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                        >
+                          Reset to Original
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1048,96 +1280,100 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                     value={editFollowUpComments}
                     onChange={(e) => setEditFollowUpComments(e.target.value)}
                     placeholder="Write more details here so management can easily view the case and understand the full story..."
-                    className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden leading-relaxed"
+                    disabled={!hasEditPermission}
+                    className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden leading-relaxed disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
               </div>
 
-              {/* Right Form: Interactive Timeline Action Builder */}
+              {/* Right Form: Interactive Comments / Follow-up Conversation */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                  <Calendar className="w-4 h-4 text-blue-500" />
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-700">2. Key Actions Taken & Timeline Bullets</span>
+                  <MessageSquare className="w-4 h-4 text-amber-500" />
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-700">2. Follow-up Conversation (Me, HoD, Facility team)</span>
                 </div>
 
-                {/* Timeline item list with delete button */}
-                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/50 max-h-[190px] overflow-y-auto space-y-2">
-                  <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">Current Bullet List</span>
-                  {editTimeline.length === 0 ? (
+                {/* Comment list with delete button */}
+                <div className="bg-slate-50/50 p-4 rounded-xl border border-slate-200/50 max-h-[190px] overflow-y-auto space-y-3">
+                  <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">Conversation History</span>
+                  {editComments.length === 0 ? (
                     <div className="text-center py-6 text-xs text-slate-400">
-                      No actions added. Register below.
+                      No comments logged yet. Start the conversation below.
                     </div>
                   ) : (
-                    editTimeline.map((item, idx) => (
-                      <div key={idx} className="flex items-start justify-between gap-3 p-2 bg-white rounded-lg border border-slate-200/50 shadow-2xs">
-                        <div className="text-xs">
-                          <span className="font-bold text-slate-900 bg-slate-100 px-1 py-0.5 rounded border border-slate-200 text-[10px] font-mono mr-1.5">
-                            {item.timestamp}
-                          </span>
-                          <span className="text-slate-700 font-medium">{item.action}</span>
+                    editComments.map((comment, idx) => {
+                      const isCreator = currentUser?.fullName && comment.author.toLowerCase() === currentUser.fullName.toLowerCase();
+                      const isSuperAdmin = currentUser?.role === 'superadmin';
+                      const isHoD = currentUser?.role === 'HoD';
+                      const canDelete = isSuperAdmin || isHoD || isCreator;
+                      
+                      return (
+                        <div key={comment.id || idx} className="flex items-start justify-between gap-3 p-2.5 bg-white rounded-lg border border-slate-200/50 shadow-2xs">
+                          <div className="text-xs space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-slate-800">{comment.author}</span>
+                              <span className="text-[9px] font-extrabold text-slate-400 uppercase bg-slate-100 px-1 py-0.1 rounded border border-slate-200/40">
+                                {comment.role}
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-mono">{comment.timestamp.split(' ')[0]}</span>
+                            </div>
+                            <p className="text-slate-700 font-medium">{comment.text}</p>
+                          </div>
+                          {hasEditPermission && canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveComment(comment.id || '')}
+                              className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 p-1 rounded cursor-pointer transition-colors"
+                              title="Delete Comment"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTimelineBullet(idx)}
-                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 p-1 rounded cursor-pointer transition-colors"
-                          title="Remove Bullet"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
 
-                {/* Form to append new bullet */}
-                <form onSubmit={handleAddTimelineBullet} className="bg-slate-50 p-4 rounded-xl border border-slate-200/50 space-y-3">
-                  <span className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider">Add Action Taken Milestone</span>
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                    <div className="sm:col-span-4">
-                      <label className="block text-[9px] font-extrabold text-slate-500 uppercase mb-0.5">Date / Time Marker</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 10 Apr 2026"
-                        value={newTimestamp}
-                        onChange={(e) => setNewTimestamp(e.target.value)}
+                {/* Form to post a new comment */}
+                {hasEditPermission && (
+                  <form onSubmit={handlePostComment} className="bg-slate-50 p-4 rounded-xl border border-slate-200/50 space-y-3">
+                    <span className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider">Post Follow-up Comment / Question</span>
+                    <div className="space-y-2">
+                      <textarea
+                        rows={2}
+                        placeholder="Type your follow-up progress, ask HoD, or instruct Facility team here..."
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
                         required
-                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                        className="w-full p-2.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-amber-500 leading-relaxed resize-none"
                       />
                     </div>
-                    <div className="sm:col-span-8">
-                      <label className="block text-[9px] font-extrabold text-slate-500 uppercase mb-0.5">Action taken description</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Received and arranged remote booking on the same day."
-                        value={newAction}
-                        onChange={(e) => setNewAction(e.target.value)}
-                        required
-                        className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-amber-500"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-lg shadow-sm cursor-pointer transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add Milestone to Action Log
-                  </button>
-                </form>
+                    <button
+                      type="submit"
+                      className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-lg shadow-sm cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      Post Comment as {currentUser?.fullName}
+                    </button>
+                  </form>
+                )}
               </div>
 
             </div>
 
             {/* Large Publish and update action button */}
-            <div className="pt-4 border-t border-slate-100 flex justify-end">
-              <button
-                onClick={handlePublishUpdate}
-                className="px-6 py-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-black text-sm rounded-xl shadow-md cursor-pointer transition-all flex items-center gap-2"
-              >
-                <Save className="w-4 h-4" />
-                Publish Update to Management Slide
-              </button>
-            </div>
+            {hasEditPermission && (
+              <div className="pt-4 border-t border-slate-100 flex justify-end">
+                <button
+                  onClick={handlePublishUpdate}
+                  className="px-6 py-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-black text-sm rounded-xl shadow-md cursor-pointer transition-all flex items-center gap-2"
+                >
+                  <Save className="w-4 h-4" />
+                  Publish Update to Management Slide
+                </button>
+              </div>
+            )}
 
           </div>
         )}
