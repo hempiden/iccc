@@ -14,6 +14,9 @@ interface PowerBiMirrorProps {
   onSelectRecord: (record: VoCRecord) => void;
   presentationMode?: boolean;
   onTogglePresentationMode?: (val: boolean) => void;
+  statusFilter?: 'All' | 'New' | 'In Progress' | 'Completed';
+  categoryFilter?: 'All' | 'Promoter' | 'Passive' | 'Detractor';
+  setCategoryFilter?: (category: 'All' | 'Promoter' | 'Passive' | 'Detractor') => void;
 }
 
 // Interface for structured weekly chart data
@@ -42,7 +45,10 @@ export default function PowerBiMirror({
   records, 
   onSelectRecord,
   presentationMode: presentationModeProp,
-  onTogglePresentationMode
+  onTogglePresentationMode,
+  statusFilter,
+  categoryFilter,
+  setCategoryFilter
 }: PowerBiMirrorProps) {
   // --- States for Dropdown Filters ---
   const [responseFeed, setResponseFeed] = useState<'All' | 'Detractor' | 'Passive' | 'Promoter'>('All');
@@ -321,9 +327,22 @@ export default function PowerBiMirror({
         if (!isCompleted) return false;
       }
 
+      // 7. Status Filter from Sidebar (doesn't affect charts)
+      if (statusFilter && statusFilter !== 'All') {
+        const matchesStatus = r.status === statusFilter ||
+          (statusFilter === 'Completed' && r.status === 'Closed') ||
+          (statusFilter === 'In Progress' && r.status === 'Pending');
+        if (!matchesStatus) return false;
+      }
+
+      // 8. Sidebar Category Filter (filters the NPS Rating Log)
+      if (categoryFilter && categoryFilter !== 'All' && r.category !== categoryFilter) {
+        return false;
+      }
+
       return true;
     });
-  }, [mappedRecords, searchQuery, selectedWeeks, responseFeed, npsCategory, selectedChartFilter, presentationMode]);
+  }, [mappedRecords, searchQuery, selectedWeeks, responseFeed, npsCategory, selectedChartFilter, presentationMode, statusFilter, categoryFilter]);
 
   // --- AI Summary Generator (Instant Client-side AI) ---
   const getAiSummary = (record: VoCRecord) => {
@@ -385,13 +404,11 @@ export default function PowerBiMirror({
       {/* ========================================================= */}
       {/* 1. POWER BI HIGH-CONTRAST GOLDEN HEADER */}
       {/* ========================================================= */}
-      <div className="bg-[#ffcc00] text-[#111] p-4 flex flex-col md:flex-row justify-between items-start md:items-center border-b border-amber-400 gap-4 select-none shrink-0">
-        <div>
-          <h1 className="text-xl md:text-2xl font-black tracking-tight text-[#000] flex items-center gap-2">
-            <TrendingUp className="w-6 h-6 text-slate-900 shrink-0" />
-            Voice (iCCC)
-          </h1>
-        </div>
+      <div className="bg-[#ffcc00] text-[#111] py-2 px-4 flex justify-between items-center border-b border-amber-400 select-none shrink-0">
+        <span className="text-xs font-black tracking-wider uppercase text-[#000] flex items-center gap-1.5">
+          <TrendingUp className="w-4 h-4 text-slate-900 shrink-0" />
+          Voice (iCCC) Dashboard
+        </span>
       </div>
 
       {/* ========================================================= */}
@@ -695,6 +712,9 @@ export default function PowerBiMirror({
                           setNpsCategory('All');
                           setSelectedWeeks(latest6Weeks);
                           setSearchQuery('');
+                          if (setCategoryFilter) {
+                            setCategoryFilter('All');
+                          }
                         }}
                         className="mt-2 text-[10px] font-extrabold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded uppercase hover:bg-amber-100 cursor-pointer"
                       >
@@ -704,7 +724,7 @@ export default function PowerBiMirror({
                   </td>
                 </tr>
               ) : (
-                filteredTableRecords.map(r => {
+                filteredTableRecords.map((r, idx) => {
                   const isExpanded = expandedComments[r.id] || false;
                   const isScreenshotRecord = r.id === '284669518';
                   const summary = getAiSummary(r);
@@ -756,7 +776,7 @@ export default function PowerBiMirror({
                   const colors = getScoreColors(r.likelihood);
 
                   return (
-                    <React.Fragment key={r.id}>
+                    <React.Fragment key={`${r.id}-${idx}`}>
                       <tr 
                         className={`hover:bg-slate-50/50 transition-colors border-b border-slate-100 ${
                           isScreenshotRecord ? 'bg-amber-50/10' : ''

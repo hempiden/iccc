@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, User, Phone, Smartphone, Save, CheckCircle, ShieldCheck, RefreshCw, AlertCircle } from 'lucide-react';
+import { X, User, Phone, Smartphone, Save, CheckCircle, ShieldCheck, RefreshCw, AlertCircle, Mail } from 'lucide-react';
 import { ActionOwner } from '../types';
 import { saveColleague } from '../utils/firebaseSync';
 
@@ -11,6 +11,7 @@ interface UserProfileModalProps {
 
 export default function UserProfileModal({ currentUser, onUpdateCurrentUser, onClose }: UserProfileModalProps) {
   const [fullName, setFullName] = useState(currentUser.fullName);
+  const [email, setEmail] = useState(currentUser.email || '');
   const [primaryPhone, setPrimaryPhone] = useState(currentUser.phoneNumber || '');
   const [phoneNumbers, setPhoneNumbers] = useState<string[]>(currentUser.phoneNumbers || [currentUser.phoneNumber || '']);
   const [newSecondaryPhone, setNewSecondaryPhone] = useState('');
@@ -74,6 +75,7 @@ export default function UserProfileModal({ currentUser, onUpdateCurrentUser, onC
     const updatedUser: ActionOwner = {
       ...currentUser,
       fullName: fullName.trim(),
+      email: email.trim(),
       phoneNumber: cleanPrimary,
       phoneNumbers: updatedList,
       avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName.trim())}`
@@ -187,6 +189,27 @@ export default function UserProfileModal({ currentUser, onUpdateCurrentUser, onC
             </div>
             <p className="text-[9px] text-slate-400 font-medium">
               This name will be displayed in case comments, timeline logs, and executive assignments.
+            </p>
+          </div>
+
+          {/* Edit Communication Email */}
+          <div className="space-y-1.5 text-left">
+            <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 flex justify-between items-center">
+              <span>Communication Email (Microsoft Outlook)</span>
+              <span className="text-[8px] text-blue-600 font-extrabold uppercase bg-blue-50 px-1 py-0.5 rounded border border-blue-200">Outlook / MS Office 365</span>
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="e.g. name@dhl.com"
+                className="w-full bg-white text-slate-800 text-xs pl-9 pr-3.5 py-2.5 rounded-lg border border-slate-200 focus:outline-hidden focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+              />
+            </div>
+            <p className="text-[9px] text-slate-400 font-medium">
+              Alerts and replies will be shared to your Outlook inbox so you don't miss important feedback loops.
             </p>
           </div>
 

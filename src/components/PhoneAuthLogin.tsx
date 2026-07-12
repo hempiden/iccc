@@ -55,8 +55,11 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   
-  // Sandbox test bypass mode - default to true for preview reliability
-  const [isSandboxMode, setIsSandboxMode] = useState(true);
+  // Sandbox test bypass mode - default to false unless explicitly enabled via URL param '?sandbox=true'
+  const [isSandboxMode, setIsSandboxMode] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('sandbox') === 'true';
+  });
 
   const confirmationResultRef = useRef<ConfirmationResult | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
@@ -81,8 +84,14 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
         });
       } catch (err: any) {
         console.error('Error initializing reCAPTCHA:', err);
-        setError('Failed to initialize reCAPTCHA security. Switching to Sandbox Mode for full reliability.');
-        setIsSandboxMode(true);
+        const params = new URLSearchParams(window.location.search);
+        const canUseSandbox = params.get('sandbox') === 'true';
+        if (canUseSandbox) {
+          setError('Failed to initialize reCAPTCHA security. Switching to Sandbox Mode for full reliability.');
+          setIsSandboxMode(true);
+        } else {
+          setError('Failed to initialize reCAPTCHA security. To use the standard free reCAPTCHA on the Spark free plan, please disable reCAPTCHA Enterprise in your Firebase Console (Build > Authentication > Settings > User sign-in).');
+        }
       }
     }
 
@@ -184,6 +193,8 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
         errMsg = 'Invalid phone number format. Please enter in international format, e.g. +1 555-555-5555';
       } else if (err.code === 'auth/unauthorized-domain') {
         errMsg = 'This domain is not authorized in your Firebase console. Use "Sandbox Mode" above to log in successfully.';
+      } else if (err.code === 'auth/billing-not-enabled' || (err.message && err.message.includes('billing-not-enabled'))) {
+        errMsg = 'Firebase Billing account issue (auth/billing-not-enabled). If you recently upgraded to the Blaze Plan, please note that GCP billing propagation can take 10-15 minutes to fully activate across all APIs. If you are on the Spark Free Tier, you must disable reCAPTCHA Enterprise in your Firebase Console (Build > Authentication > Settings > User sign-in) to use standard free Phone Auth.';
       }
       
       setError(errMsg);
@@ -312,41 +323,43 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
           </div>
 
           {/* Environment/Sandbox Toggle Banner */}
-          <div className="w-full bg-slate-900/80 p-2.5 rounded-lg border border-slate-700/60 flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <Globe className={`w-4 h-4 ${isSandboxMode ? 'text-amber-400' : 'text-emerald-400'}`} />
-              <div className="text-left">
-                <span className="text-[10px] font-bold text-white block uppercase tracking-wider">
-                  {isSandboxMode ? 'Sandbox Preview' : 'Live Gateway'}
-                </span>
-                <span className="text-[9px] text-slate-400 block leading-tight">
-                  {isSandboxMode ? 'Mock SMS code for sandboxed iframe' : 'Send actual OTP to real phone'}
-                </span>
+          {(new URLSearchParams(window.location.search).get('sandbox') === 'true' || isSandboxMode) && (
+            <div className="w-full bg-slate-900/80 p-2.5 rounded-lg border border-slate-700/60 flex items-center justify-between mb-5 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <Globe className={`w-4 h-4 ${isSandboxMode ? 'text-amber-400' : 'text-emerald-400'}`} />
+                <div className="text-left">
+                  <span className="text-[10px] font-bold text-white block uppercase tracking-wider">
+                    {isSandboxMode ? 'Sandbox Preview' : 'Live Gateway'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 block leading-tight">
+                    {isSandboxMode ? 'Mock SMS code for sandboxed iframe' : 'Send actual OTP to real phone'}
+                  </span>
+                </div>
               </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setIsSandboxMode(!isSandboxMode);
-                setStep('phone');
-                setPhoneNumber('');
-                setFullName('');
-                setMatchedColleague(null);
-                setVerificationCode('');
-                setError(null);
-                setInfoMessage(null);
-              }}
-              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                isSandboxMode ? 'bg-amber-400' : 'bg-slate-700'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-slate-900 shadow-sm ring-0 transition duration-200 ease-in-out ${
-                  isSandboxMode ? 'translate-x-4' : 'translate-x-0'
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSandboxMode(!isSandboxMode);
+                  setStep('phone');
+                  setPhoneNumber('');
+                  setFullName('');
+                  setMatchedColleague(null);
+                  setVerificationCode('');
+                  setError(null);
+                  setInfoMessage(null);
+                }}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                  isSandboxMode ? 'bg-amber-400' : 'bg-slate-700'
                 }`}
-              />
-            </button>
-          </div>
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-slate-900 shadow-sm ring-0 transition duration-200 ease-in-out ${
+                    isSandboxMode ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          )}
 
           {/* Form Content Steps */}
           <div className="w-full relative">
@@ -362,7 +375,32 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                   className="bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs p-3 rounded-lg flex items-start gap-2.5 mb-4 text-left"
                 >
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{error}</span>
+                  <div className="flex-1 space-y-2">
+                    <div className="whitespace-pre-line leading-relaxed">{error}</div>
+                    
+                    {/* Sandbox Bypass Trigger */}
+                    {(error.includes('billing-not-enabled') || error.includes('reCAPTCHA') || error.includes('unauthorized-domain')) && (
+                      <div className="pt-2 border-t border-rose-500/20">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsSandboxMode(true);
+                            setStep('phone');
+                            setPhoneNumber('');
+                            setFullName('');
+                            setMatchedColleague(null);
+                            setVerificationCode('');
+                            setError(null);
+                            setInfoMessage('Sandbox Bypass activated! Select a test profile below or use any phone number with OTP code "123456" or "888888".');
+                          }}
+                          className="w-full py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold rounded text-[11px] transition-colors uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                          <span>Activate Sandbox Bypass Mode</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </motion.div>
               )}
 

@@ -18,6 +18,8 @@ interface CompactSidebarListProps {
   channelFilter: string;
   setChannelFilter: (channel: string) => void;
   uniqueChannels: string[];
+  categoryFilter: 'All' | 'Promoter' | 'Passive' | 'Detractor';
+  setCategoryFilter: (category: 'All' | 'Promoter' | 'Passive' | 'Detractor') => void;
 }
 
 export default function CompactSidebarList({ 
@@ -34,10 +36,11 @@ export default function CompactSidebarList({
   setStatusFilter,
   channelFilter,
   setChannelFilter,
-  uniqueChannels
+  uniqueChannels,
+  categoryFilter,
+  setCategoryFilter
 }: CompactSidebarListProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<'All' | 'Promoter' | 'Passive' | 'Detractor'>('All');
 
   const filteredRecords = useMemo(() => {
     return records.filter(record => {
@@ -214,13 +217,13 @@ export default function CompactSidebarList({
             No matching customer files
           </div>
         ) : (
-          filteredRecords.map((record) => {
+          filteredRecords.map((record, index) => {
             const isSelected = selectedId === record.id;
             const scoreColor = getScoreColor(record.likelihood);
             
             return (
               <div
-                key={record.id}
+                key={`${record.id}-${index}`}
                 onClick={() => onSelect(record.id)}
                 className={`p-4 flex items-center justify-between cursor-pointer transition-all border-l-4 ${
                   isSelected 
@@ -275,8 +278,8 @@ export default function CompactSidebarList({
       </div>
 
       {/* Sidebar stats footer */}
-      <div className="p-3 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 font-bold flex items-center justify-between">
-        <span>ACTIVE DATABASE:</span>
+      <div className="p-2.5 bg-slate-50 border-t border-slate-100 text-[9px] text-slate-400 font-bold flex items-center justify-between">
+        <span>TOTAL:</span>
         <span className="text-slate-600">{records.length} SURVEYS</span>
       </div>
     </div>

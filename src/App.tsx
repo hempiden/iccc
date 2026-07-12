@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FileSpreadsheet, MessageSquare, ShieldAlert, Award, Sparkles, 
   RefreshCw, RotateCcw, Truck, HelpCircle, User, Users, Activity, TrendingUp, Calendar, LogOut,
-  Presentation
+  Presentation, Bell, Mail
 } from 'lucide-react';
 import { VoCRecord, ActionOwner } from './types';
 import { sampleRecords } from './sampleData';
@@ -15,6 +15,7 @@ import PowerBiMirror from './components/PowerBiMirror';
 import PhoneAuthLogin from './components/PhoneAuthLogin';
 import ColleagueManager from './components/ColleagueManager';
 import UserProfileModal from './components/UserProfileModal';
+import NotificationCenter, { CommentNotification } from './components/NotificationCenter';
 import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber } from './utils/firebaseSync';
 
 // Helper to get time representation of a record's response/creation date
@@ -49,6 +50,80 @@ export default function App() {
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [showColleagueManager, setShowColleagueManager] = useState(false);
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
+
+  // Notifications states and handlers
+  const [readNotifications, setReadNotifications] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('dhl_voc_read_notifications');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const notifications = useMemo(() => {
+    if (!currentUser) return [];
+    const list: CommentNotification[] = [];
+    const lowerUser = currentUser.username.toLowerCase();
+    const lowerName = currentUser.fullName.toLowerCase();
+    const lowerRole = currentUser.role.toLowerCase();
+
+    records.forEach(r => {
+      if (r.comments) {
+        r.comments.forEach(c => {
+          // Do not notify of own comments
+          if (c.author.toLowerCase() === lowerName || c.author.toLowerCase() === lowerUser) {
+            return;
+          }
+
+          const txt = c.text.toLowerCase();
+          const isOwner = r.owner && (r.owner.toLowerCase() === lowerUser || r.owner.toLowerCase() === lowerName);
+          const hasMention = txt.includes('@' + lowerUser) || 
+                            txt.includes('@' + lowerName.replace(/\s+/g, '')) || 
+                            txt.includes(lowerName) ||
+                            txt.includes(lowerRole);
+
+          if (isOwner || hasMention) {
+            list.push({
+              id: `${r.id}-${c.id}`,
+              recordId: r.id,
+              recordOwner: r.owner,
+              awbNumber: r.awbNumber,
+              customerName: r.customerName,
+              commentId: c.id,
+              commentAuthor: c.author,
+              commentRole: c.role,
+              commentText: c.text,
+              timestamp: c.timestamp,
+              isMention: hasMention
+            });
+          }
+        });
+      }
+    });
+
+    // Sort by timestamp descending
+    return list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [records, currentUser]);
+
+  const unreadCount = useMemo(() => {
+    return notifications.filter(n => !readNotifications.includes(n.id)).length;
+  }, [notifications, readNotifications]);
+
+  const handleMarkAsRead = (id: string) => {
+    setReadNotifications(prev => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      localStorage.setItem('dhl_voc_read_notifications', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleMarkAllAsRead = () => {
+    const ids = notifications.map(n => n.id);
+    setReadNotifications(ids);
+    localStorage.setItem('dhl_voc_read_notifications', JSON.stringify(ids));
+  };
 
   // Load and seed records from shared Cloud Firestore on authentication
   useEffect(() => {
@@ -95,6 +170,7 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState<'All' | 'New' | 'In Progress' | 'Completed'>('All');
   const [channelFilter, setChannelFilter] = useState<string>('All');
   const [presentationMode, setPresentationMode] = useState<boolean>(false);
+  const [categoryFilter, setCategoryFilter] = useState<'All' | 'Promoter' | 'Passive' | 'Detractor'>('All');
 
   // Reset sliders when raw data bounds change (like uploading a new Excel sheet)
   React.useEffect(() => {
@@ -113,20 +189,28 @@ export default function App() {
     return Array.from(channels).sort();
   }, [records]);
 
-  // Dynamic Timeline & Status & Channel Filtering
-  const filteredByTimeline = React.useMemo(() => {
+  // Dynamic Timeline & Channel Filtering (No Status Filtering) - used for Charts
+  const filteredByTimelineAndChannel = React.useMemo(() => {
     return records.filter(r => {
       const t = getRecordTime(r);
       const inTimeline = t === 0 || (t >= sliderStart && t <= sliderEnd);
+      const matchesChannel = channelFilter === 'All' || r.responseFeedbackChannel === channelFilter;
+      
+      return inTimeline && matchesChannel;
+    });
+  }, [records, sliderStart, sliderEnd, channelFilter]);
+
+  // Dynamic Timeline & Status & Channel Filtering - used for Lists, Sidebars and Tables
+  const filteredByTimeline = React.useMemo(() => {
+    return filteredByTimelineAndChannel.filter(r => {
       const matchesStatus = statusFilter === 'All' || 
         r.status === statusFilter ||
         (statusFilter === 'Completed' && r.status === 'Closed') ||
         (statusFilter === 'In Progress' && r.status === 'Pending');
-      const matchesChannel = channelFilter === 'All' || r.responseFeedbackChannel === channelFilter;
       
-      return inTimeline && matchesStatus && matchesChannel;
+      return matchesStatus;
     });
-  }, [records, sliderStart, sliderEnd, statusFilter, channelFilter]);
+  }, [filteredByTimelineAndChannel, statusFilter]);
 
   // Synchronize records updates to Firestore and LocalState
   const handleUpdateRecord = async (updatedRecord: VoCRecord) => {
@@ -329,34 +413,29 @@ export default function App() {
     <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans antialiased text-slate-900 overflow-hidden h-screen" id="voc-main-container">
       {/* 1. Sleek Navigation Header (Hidden during printing) */}
       <nav className="h-16 flex items-center justify-between px-6 bg-white border-b border-slate-200 shrink-0 print:hidden z-50 shadow-xs">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <img 
             src="https://1000logos.net/wp-content/uploads/2018/08/DHL-emblem.jpg" 
             alt="DHL Logo" 
             referrerPolicy="no-referrer"
-            className="h-10 w-auto object-contain rounded-md"
+            className="h-8 w-auto object-contain rounded-md"
           />
           <div>
-            <span className="font-extrabold text-lg tracking-tight text-slate-800 uppercase flex items-center gap-1.5">
-              DHL Voice Portal - Ops
+            <span className="font-extrabold text-base tracking-tight text-slate-800 uppercase">
+              Voice Portal
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {/* Cloud Sync Database Status Badge */}
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-full border border-slate-200 text-xs font-semibold text-slate-600 shrink-0 select-none">
+          <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-slate-50 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-500 select-none">
             {loadingDb ? (
-              <>
-                <RefreshCw className="w-3.5 h-3.5 text-amber-500 animate-spin" />
-                <span>Syncing Cloud...</span>
-              </>
+              <RefreshCw className="w-3 h-3 text-amber-500 animate-spin" />
             ) : (
-              <>
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                <span>{records.length} Shared Surveys</span>
-              </>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
             )}
+            <span>{records.length} Surveys</span>
           </div>
 
           {/* Reset button if records modified */}
@@ -364,11 +443,10 @@ export default function App() {
             <button
               onClick={handleResetToSample}
               disabled={loadingDb}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all cursor-pointer shrink-0 disabled:opacity-55"
-              title="Restore default DHL sample dataset in shared cloud"
+              className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-slate-50 border border-slate-200 rounded-lg transition-all cursor-pointer shrink-0 disabled:opacity-55"
+              title="Reset Database"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
-              <span className="hidden sm:inline">Reset Shared DB</span>
+              <RotateCcw className="w-3.5 h-3.5" />
             </button>
           )}
 
@@ -376,11 +454,11 @@ export default function App() {
           {currentUser.role === 'superadmin' && (
             <button
               onClick={() => setShowColleagueManager(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all cursor-pointer shrink-0"
-              title="Manage colleague roles & assigned facilities"
+              className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all cursor-pointer shrink-0"
+              title="Manage Colleagues"
             >
-              <Users className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="hidden sm:inline">Manage Colleagues</span>
+              <Users className="w-3.5 h-3.5 text-slate-500" />
+              <span>Colleagues</span>
             </button>
           )}
 
@@ -388,49 +466,55 @@ export default function App() {
           {selectedRecordId && (
             <button
               onClick={() => setSelectedRecordId(null)}
-              className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer transition-all shrink-0"
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-all shrink-0"
             >
-              Show KPI Dashboard
+              Dashboard
             </button>
           )}
 
           {/* Presentation Mode Toggle */}
           <button
             onClick={() => setPresentationMode(!presentationMode)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all duration-200 select-none cursor-pointer shrink-0 ${
+            className={`flex items-center gap-1 px-2 py-1 text-[11px] font-bold rounded-lg border transition-all select-none cursor-pointer shrink-0 ${
               presentationMode 
-                ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm' 
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                ? 'bg-emerald-600 text-white border-emerald-700' 
+                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
             }`}
-            title="Toggle presentation mode to filter view to completed/closed cases only"
+            title="Presentation Mode"
           >
-            <Presentation className={`w-3.5 h-3.5 shrink-0 ${presentationMode ? 'text-white' : 'text-slate-500'}`} />
-            <span>Pres. Mode: {presentationMode ? 'ON' : 'OFF'}</span>
+            <Presentation className="w-3.5 h-3.5 shrink-0" />
+            <span>Pres. Mode</span>
           </button>
 
-          {/* User profile & Logout */}
-          <div className="flex items-center gap-2.5 border-l border-slate-200 pl-4 shrink-0">
+          {/* User profile, Notifications & Logout */}
+          <div className="flex items-center gap-2 border-l border-slate-200 pl-3 shrink-0">
+            {currentUser && (
+              <NotificationCenter
+                notifications={notifications}
+                unreadCount={unreadCount}
+                onSelectRecord={(recordId) => setSelectedRecordId(recordId)}
+                onMarkAsRead={handleMarkAsRead}
+                onMarkAllAsRead={handleMarkAllAsRead}
+              />
+            )}
+
             {currentUser && (
               <button
                 onClick={() => setShowUserProfileModal(true)}
-                className="flex items-center gap-2 text-left hover:bg-slate-100 p-1 rounded-lg transition-all cursor-pointer group"
-                title="View and Edit Profile Settings"
+                className="flex items-center hover:bg-slate-50 p-0.5 rounded-full transition-all cursor-pointer group"
+                title={`Profile: ${currentUser.fullName} (${currentUser.role})`}
               >
                 <img 
                   src={currentUser.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(currentUser.fullName)}`}
                   alt={currentUser.fullName}
-                  className="w-8 h-8 rounded-full border border-slate-200 shadow-2xs select-none group-hover:scale-105 transition-transform"
+                  className="w-7 h-7 rounded-full border border-slate-200 shadow-2xs select-none group-hover:scale-105 transition-transform"
                 />
-                <div className="hidden lg:block leading-tight">
-                  <span className="text-[11px] font-black text-slate-800 block group-hover:text-amber-600 transition-colors">{currentUser.fullName}</span>
-                  <span className="text-[9px] text-slate-400 font-bold block uppercase tracking-wider">{currentUser.role}</span>
-                </div>
               </button>
             )}
             <button
               onClick={handleLogout}
               className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-              title="Sign Out of Portal"
+              title="Sign Out"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -461,6 +545,8 @@ export default function App() {
             channelFilter={channelFilter}
             setChannelFilter={setChannelFilter}
             uniqueChannels={uniqueChannels}
+            categoryFilter={categoryFilter}
+            setCategoryFilter={setCategoryFilter}
           />
         </aside>
 
@@ -510,14 +596,17 @@ export default function App() {
                   />
                 )}
 
-                <ExecutiveOverview records={filteredByTimeline} allRecords={records} />
+                <ExecutiveOverview records={filteredByTimelineAndChannel} allRecords={records} />
 
                 {/* Unified Interactive Power BI Mirror Component */}
                 <PowerBiMirror 
-                  records={filteredByTimeline} 
+                  records={filteredByTimelineAndChannel} 
                   onSelectRecord={(r) => setSelectedRecordId(r.id)} 
                   presentationMode={presentationMode}
                   onTogglePresentationMode={setPresentationMode}
+                  statusFilter={statusFilter}
+                  categoryFilter={categoryFilter}
+                  setCategoryFilter={setCategoryFilter}
                 />
               </div>
             )}

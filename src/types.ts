@@ -25,6 +25,7 @@ export interface ActionOwner {
   phoneNumber?: string;
   phoneNumbers?: string[]; // Multiple phone numbers associated to this person
   status?: 'approved' | 'pending'; // Approval status for user signups
+  email?: string; // Outlook / Communication email
 }
 
 export interface VoCRecord {

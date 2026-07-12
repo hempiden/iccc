@@ -706,27 +706,23 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
     <div className="w-full space-y-6 print:hidden" id="voc-executive-kpi-dashboard">
       
       {/* Title */}
-      <div className="border-b border-slate-200 pb-3">
-        <h2 className="text-base font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-amber-500" />
-          DHL Voice-of-Customer Portal Analytics
-        </h2>
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+          Analytics Overview
+        </span>
       </div>
 
       {/* Executive Period Comparisons Scorecard: YTD & MTD */}
       <div className="bg-gradient-to-br from-slate-50 to-slate-100/50 p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2.5">
-          <div>
-            <h3 className="text-xs font-black uppercase tracking-widest text-slate-700 flex items-center gap-1.5">
-              <Layers className="w-4 h-4 text-amber-500" />
-              Executive Period Comparisons
+        <div className="flex items-center justify-between gap-2 border-b border-slate-200/50 pb-2">
+          <div className="flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5 text-amber-500" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+              Period Comparisons
             </h3>
-            <p className="text-[10px] text-slate-400 font-medium mt-0.5">
-              Year-over-Year (YoY) comparison of key indicators for Year {ytdMtdStats.currentYear} vs {ytdMtdStats.currentYear - 1}
-            </p>
           </div>
-          <span className="text-[9px] font-extrabold bg-amber-500/10 text-amber-600 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider self-start sm:self-auto">
-            Period: Jan - {ytdMtdStats.currentMonthName}
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+            Jan - {ytdMtdStats.currentMonthName}
           </span>
         </div>
 
@@ -821,8 +817,8 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
           {/* Left 4 Cols: NPS True Gauge - Matching Chart 1.3 */}
           <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
             <div>
-              <span className="text-xs font-extrabold uppercase tracking-widest text-slate-400">1.3 Net Promoter Score</span>
-              <span className="text-[10px] text-slate-500 font-bold flex items-center gap-1 mt-1 bg-slate-50 border border-slate-200/60 px-2 py-0.5 rounded w-fit">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Net Promoter Score</span>
+              <span className="text-[10px] text-slate-500 font-bold flex items-center gap-1 mt-1 bg-slate-50 border border-slate-200/50 px-2 py-0.5 rounded w-fit">
                 <Calendar className="w-3 h-3 text-amber-500 shrink-0" />
                 {dateRangeStr}
               </span>
@@ -932,13 +928,12 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
 
             {/* NPS over time stacked weekly trend graph - Matching Chart 1.2 */}
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex-1 flex flex-col justify-between min-h-[300px]">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <span className="text-xs font-extrabold uppercase tracking-widest text-slate-400">
-                    1.2 {trendInterval === 'monthly' ? 'Monthly' : trendInterval === 'daily' ? 'Daily' : 'Weekly'} Sentiment & NPS Trends
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-medium block mt-1">Chronological distribution of survey responses and periodic scores</span>
-                </div>
+               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                 <div>
+                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                     {trendInterval === 'monthly' ? 'Monthly' : trendInterval === 'daily' ? 'Daily' : 'Weekly'} Sentiment & NPS Trends
+                   </span>
+                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Switcher Toggle */}
