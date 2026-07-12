@@ -6,6 +6,39 @@ const COLLECTION_NAME = 'voc_records';
 const COLLEAGUE_COLLECTION = 'colleagues';
 
 /**
+ * Normalizes a phone number by stripping spaces, dashes, parentheses,
+ * and removing any leading '0' after the '+855' or '855' country code.
+ * e.g. +855061999905 -> +85561999905, +855 061 999 905 -> +85561999905, 061999905 -> +85561999905
+ */
+export function normalizePhoneNumber(raw: string): string {
+  if (!raw) return '';
+  // Remove all spaces, dashes, and parentheses
+  let cleaned = raw.replace(/[\s\-\(\)]/g, '');
+
+  // If it starts with '+8550', remove the '0' immediately after country code
+  if (cleaned.startsWith('+8550')) {
+    cleaned = '+855' + cleaned.slice(5);
+  }
+  // If it starts with '8550' (no plus), convert to '+855' and strip the '0'
+  else if (cleaned.startsWith('8550')) {
+    cleaned = '+855' + cleaned.slice(4);
+  }
+  // If it starts with '0', assume it is local format and convert to '+855'
+  else if (cleaned.startsWith('0') && !cleaned.startsWith('+') && !cleaned.startsWith('855')) {
+    cleaned = '+855' + cleaned.slice(1);
+  }
+  // If it starts with '855' but doesn't have '+', prepends '+'
+  else if (cleaned.startsWith('855') && !cleaned.startsWith('+')) {
+    cleaned = '+' + cleaned;
+  }
+  // If it does not start with '+', add '+' if it contains digits
+  else if (cleaned && !cleaned.startsWith('+')) {
+    cleaned = '+' + cleaned;
+  }
+  return cleaned;
+}
+
+/**
  * Fetches all VoC records from Firestore.
  */
 export async function fetchVoCRecords(): Promise<VoCRecord[]> {
@@ -119,11 +152,11 @@ export async function saveColleague(colleague: ActionOwner): Promise<void> {
  */
 export async function findColleagueByPhoneNumber(phoneNumber: string): Promise<ActionOwner | null> {
   try {
-    const cleanPhone = phoneNumber.trim().replace(/\s+/g, '');
+    const cleanPhone = normalizePhoneNumber(phoneNumber);
     const colleagues = await fetchColleagues();
     const existing = colleagues.find(c => {
-      const matchPrimary = c.phoneNumber?.replace(/\s+/g, '') === cleanPhone;
-      const matchArray = c.phoneNumbers?.some(p => p.replace(/\s+/g, '') === cleanPhone);
+      const matchPrimary = normalizePhoneNumber(c.phoneNumber || '') === cleanPhone;
+      const matchArray = c.phoneNumbers?.some(p => normalizePhoneNumber(p) === cleanPhone);
       return matchPrimary || matchArray;
     });
     return existing || null;
@@ -140,7 +173,7 @@ export async function findColleagueByPhoneNumber(phoneNumber: string): Promise<A
  */
 export async function resolveColleagueProfile(phoneNumber: string, fullName: string, selectedFacility?: string): Promise<ActionOwner> {
   try {
-    const cleanPhone = phoneNumber.trim().replace(/\s+/g, '');
+    const cleanPhone = normalizePhoneNumber(phoneNumber);
     const colleaguesRef = collection(db, COLLEAGUE_COLLECTION);
     const snapshot = await getDocs(colleaguesRef);
     
@@ -151,8 +184,8 @@ export async function resolveColleagueProfile(phoneNumber: string, fullName: str
 
     // Check if user already exists with this phone number (primary or secondary)
     const existing = allColleagues.find(c => {
-      const matchPrimary = c.phoneNumber?.replace(/\s+/g, '') === cleanPhone;
-      const matchArray = c.phoneNumbers?.some(p => p.replace(/\s+/g, '') === cleanPhone);
+      const matchPrimary = normalizePhoneNumber(c.phoneNumber || '') === cleanPhone;
+      const matchArray = c.phoneNumbers?.some(p => normalizePhoneNumber(p) === cleanPhone);
       return matchPrimary || matchArray;
     });
     if (existing) {
@@ -203,8 +236,8 @@ export async function resolveColleagueProfile(phoneNumber: string, fullName: str
       department: 'Operations',
       facility: selectedFacility || 'PNHGTW',
       status: fullName.toLowerCase().includes('superadmin') ? 'approved' : 'pending',
-      phoneNumber: phoneNumber.trim().replace(/\s+/g, ''),
-      phoneNumbers: [phoneNumber.trim().replace(/\s+/g, '')],
+      phoneNumber: normalizePhoneNumber(phoneNumber),
+      phoneNumbers: [normalizePhoneNumber(phoneNumber)],
       avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName)}`
     };
   }

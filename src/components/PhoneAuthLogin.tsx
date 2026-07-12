@@ -12,7 +12,7 @@ import {
 } from 'firebase/auth';
 import { auth } from '../utils/firebase';
 import { ActionOwner } from '../types';
-import { resolveColleagueProfile, findColleagueByPhoneNumber } from '../utils/firebaseSync';
+import { resolveColleagueProfile, findColleagueByPhoneNumber, normalizePhoneNumber } from '../utils/firebaseSync';
 
 interface PhoneAuthLoginProps {
   onLoginSuccess: (user: ActionOwner, firebaseUser: FirebaseUser | null) => void;
@@ -44,7 +44,7 @@ const DEMO_ACCOUNTS = [
 ];
 
 export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) {
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('+855');
   const [verificationCode, setVerificationCode] = useState('');
   const [fullName, setFullName] = useState('');
   const [selectedFacility, setSelectedFacility] = useState('PNHGTW');
@@ -120,7 +120,8 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
     setError(null);
 
     try {
-      const cleanPhone = phoneNumber.trim().replace(/\s+/g, '');
+      const cleanPhone = normalizePhoneNumber(phoneNumber);
+      setPhoneNumber(cleanPhone); // Update state to display beautifully normalized format
       const existing = await findColleagueByPhoneNumber(cleanPhone);
       
       if (existing) {
@@ -151,7 +152,8 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
     }
     setLoading(true);
     setError(null);
-    const cleanPhone = phoneNumber.trim().replace(/\s+/g, '');
+    const cleanPhone = normalizePhoneNumber(phoneNumber);
+    setPhoneNumber(cleanPhone); // Update state to display beautifully normalized format
     await triggerSmsOtp(cleanPhone);
   };
 
@@ -215,7 +217,7 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
     // SANDBOX MODE VERIFICATION
     if (isSandboxMode) {
       try {
-        const cleanPhone = phoneNumber.trim().replace(/\s+/g, '') || '+15555555555';
+        const cleanPhone = normalizePhoneNumber(phoneNumber) || '+15555555555';
         
         // If matched colleague already exists, use that. Otherwise, register new profile
         let resolvedUser: ActionOwner;
@@ -341,7 +343,7 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                 onClick={() => {
                   setIsSandboxMode(!isSandboxMode);
                   setStep('phone');
-                  setPhoneNumber('');
+                  setPhoneNumber('+855');
                   setFullName('');
                   setMatchedColleague(null);
                   setVerificationCode('');
