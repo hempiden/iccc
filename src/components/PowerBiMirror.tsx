@@ -12,6 +12,8 @@ import { motion, AnimatePresence } from 'motion/react';
 interface PowerBiMirrorProps {
   records: VoCRecord[];
   onSelectRecord: (record: VoCRecord) => void;
+  presentationMode?: boolean;
+  onTogglePresentationMode?: (val: boolean) => void;
 }
 
 // Interface for structured weekly chart data
@@ -36,7 +38,12 @@ const getWeekFromDate = (dateStr: string): number => {
   }
 };
 
-export default function PowerBiMirror({ records, onSelectRecord }: PowerBiMirrorProps) {
+export default function PowerBiMirror({ 
+  records, 
+  onSelectRecord,
+  presentationMode: presentationModeProp,
+  onTogglePresentationMode
+}: PowerBiMirrorProps) {
   // --- States for Dropdown Filters ---
   const [responseFeed, setResponseFeed] = useState<'All' | 'Detractor' | 'Passive' | 'Promoter'>('All');
   const [npsCategory, setNpsCategory] = useState<'All' | 'Detractor' | 'Passive' | 'Promoter'>('All');
@@ -57,7 +64,15 @@ export default function PowerBiMirror({ records, onSelectRecord }: PowerBiMirror
   const [expandedComments, setExpandedComments] = useState<{ [id: string]: boolean }>({});
 
   // --- Presentation Mode ---
-  const [presentationMode, setPresentationMode] = useState(false);
+  const [localPresentationMode, setLocalPresentationMode] = useState(false);
+  const presentationMode = presentationModeProp !== undefined ? presentationModeProp : localPresentationMode;
+  const setPresentationMode = (val: boolean) => {
+    if (onTogglePresentationMode) {
+      onTogglePresentationMode(val);
+    } else {
+      setLocalPresentationMode(val);
+    }
+  };
 
   // --- Dynamic Mappings & Fallback Synthesis ---
   // Ensure we include the target record from the screenshot (MINOR INSTRUMENTS SET) if not already present
@@ -629,20 +644,6 @@ export default function PowerBiMirror({ records, onSelectRecord }: PowerBiMirror
           {/* Global Toggle & Search Tool */}
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
             
-            {/* Presentation Mode Toggle */}
-            <button
-              onClick={() => setPresentationMode(!presentationMode)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-black rounded uppercase border transition-all duration-200 select-none cursor-pointer ${
-                presentationMode 
-                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs' 
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
-              title="Show only completed/resolved cases in the log below"
-            >
-              <Presentation className={`w-3.5 h-3.5 shrink-0 ${presentationMode ? 'text-white' : 'text-slate-500'}`} />
-              <span>Presentation Mode: {presentationMode ? 'ON (Only Completed)' : 'OFF'}</span>
-            </button>
-
             {/* Table Search Input */}
             <div className="relative flex-1 md:flex-initial md:w-64">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />

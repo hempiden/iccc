@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   FileSpreadsheet, MessageSquare, ShieldAlert, Award, Sparkles, 
-  RefreshCw, RotateCcw, Truck, HelpCircle, User, Users, Activity, TrendingUp, Calendar, LogOut
+  RefreshCw, RotateCcw, Truck, HelpCircle, User, Users, Activity, TrendingUp, Calendar, LogOut,
+  Presentation
 } from 'lucide-react';
 import { VoCRecord, ActionOwner } from './types';
 import { sampleRecords } from './sampleData';
@@ -13,6 +14,7 @@ import CompactSidebarList from './components/CompactSidebarList';
 import PowerBiMirror from './components/PowerBiMirror';
 import PhoneAuthLogin from './components/PhoneAuthLogin';
 import ColleagueManager from './components/ColleagueManager';
+import UserProfileModal from './components/UserProfileModal';
 import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber } from './utils/firebaseSync';
 
 // Helper to get time representation of a record's response/creation date
@@ -46,6 +48,7 @@ export default function App() {
 
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [showColleagueManager, setShowColleagueManager] = useState(false);
+  const [showUserProfileModal, setShowUserProfileModal] = useState(false);
 
   // Load and seed records from shared Cloud Firestore on authentication
   useEffect(() => {
@@ -91,6 +94,7 @@ export default function App() {
   const [sliderEnd, setSliderEnd] = useState<number>(safeMax);
   const [statusFilter, setStatusFilter] = useState<'All' | 'New' | 'In Progress' | 'Completed'>('All');
   const [channelFilter, setChannelFilter] = useState<string>('All');
+  const [presentationMode, setPresentationMode] = useState<boolean>(false);
 
   // Reset sliders when raw data bounds change (like uploading a new Excel sheet)
   React.useEffect(() => {
@@ -119,6 +123,7 @@ export default function App() {
         (statusFilter === 'Completed' && r.status === 'Closed') ||
         (statusFilter === 'In Progress' && r.status === 'Pending');
       const matchesChannel = channelFilter === 'All' || r.responseFeedbackChannel === channelFilter;
+      
       return inTimeline && matchesStatus && matchesChannel;
     });
   }, [records, sliderStart, sliderEnd, statusFilter, channelFilter]);
@@ -389,17 +394,39 @@ export default function App() {
             </button>
           )}
 
+          {/* Presentation Mode Toggle */}
+          <button
+            onClick={() => setPresentationMode(!presentationMode)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all duration-200 select-none cursor-pointer shrink-0 ${
+              presentationMode 
+                ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm' 
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+            }`}
+            title="Toggle presentation mode to filter view to completed/closed cases only"
+          >
+            <Presentation className={`w-3.5 h-3.5 shrink-0 ${presentationMode ? 'text-white' : 'text-slate-500'}`} />
+            <span>Pres. Mode: {presentationMode ? 'ON' : 'OFF'}</span>
+          </button>
+
           {/* User profile & Logout */}
           <div className="flex items-center gap-2.5 border-l border-slate-200 pl-4 shrink-0">
-            <img 
-              src={currentUser.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(currentUser.fullName)}`}
-              alt={currentUser.fullName}
-              className="w-8 h-8 rounded-full border border-slate-200 shadow-2xs select-none"
-            />
-            <div className="hidden lg:block text-left leading-tight">
-              <span className="text-[11px] font-black text-slate-800 block">{currentUser.fullName}</span>
-              <span className="text-[9px] text-slate-400 font-bold block uppercase tracking-wider">{currentUser.role}</span>
-            </div>
+            {currentUser && (
+              <button
+                onClick={() => setShowUserProfileModal(true)}
+                className="flex items-center gap-2 text-left hover:bg-slate-100 p-1 rounded-lg transition-all cursor-pointer group"
+                title="View and Edit Profile Settings"
+              >
+                <img 
+                  src={currentUser.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(currentUser.fullName)}`}
+                  alt={currentUser.fullName}
+                  className="w-8 h-8 rounded-full border border-slate-200 shadow-2xs select-none group-hover:scale-105 transition-transform"
+                />
+                <div className="hidden lg:block leading-tight">
+                  <span className="text-[11px] font-black text-slate-800 block group-hover:text-amber-600 transition-colors">{currentUser.fullName}</span>
+                  <span className="text-[9px] text-slate-400 font-bold block uppercase tracking-wider">{currentUser.role}</span>
+                </div>
+              </button>
+            )}
             <button
               onClick={handleLogout}
               className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
@@ -489,6 +516,8 @@ export default function App() {
                 <PowerBiMirror 
                   records={filteredByTimeline} 
                   onSelectRecord={(r) => setSelectedRecordId(r.id)} 
+                  presentationMode={presentationMode}
+                  onTogglePresentationMode={setPresentationMode}
                 />
               </div>
             )}
@@ -498,6 +527,16 @@ export default function App() {
       </div>
       {showColleagueManager && (
         <ColleagueManager onClose={() => setShowColleagueManager(false)} />
+      )}
+      {showUserProfileModal && currentUser && (
+        <UserProfileModal 
+          currentUser={currentUser} 
+          onUpdateCurrentUser={(updatedUser) => {
+            setCurrentUser(updatedUser);
+            localStorage.setItem('dhl_voc_current_user', JSON.stringify(updatedUser));
+          }}
+          onClose={() => setShowUserProfileModal(false)}
+        />
       )}
 
     </div>
