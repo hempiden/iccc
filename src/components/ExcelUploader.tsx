@@ -131,7 +131,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
           const responseFeedbackChannelVal = findValueByHeader(row, ['Response Feedback Channel', 'ResponseFeedbackChannel', 'Feedback Channel', 'Channel', 'Response Feedback']);
 
           // Treat missing survey ID as a skip, or generate one
-          const id = surveyIdVal ? String(surveyIdVal).trim() : `UPLOAD-${idx + 1}`;
+          const surveyId = surveyIdVal ? String(surveyIdVal).trim() : `UPLOAD-${idx + 1}`;
           
           // Parse Likelihood NPS score (default to 5 if empty or invalid)
           let likelihood = 5;
@@ -164,6 +164,10 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
           const transactionName = transactionNameVal ? String(transactionNameVal).trim() : 'Delivery by Courier';
           const topic = topicVal ? String(topicVal).trim() : classifyTopic(comment, transactionName);
           
+          // Generate a truly unique database ID in case of multiple rows for the same survey ID (split by theme)
+          const cleanTopic = topic ? topic.replace(/[^a-zA-Z0-9]/g, '_') : 'General';
+          const id = `${surveyId}_${cleanTopic}`;
+          
           let sentiment: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' | 'NO_OPINION' = 'NO_OPINION';
           if (sentimentVal) {
             const sText = String(sentimentVal).toUpperCase().trim();
@@ -176,6 +180,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
 
           parsedRecords.push({
             id,
+            surveyId,
             likelihood,
             category: getNPSCategory(likelihood),
             comment,

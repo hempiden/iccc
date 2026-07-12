@@ -24,6 +24,7 @@ export default function SurveyList({ records, onSelectRecord, selectedRecordId }
       const query = searchQuery.toLowerCase().trim();
       const matchesSearch = query === '' ||
         record.id.toLowerCase().includes(query) ||
+        (record.surveyId && record.surveyId.toLowerCase().includes(query)) ||
         record.comment.toLowerCase().includes(query) ||
         record.owner.toLowerCase().includes(query) ||
         (record.customerName && record.customerName.toLowerCase().includes(query)) ||
@@ -222,13 +223,13 @@ export default function SurveyList({ records, onSelectRecord, selectedRecordId }
                     {/* Survey ID */}
                     <td className="px-6 py-4 font-bold text-slate-900 font-mono">
                       <a
-                        href={getSurveyUrl(record.id)}
+                        href={getSurveyUrl(record.surveyId || record.id)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {record.id}
+                        {record.surveyId || record.id}
                       </a>
                     </td>
 

@@ -4,7 +4,7 @@ import {
   Printer, Camera, Maximize2, Minimize2, Palette, Type, Clipboard, Layers,
   Calendar, LogIn, LogOut, Plus, Trash2, Edit3, Send, Users, ShieldCheck, 
   HelpCircle, AlertCircle, Info, RefreshCw, Layout, Table, CheckSquare, Save, Eye, EyeOff, Clock,
-  MessageSquare
+  MessageSquare, Mail, Share2, ExternalLink, Check, FileText
 } from 'lucide-react';
 import { VoCRecord, ActionOwner, TimelineEvent, VoCComment } from '../types';
 import { getSurveyUrl } from '../utils/parser';
@@ -27,6 +27,44 @@ const PRESET_ACTION_OWNERS: ActionOwner[] = [
   { id: '3', username: 'sreynich.kong', fullName: 'Sreynich Kong', role: 'Retail Supervisor', department: 'Counter Services', avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&fit=crop&q=80' },
   { id: '4', username: 'thida.sovann', fullName: 'Thida Sovann', role: 'Resolution Specialist', department: 'Escalations Team', avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=80&fit=crop&q=80' }
 ];
+
+const getFacilityEmail = (facility: string): string => {
+  const clean = facility.trim().toUpperCase();
+  if (clean.includes('PNH') || clean.includes('GTW')) return 'facility.pnh@dhl.com';
+  if (clean.includes('REP')) return 'facility.rep@dhl.com';
+  if (clean.includes('KOS')) return 'facility.kos@dhl.com';
+  if (clean.includes('BTB')) return 'facility.btb@dhl.com';
+  return 'facility.operations@dhl.com';
+};
+
+const getPicEmail = (picName: string, facility: string, loadedColleagues: ActionOwner[] = []): string => {
+  if (!picName || picName.trim() === '' || picName.toLowerCase() === 'unassigned') {
+    return getFacilityEmail(facility);
+  }
+
+  // 1. Check in PRESET_ACTION_OWNERS
+  let colleague = PRESET_ACTION_OWNERS.find(c => c.fullName.toLowerCase() === picName.toLowerCase().trim());
+  
+  // 2. Check in loadedColleagues
+  if (!colleague && loadedColleagues) {
+    colleague = loadedColleagues.find(c => c.fullName.toLowerCase() === picName.toLowerCase().trim());
+  }
+
+  let picEmail = '';
+  if (colleague) {
+    picEmail = `${colleague.username}@dhl.com`;
+  } else {
+    // Generate a default email alias from the custom name (e.g., "Rothana Art" -> "rothana.art@dhl.com")
+    const cleanName = picName.toLowerCase().trim().replace(/[^a-z0-9\s.-]/g, '').replace(/\s+/g, '.');
+    picEmail = cleanName ? `${cleanName}@dhl.com` : '';
+  }
+
+  const facEmail = getFacilityEmail(facility);
+  if (picEmail && picEmail !== facEmail) {
+    return `${picEmail}, ${facEmail}`;
+  }
+  return facEmail;
+};
 
 export default function CustomerDetail({ 
   record, 
@@ -54,6 +92,15 @@ export default function CustomerDetail({
   const [slideStyle, setSlideStyle] = useState<'table' | 'bento'>('table');
   const [showOriginalFeedback, setShowOriginalFeedback] = useState(false);
   const [showOriginalActions, setShowOriginalActions] = useState(false);
+
+  // Outlook & Facility Dispatch Hub states
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareEmail, setShareEmail] = useState('');
+  const [shareSubject, setShareSubject] = useState('');
+  const [copiedEmailText, setCopiedEmailText] = useState(false);
+  const [manualReplyText, setManualReplyText] = useState('');
+  const [isCopiedLink, setIsCopiedLink] = useState(false);
+  const [hasDispatched, setHasDispatched] = useState(false);
 
   // Collaboration / Action Owner workspace fields
   const [editStatus, setEditStatus] = useState<VoCRecord['status']>(record.status);
@@ -118,7 +165,18 @@ export default function CustomerDetail({
     // Infer a default deadline from timeline if exists, else blank
     const inferredDeadline = record.timeline[0]?.deadline || '30 Apr';
     setEditDeadline(inferredDeadline);
-  }, [record.id]);
+
+    // Sync Outlook dispatch details
+    setShareEmail(getPicEmail(record.owner || '', recordFacility, colleagues));
+    setShareSubject(`[VoC Action Required] Survey Case ID: ${record.surveyId || record.id} (Facility: ${recordFacility})`);
+    setHasDispatched(false);
+    setManualReplyText('');
+  }, [record.id, recordFacility]);
+
+  // Sync share email recipient dynamically when Assigned Owner (editOwner) changes
+  useEffect(() => {
+    setShareEmail(getPicEmail(editOwner, recordFacility, colleagues));
+  }, [editOwner, recordFacility, colleagues]);
 
   // Keep comments in sync with database/record changes, independent of other parameter fields
   useEffect(() => {
@@ -336,6 +394,93 @@ export default function CustomerDetail({
     setTimeout(() => setIsSavedNotify(false), 3000);
   };
 
+  const generateMailtoLink = () => {
+    const bodyText = `Dear Facility Team,
+
+Please assist in checking the progress of the following Voice of the Customer (VoC) feedback:
+
+- Case ID: ${record.surveyId || record.id}
+- Facility: ${recordFacility}
+- NPS Category: ${record.category} (Score: ${record.likelihood})
+
+Customer Comment:
+"${record.comment}"
+
+Management Summary:
+"${activeSummary}"
+
+Please click the secure link below to view this case, add updates, or respond directly in the VoC Portal:
+${window.location.origin}/?id=${record.id}
+
+Best regards,
+${currentUser?.fullName || 'VoC Team'}
+${currentUser?.role || ''} (${currentUser?.department || ''})`;
+
+    return `mailto:${encodeURIComponent(shareEmail)}?subject=${encodeURIComponent(shareSubject)}&body=${encodeURIComponent(bodyText)}`;
+  };
+
+  const handleDispatchSuccess = () => {
+    // 1. Trigger the Mailto link
+    const mailLink = generateMailtoLink();
+    window.location.href = mailLink;
+
+    // 2. Add an automatic system comment
+    const dispatchComment: VoCComment = {
+      id: `sys-${Date.now()}`,
+      timestamp: getFormattedDateTime(),
+      author: currentUser?.fullName || 'VoC Portal',
+      role: currentUser?.role || 'System',
+      text: `📧 [SYSTEM ALERT] Dispatched case to Facility Team (${shareEmail}). Awaiting feedback.`
+    };
+    const updatedComments = [...editComments, dispatchComment];
+    setEditComments(updatedComments);
+
+    // Also add to the timeline
+    const dispatchEvent: TimelineEvent = {
+      timestamp: 'Today',
+      action: `Email Dispatched to Facility (${shareEmail})`,
+      pic: currentUser?.fullName || 'System',
+      status: 'In Progress'
+    };
+    const updatedTimeline = [dispatchEvent, ...editTimeline];
+    setEditTimeline(updatedTimeline);
+
+    // Save to Firestore
+    onUpdateRecord({
+      ...record,
+      comments: updatedComments,
+      timeline: updatedTimeline
+    });
+
+    setHasDispatched(true);
+  };
+
+  const handleSyncManualReply = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualReplyText.trim()) return;
+
+    const replyComment: VoCComment = {
+      id: `outlook-sync-${Date.now()}`,
+      timestamp: getFormattedDateTime(),
+      author: `Outlook Sync [Facility]`,
+      role: 'Facility Team Response',
+      text: manualReplyText.trim()
+    };
+
+    const updatedComments = [...editComments, replyComment];
+    setEditComments(updatedComments);
+    setManualReplyText('');
+
+    // Update status to In Progress automatically
+    onUpdateRecord({
+      ...record,
+      status: 'In Progress',
+      comments: updatedComments
+    });
+
+    alert('Email response successfully saved and synchronized into the Conversation History!');
+  };
+
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (!regUsername.trim() || !regFullName.trim()) return;
@@ -411,7 +556,7 @@ export default function CustomerDetail({
   // Action: Copy text outline
   const handleCopyText = () => {
     const textToCopy = `
-Survey Case Report - ID: ${record.id}
+Survey Case Report - ID: ${record.surveyId || record.id}
 Likelihood (NPS): ${record.likelihood} (${record.category})
 Case Status: ${record.status}
 Follow-up Owner: ${record.owner}
@@ -476,6 +621,14 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
           >
             <Clipboard className="w-4 h-4 text-slate-500" />
             {copied ? 'Copied!' : 'Copy Raw Report'}
+          </button>
+
+          <button
+            onClick={() => setShowShareModal(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-xs transition-colors cursor-pointer"
+          >
+            <Mail className="w-4 h-4 text-amber-500 animate-pulse" />
+            Outlook Dispatch
           </button>
 
           <button
@@ -683,15 +836,15 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                         <span className="font-mono text-slate-400">No AWB</span>
                       )}
                     </div>
-                    <div className="truncate" title={record.id}>
+                    <div className="truncate" title={record.surveyId || record.id}>
                       <span className="text-slate-400">Survey ID:</span>{' '}
                       <a
-                        href={getSurveyUrl(record.id)}
+                        href={getSurveyUrl(record.surveyId || record.id)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-800 hover:underline font-bold transition-colors"
                       >
-                        {record.id}
+                        {record.surveyId || record.id}
                       </a>
                     </div>
                     <div className="truncate text-slate-700" title={record.customerName}>
@@ -840,7 +993,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                   {(editFollowUpComments || record.followUpComments) && (
                     <div className="flex flex-col rounded-xl border-2 border-slate-200 overflow-hidden shadow-xs bg-white">
                       <div className="bg-slate-50 px-5 py-3 border-b border-slate-200">
-                        <span className="text-xs font-extrabold uppercase tracking-widest text-slate-500">Additional Inquiry Bulletins</span>
+                        <span className="text-xs font-extrabold uppercase tracking-widest text-slate-500">Additional Details</span>
                       </div>
                       <div className="p-5 text-sm text-slate-700 bg-white leading-relaxed font-sans whitespace-pre-line">
                         {editFollowUpComments || record.followUpComments}
@@ -853,9 +1006,9 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                 <div className="lg:col-span-7">
                   <div className="flex flex-col rounded-xl border-2 border-slate-200 overflow-hidden shadow-xs bg-white">
                     <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex justify-between items-center">
-                      <span className="text-xs font-extrabold uppercase tracking-widest text-slate-500">In-System Follow-up Conversation</span>
+                      <span className="text-xs font-extrabold uppercase tracking-widest text-slate-500">Conversation History</span>
                       <span className="text-[9px] text-emerald-600 font-bold uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        Me, HoD & Facility Team
+                        Team
                       </span>
                     </div>
 
@@ -1127,7 +1280,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
                   <Edit3 className="w-4 h-4 text-amber-500" />
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-700">1. Case Parameters & Summaries</span>
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-700">Case Parameters</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -1158,7 +1311,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Case Owner / PIC Assigned</label>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Assigned Owner</label>
                   {(isSuperAdmin || isHoD) ? (
                     <div className="space-y-2">
                       <select
@@ -1185,9 +1338,6 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                             disabled={!hasEditPermission}
                             className="w-full p-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden disabled:opacity-60 disabled:cursor-not-allowed placeholder-slate-400 font-medium text-slate-800"
                           />
-                          <span className="text-[10px] text-slate-400 block leading-tight">
-                            Type custom name for colleagues who don't have a portal account yet.
-                          </span>
                         </div>
                       )}
                     </div>
@@ -1205,8 +1355,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
 
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Concise Slide Summary (Max 2 sentences)</label>
-                    <span className="text-[10px] text-slate-400 font-medium">Replaces raw feedback in PPT slide by default</span>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Slide Summary</label>
                   </div>
                   <textarea
                     rows={3}
@@ -1240,8 +1389,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
 
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Concise Actions Taken Summary (Bullet List)</label>
-                    <span className="text-[10px] text-slate-400 font-medium">Replaces timeline list in PPT slide by default</span>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Actions Taken Summary</label>
                   </div>
                   <textarea
                     rows={3}
@@ -1274,7 +1422,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Additional Bulletins & Inquiries (Detail sharing)</label>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Additional Details</label>
                   <textarea
                     rows={3}
                     value={editFollowUpComments}
@@ -1290,7 +1438,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
                   <MessageSquare className="w-4 h-4 text-amber-500" />
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-700">2. Follow-up Conversation (Me, HoD, Facility team)</span>
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-700">Follow-up Chat</span>
                 </div>
 
                 {/* Comment list with delete button */}
@@ -1338,7 +1486,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                 {/* Form to post a new comment */}
                 {hasEditPermission && (
                   <form onSubmit={handlePostComment} className="bg-slate-50 p-4 rounded-xl border border-slate-200/50 space-y-3">
-                    <span className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider">Post Follow-up Comment / Question</span>
+                    <span className="block text-[10px] font-extrabold text-slate-700 uppercase tracking-wider">New Comment</span>
                     <div className="space-y-2">
                       <textarea
                         rows={2}
@@ -1370,7 +1518,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                   className="px-6 py-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-black text-sm rounded-xl shadow-md cursor-pointer transition-all flex items-center gap-2"
                 >
                   <Save className="w-4 h-4" />
-                  Publish Update to Management Slide
+                  Publish Update
                 </button>
               </div>
             )}
@@ -1383,8 +1531,155 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
       {/* Helper notice */}
       <div className="mt-4 text-center text-xs text-slate-400 print:hidden flex items-center justify-center gap-1.5">
         <Camera className="w-4 h-4 text-slate-300" />
-        <span>Pro-Tip: Press <kbd className="bg-slate-100 px-1 rounded font-semibold">Ctrl + P</kbd> (or <kbd className="bg-slate-100 px-1 rounded font-semibold">Cmd + P</kbd> on Mac) to save this individual slide cleanly as a PDF.</span>
+        <span>Press <kbd className="bg-slate-100 px-1 rounded font-semibold">Ctrl + P</kbd> to save as PDF.</span>
       </div>
+
+      {/* 3. Outlook & Team Dispatch Hub Modal overlay */}
+      {showShareModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in font-sans">
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+            {/* DHL Style Header bar */}
+            <div className="bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 p-4 text-slate-900 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Mail className="w-5 h-5 text-slate-900 animate-pulse" />
+                <div>
+                  <h3 className="font-black text-sm uppercase tracking-tight">Facility & Service Center Dispatch</h3>
+                  <p className="text-[10px] text-slate-800 font-bold uppercase tracking-wider">Send Case to Outlook & Sync Replies</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowShareModal(false)}
+                className="text-slate-900 hover:bg-slate-900/10 p-1.5 rounded-lg font-black transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 overflow-y-auto max-h-[80vh]">
+              {/* Feasibility Alert Box */}
+              <div className="p-3.5 bg-amber-50/80 border border-amber-200/60 rounded-xl text-xs text-amber-900 space-y-1">
+                <p className="font-bold flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                  Outlook Integration Status (Full Client Sync Enabled)
+                </p>
+                <p className="leading-relaxed text-amber-800">
+                  You can draft pre-populated Outlook emails instantly. Direct traceback links are automatically generated so the Facility team can view/respond. To log their replies, simply paste the email text below to append it to the discussion history in one click.
+                </p>
+              </div>
+
+              {/* Form details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-[10px] font-black text-slate-500 uppercase">To: Recipient (PIC & Team Emails)</label>
+                    <span className="text-[9px] text-slate-400 font-medium">Comma-separated</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={shareEmail}
+                    onChange={(e) => setShareEmail(e.target.value)}
+                    placeholder="e.g. pic.email@dhl.com, facility.pnh@dhl.com"
+                    className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                  />
+                  <span className="text-[10px] text-slate-400 block mt-1 leading-tight">
+                    Prepopulated with Assigned PIC + Facility Hub emails. Feel free to type/append more.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Traceback Link (Auto-Generated)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${window.location.origin}/?id=${record.id}`}
+                      className="flex-1 p-2 text-[10px] bg-slate-100 border border-slate-200 rounded-lg text-slate-500 font-mono select-all focus:outline-hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/?id=${record.id}`);
+                        setIsCopiedLink(true);
+                        setTimeout(() => setIsCopiedLink(false), 2000);
+                      }}
+                      className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 text-[10px] font-bold cursor-pointer transition-colors"
+                    >
+                      {isCopiedLink ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Subject</label>
+                <input
+                  type="text"
+                  value={shareSubject}
+                  onChange={(e) => setShareSubject(e.target.value)}
+                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              {/* Step 1: Mailto Draft */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Step 1: Launch Preformatted Outlook Draft</span>
+                <p className="text-xs text-slate-600">
+                  This will generate and open an Outlook message prefilled with all diagnostic details and your traceback secure URL.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDispatchSuccess}
+                    className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-950 text-white rounded-lg text-xs font-bold shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-all"
+                  >
+                    <Mail className="w-4 h-4 text-amber-400" />
+                    Open Outlook Message Draft
+                  </button>
+                </div>
+                {hasDispatched && (
+                  <p className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 animate-pulse">
+                    <Check className="w-3.5 h-3.5 animate-bounce" />
+                    Dispatch logged in System Timeline and Comment thread!
+                  </p>
+                )}
+              </div>
+
+              {/* Step 2: Sync replies */}
+              <form onSubmit={handleSyncManualReply} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Step 2: Sync Outlook Reply back to Conversation History</span>
+                <p className="text-xs text-slate-600">
+                  Did the facility team reply? Paste their email response here to immediately save and synchronize it back as a timeline comment.
+                </p>
+                <textarea
+                  rows={3}
+                  value={manualReplyText}
+                  onChange={(e) => setManualReplyText(e.target.value)}
+                  placeholder="Paste Facility Team email reply text here..."
+                  className="w-full p-2.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-amber-500 resize-none font-sans"
+                />
+                <button
+                  type="submit"
+                  disabled={!manualReplyText.trim()}
+                  className="w-full py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 rounded-lg text-xs font-black shadow-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Sync Reply to Conversation History
+                </button>
+              </form>
+            </div>
+
+            <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowShareModal(false)}
+                className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-bold cursor-pointer transition-all"
+              >
+                Close Dispatch Hub
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

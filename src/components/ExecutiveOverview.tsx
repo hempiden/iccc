@@ -511,11 +511,11 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
     } else {
       // Weekly
       const weeks = [
-        { name: 'Week of 05/31', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Week of 06/07', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Week of 06/14', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Week of 06/21', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Week of 06/28', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } }
+        { name: 'W-01', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
+        { name: 'W-02', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
+        { name: 'W-03', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
+        { name: 'W-04', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
+        { name: 'W-05', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } }
       ];
 
       records.forEach((r, idx) => {

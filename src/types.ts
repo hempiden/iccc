@@ -29,7 +29,8 @@ export interface ActionOwner {
 }
 
 export interface VoCRecord {
-  id: string; // Survey ID
+  id: string; // Unique database record ID
+  surveyId?: string; // Original Survey ID (which may have duplicates for different themes)
   likelihood: number; // NPS Score (0-10)
   category: 'Promoter' | 'Passive' | 'Detractor';
   comment: string; // Primary Customer Comment

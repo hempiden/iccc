@@ -277,6 +277,20 @@ export default function App() {
     }
   };
 
+  // Deep-linking support to directly select a survey case on startup/URL change
+  useEffect(() => {
+    if (records.length > 0) {
+      const params = new URLSearchParams(window.location.search);
+      const targetId = params.get('id') || params.get('caseId');
+      if (targetId) {
+        const found = records.find(r => r.id === targetId || r.surveyId === targetId);
+        if (found) {
+          setSelectedRecordId(found.id);
+        }
+      }
+    }
+  }, [records]);
+
   // Sync user session to localStorage
   const handleLogin = (user: ActionOwner) => {
     setCurrentUser(user);

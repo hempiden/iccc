@@ -47,6 +47,7 @@ export default function CompactSidebarList({
       const query = searchQuery.toLowerCase().trim();
       const matchesSearch = query === '' ||
         record.id.toLowerCase().includes(query) ||
+        (record.surveyId && record.surveyId.toLowerCase().includes(query)) ||
         record.comment.toLowerCase().includes(query) ||
         record.owner.toLowerCase().includes(query);
 
@@ -235,13 +236,13 @@ export default function CompactSidebarList({
                   <div className="font-semibold text-sm text-slate-800 tracking-tight flex items-center gap-2">
                     <span className="font-mono">
                       <a
-                        href={getSurveyUrl(record.id)}
+                        href={getSurveyUrl(record.surveyId || record.id)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-800 hover:underline transition-colors font-bold"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {record.id}
+                        {record.surveyId || record.id}
                       </a>
                     </span>
                   </div>
