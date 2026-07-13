@@ -86,6 +86,7 @@ export default function App() {
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [showColleagueManager, setShowColleagueManager] = useState(false);
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'presentation' | 'upload'>('dashboard');
 
   // Notifications states and handlers
   const [readNotifications, setReadNotifications] = useState<string[]>(() => {
@@ -486,18 +487,68 @@ export default function App() {
     <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans antialiased text-slate-900 overflow-hidden h-screen" id="voc-main-container">
       {/* 1. Sleek Navigation Header (Hidden during printing) */}
       <nav className="h-16 flex items-center justify-between px-6 bg-white border-b border-slate-200 shrink-0 print:hidden z-50 shadow-xs">
-        <div className="flex items-center gap-2.5">
-          <img 
-            src="https://1000logos.net/wp-content/uploads/2018/08/DHL-emblem.jpg" 
-            alt="DHL Logo" 
-            referrerPolicy="no-referrer"
-            className="h-8 w-auto object-contain rounded-md"
-          />
-          <div>
-            <span className="font-extrabold text-base tracking-tight text-slate-800 uppercase">
-              Voice Portal
-            </span>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2.5">
+            <img 
+              src="https://1000logos.net/wp-content/uploads/2018/08/DHL-emblem.jpg" 
+              alt="DHL Logo" 
+              referrerPolicy="no-referrer"
+              className="h-8 w-auto object-contain rounded-md"
+            />
+            <div>
+              <span className="font-extrabold text-base tracking-tight text-slate-800 uppercase">
+                Voice Portal
+              </span>
+            </div>
           </div>
+
+          {/* Navigation Tabs for Superadmin */}
+          {currentUser?.role === 'superadmin' && (
+            <div className="hidden sm:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                onClick={() => {
+                  setActiveTab('dashboard');
+                  setSelectedRecordId(null);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'dashboard'
+                    ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5 text-amber-500" />
+                <span>Dashboard</span>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('presentation');
+                  setSelectedRecordId(null);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'presentation'
+                    ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Presentation className="w-3.5 h-3.5 text-amber-500 animate-none" />
+                <span>Presentation Deck</span>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('upload');
+                  setSelectedRecordId(null);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'upload'
+                    ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500" />
+                <span>Upload Center</span>
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -544,18 +595,20 @@ export default function App() {
           )}
 
           {/* Presentation Mode Toggle */}
-          <button
-            onClick={() => setPresentationMode(!presentationMode)}
-            className={`flex items-center gap-1 px-2 py-1 text-[11px] font-bold rounded-lg border transition-all select-none cursor-pointer shrink-0 ${
-              presentationMode 
-                ? 'bg-emerald-600 text-white border-emerald-700' 
-                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-            }`}
-            title="Presentation Mode"
-          >
-            <Presentation className="w-3.5 h-3.5 shrink-0" />
-            <span>Pres. Mode</span>
-          </button>
+          {activeTab !== 'presentation' && (
+            <button
+              onClick={() => setPresentationMode(!presentationMode)}
+              className={`flex items-center gap-1 px-2 py-1 text-[11px] font-bold rounded-lg border transition-all select-none cursor-pointer shrink-0 ${
+                presentationMode 
+                  ? 'bg-emerald-600 text-white border-emerald-700' 
+                  : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Presentation Mode"
+            >
+              <Presentation className="w-3.5 h-3.5 shrink-0" />
+              <span>Pres. Mode</span>
+            </button>
+          )}
 
           {/* User profile, Notifications & Logout */}
           <div className="flex items-center gap-2 border-l border-slate-200 pl-3 shrink-0">
@@ -599,7 +652,7 @@ export default function App() {
         
         {/* Left Sidebar: Compact Searchable Table (Visible on desktop, or on mobile when no record selected) */}
         <aside className={`w-[320px] bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-hidden h-full transition-all duration-300 ${
-          selectedRecordId ? 'hidden md:flex' : 'flex w-full md:w-[320px]'
+          activeTab === 'upload' ? 'hidden' : (selectedRecordId ? 'hidden md:flex' : 'flex w-full md:w-[320px]')
         } print:hidden`}>
           <CompactSidebarList 
             records={filteredByTimeline}
@@ -620,13 +673,64 @@ export default function App() {
             setCategoryFilter={setCategoryFilter}
           />
         </aside>
-
+ 
         {/* Right Panel: Detail View / Dashboard Portfolios */}
         <main className={`flex-1 bg-slate-50/40 overflow-y-auto flex flex-col h-full ${
-          selectedRecordId ? 'flex' : 'hidden md:flex'
+          selectedRecordId ? 'flex' : (activeTab === 'upload' ? 'flex' : 'hidden md:flex')
         } print:overflow-visible print:h-auto`}>
           
           <div className="p-6 md:p-8 flex flex-col gap-6 max-w-6xl w-full mx-auto print:p-0">
+            {/* Mobile Tab Navigation for Superadmin */}
+            {!selectedRecordId && currentUser?.role === 'superadmin' && (
+              <div className="sm:hidden flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('dashboard');
+                    setSelectedRecordId(null);
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    activeTab === 'dashboard'
+                      ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Activity className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Dashboard</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('presentation');
+                    setSelectedRecordId(null);
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    activeTab === 'presentation'
+                      ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Presentation className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Presentation</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('upload');
+                    setSelectedRecordId(null);
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    activeTab === 'upload'
+                      ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Upload</span>
+                </button>
+              </div>
+            )}
+
             {selectedRecord ? (
               /* Presentation slide detail view */
               <CustomerDetail 
@@ -637,12 +741,140 @@ export default function App() {
                 onLogin={handleLogin}
                 onLogout={handleLogout}
               />
-            ) : (
-              /* Welcome block & Uploader & Executive KPI overview portfolio & Power BI Mirror integrated */
+            ) : activeTab === 'upload' && currentUser?.role === 'superadmin' ? (
+              /* Dedicated Upload Ingestion Page */
               <div className="space-y-6 animate-fade-in print:hidden">
                 <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-6 md:p-8 border border-slate-800 shadow-md relative overflow-hidden">
                   <div className="absolute right-0 bottom-0 translate-x-12 translate-y-12 opacity-5 pointer-events-none">
-                    <Truck className="w-80 h-80 text-white" />
+                    <FileSpreadsheet className="w-80 h-80 text-white opacity-5" />
+                  </div>
+                  
+                  <div className="relative z-10 max-w-2xl space-y-3">
+                    <span className="text-xs font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2.5 py-1 rounded-md border border-amber-400/20">
+                      Administrative Tool
+                    </span>
+                    <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
+                      DHL VoC Data Ingestion Center
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-medium">
+                      Upload your weekly Customer Experience Voice of Customer survey results from Excel sheets or CSV logs. This interface allows you to append new weekly surveys dynamically or fully overwrite the existing shared Firestore database.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Uploader Component */}
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs">
+                  <ExcelUploader 
+                    onRecordsLoaded={(recs) => {
+                      handleRecordsLoaded(recs);
+                      setActiveTab('dashboard');
+                    }}
+                    onAppendRecords={(recs) => {
+                      handleAppendRecords(recs);
+                      setActiveTab('dashboard');
+                    }}
+                    currentCount={records.length}
+                  />
+                </div>
+
+                {/* Database Health & Column Mapping Guide */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Card 1: Data Schema Rules */}
+                  <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                      <HelpCircle className="w-4 h-4 text-amber-500" />
+                      Smart Column Auto-Mapping
+                    </h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Our ingestion engine uses smart keyword search to locate relevant data columns in your Excel files automatically. For optimal results, ensure your Excel headers match any of these synonyms:
+                    </p>
+                    <ul className="space-y-2.5 text-xs">
+                      <li className="flex justify-between items-center py-1 border-b border-slate-100">
+                        <span className="font-bold text-slate-700">Survey ID</span>
+                        <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-md font-mono text-slate-600">Survey ID, ID, Interaction ID</span>
+                      </li>
+                      <li className="flex justify-between items-center py-1 border-b border-slate-100">
+                        <span className="font-bold text-slate-700">NPS Score</span>
+                        <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-md font-mono text-slate-600">Likelihood, NPS, Score, Rating</span>
+                      </li>
+                      <li className="flex justify-between items-center py-1 border-b border-slate-100">
+                        <span className="font-bold text-slate-700">Customer Feedback</span>
+                        <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-md font-mono text-slate-600">Comment, Feedback, Primary Comment</span>
+                      </li>
+                      <li className="flex justify-between items-center py-1 border-b border-slate-100">
+                        <span className="font-bold text-slate-700">Action Logs / Description</span>
+                        <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-md font-mono text-slate-600">Action Details, Logs, Timeline</span>
+                      </li>
+                      <li className="flex justify-between items-center py-1">
+                        <span className="font-bold text-slate-700">Follow-up Owner</span>
+                        <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-md font-mono text-slate-600">Owner, Staff, Followup Owner</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Card 2: Database Summary Metrics */}
+                  <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-emerald-500" />
+                      Live Database Status
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Surveys</span>
+                        <span className="text-2xl font-black text-slate-800 block mt-1">{records.length}</span>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Active Channels</span>
+                        <span className="text-2xl font-black text-slate-800 block mt-1">{uniqueChannels.length || 3}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed pt-2">
+                      Need to reset the system database? You can instantly wipe custom uploads and restore the default DHL VoC sample set using the <strong className="text-slate-700">Reset Button (↻)</strong> in the top navigation bar.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : activeTab === 'presentation' ? (
+              /* Executive Presentation Dashboard Portfolios */
+              <div className="space-y-6 animate-fade-in print:hidden">
+                <div className="bg-gradient-to-r from-red-700 to-red-900 text-white rounded-2xl p-6 md:p-8 border border-red-800 shadow-md relative overflow-hidden">
+                  <div className="absolute right-0 bottom-0 translate-x-12 translate-y-12 opacity-5 pointer-events-none select-none">
+                    <Presentation className="w-80 h-80 text-white opacity-5" />
+                  </div>
+                  
+                  <div className="relative z-10 max-w-2xl space-y-3">
+                    <span className="text-xs font-bold text-yellow-300 bg-yellow-400/10 px-2.5 py-1 rounded-md border border-yellow-400/20 uppercase tracking-widest">
+                      Executive Showcase
+                    </span>
+                    <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight uppercase">
+                      DHL iCCC Voice of Customer Presentation Deck
+                    </h2>
+                    <p className="text-xs sm:text-sm text-red-100 leading-relaxed font-medium">
+                      Curated slides presenting action plans and key resolutions for customer escalations. Perfect for presentation, executive reviews, and stakeholder showcases.
+                    </p>
+                  </div>
+                </div>
+
+                <ExecutiveOverview records={filteredByTimelineAndChannel} allRecords={records} />
+
+                {/* Unified Interactive Power BI Mirror Component (Presentation Style) */}
+                <PowerBiMirror 
+                  records={filteredByTimelineAndChannel} 
+                  onSelectRecord={(r) => setSelectedRecordId(r.id)} 
+                  onDeleteRecords={handleDeleteRecords}
+                  presentationMode={true}
+                  isPresentationPage={true}
+                  statusFilter={statusFilter}
+                  categoryFilter={categoryFilter}
+                  setCategoryFilter={setCategoryFilter}
+                />
+              </div>
+            ) : (
+              /* Welcome block & Executive KPI overview portfolio & Power BI Mirror integrated */
+              <div className="space-y-6 animate-fade-in print:hidden">
+                <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-6 md:p-8 border border-slate-800 shadow-md relative overflow-hidden">
+                  <div className="absolute right-0 bottom-0 translate-x-12 translate-y-12 opacity-5 pointer-events-none select-none">
+                    <Truck className="w-80 h-80 text-white opacity-5" />
                   </div>
                   
                   <div className="relative z-10 max-w-2xl space-y-3">
@@ -657,15 +889,6 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-
-                {/* File ingestion and action portfolio stats */}
-                {currentUser?.role === 'superadmin' && (
-                  <ExcelUploader 
-                    onRecordsLoaded={handleRecordsLoaded}
-                    onAppendRecords={handleAppendRecords}
-                    currentCount={records.length}
-                  />
-                )}
 
                 <ExecutiveOverview records={filteredByTimelineAndChannel} allRecords={records} />
 

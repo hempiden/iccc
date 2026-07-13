@@ -18,6 +18,7 @@ interface PowerBiMirrorProps {
   statusFilter?: 'All' | 'New' | 'In Progress' | 'Completed';
   categoryFilter?: 'All' | 'Promoter' | 'Passive' | 'Detractor';
   setCategoryFilter?: (category: 'All' | 'Promoter' | 'Passive' | 'Detractor') => void;
+  isPresentationPage?: boolean;
 }
 
 // Interface for structured weekly chart data
@@ -55,7 +56,8 @@ export default function PowerBiMirror({
   onTogglePresentationMode,
   statusFilter,
   categoryFilter,
-  setCategoryFilter
+  setCategoryFilter,
+  isPresentationPage = false
 }: PowerBiMirrorProps) {
   // --- States for Dropdown Filters ---
   const [responseFeed, setResponseFeed] = useState<'All' | 'Detractor' | 'Passive' | 'Promoter'>('All');
@@ -73,8 +75,6 @@ export default function PowerBiMirror({
     category: 'Promoter' | 'Passive' | 'Detractor' | null;
   }>({ channel: null, week: null, category: null });
 
-  const [chartViewMode, setChartViewMode] = useState<'chart' | 'text'>('text');
-
   // Toggle rows for comment expansions
   const [expandedComments, setExpandedComments] = useState<{ [id: string]: boolean }>({});
 
@@ -85,7 +85,7 @@ export default function PowerBiMirror({
 
   // --- Presentation Mode ---
   const [localPresentationMode, setLocalPresentationMode] = useState(false);
-  const presentationMode = presentationModeProp !== undefined ? presentationModeProp : localPresentationMode;
+  const presentationMode = isPresentationPage ? true : (presentationModeProp !== undefined ? presentationModeProp : localPresentationMode);
   const setPresentationMode = (val: boolean) => {
     if (onTogglePresentationMode) {
       onTogglePresentationMode(val);
@@ -488,32 +488,6 @@ export default function PowerBiMirror({
           <TrendingUp className="w-4 h-4 text-slate-900 shrink-0" />
           Voice (iCCC) Dashboard
         </span>
-        
-        {/* Toggle between Text View and Bar Chart View */}
-        <div className="flex bg-slate-900/10 p-0.5 rounded-lg border border-slate-950/10 shrink-0">
-          <button
-            type="button"
-            onClick={() => setChartViewMode('text')}
-            className={`px-2.5 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer uppercase tracking-wider ${
-              chartViewMode === 'text'
-                ? 'bg-slate-900 text-[#ffcc00] shadow-sm'
-                : 'text-slate-800 hover:text-black hover:bg-slate-950/5'
-            }`}
-          >
-            Text View
-          </button>
-          <button
-            type="button"
-            onClick={() => setChartViewMode('chart')}
-            className={`px-2.5 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer uppercase tracking-wider ${
-              chartViewMode === 'chart'
-                ? 'bg-slate-900 text-[#ffcc00] shadow-sm'
-                : 'text-slate-800 hover:text-black hover:bg-slate-950/5'
-            }`}
-          >
-            Bar Chart View
-          </button>
-        </div>
       </div>
 
       {/* ========================================================= */}
@@ -533,7 +507,7 @@ export default function PowerBiMirror({
           return (
             <div 
               key={chName} 
-              className={`bg-slate-50/50 p-4 rounded-xl border transition-all relative ${
+              className={`bg-slate-50/50 p-4 rounded-xl border transition-all relative min-w-0 overflow-hidden ${
                 isChannelSelected ? 'border-amber-400 ring-2 ring-amber-100 bg-amber-50/5' : 'border-slate-200'
               }`}
             >
@@ -543,19 +517,17 @@ export default function PowerBiMirror({
                   <h3 className="text-xs font-black text-slate-800 tracking-wider uppercase">
                     {chName} Survey
                   </h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">NPS Category</span>
-                    <div className="flex items-center gap-1.5 text-[8px] font-bold">
-                      {chName !== 'SVC' && (
-                        <span className="flex items-center gap-0.5 text-slate-500">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" /> Detractor
-                        </span>
-                      )}
-                      <span className="flex items-center gap-0.5 text-slate-500">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#3b82f6]" /> Passive
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1.5">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">NPS Category</span>
+                    <div className="flex items-center gap-2 text-[9px] font-bold">
+                      <span className="flex items-center gap-1 text-slate-600">
+                        <span className="w-2 h-2 rounded-full bg-[#0f2c59]" /> Promoter
                       </span>
-                      <span className="flex items-center gap-0.5 text-slate-500">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#0f2c59]" /> Promoter
+                      <span className="flex items-center gap-1 text-slate-600">
+                        <span className="w-2 h-2 rounded-full bg-[#3b82f6]" /> Passive
+                      </span>
+                      <span className="flex items-center gap-1 text-slate-600">
+                        <span className="w-2 h-2 rounded-full bg-[#ef4444]" /> Detractor
                       </span>
                     </div>
                   </div>
@@ -570,279 +542,166 @@ export default function PowerBiMirror({
                 )}
               </div>
 
-              {/* Main SVG/HTML Canvas Arena or Text Grid alternative */}
-              {chartViewMode === 'text' ? (
-                /* High-density, gorgeous text table for perfect responsive viewing */
-                <div className="flex flex-col h-[235px] justify-between overflow-y-auto pt-2">
-                  <table className="w-full text-left text-[11px] font-sans">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-400 font-extrabold uppercase tracking-wider text-[9px] select-none">
-                        <th className="py-2">Week</th>
-                        <th className="py-2 text-center">Total</th>
-                        <th className="py-2 text-center text-[#0f2c59]">Prom</th>
-                        <th className="py-2 text-center text-[#3b82f6]">Pass</th>
-                        <th className="py-2 text-center text-[#ef4444]">Detr</th>
-                        <th className="py-2 text-right">NPS</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {list.map(pt => {
-                        const isWeekSelected = selectedWeeks.includes(pt.weekKey);
-                        const npsScore = pt.total > 0 ? Math.round(((pt.promoters - pt.detractors) / pt.total) * 100) : 0;
-                        const npsColor = npsScore > 0 ? 'text-emerald-600 font-black' : npsScore < 0 ? 'text-rose-600 font-black' : 'text-slate-500 font-black';
-                        
-                        const isRowFiltered = selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName;
+              {/* Main SVG/HTML Canvas Arena */}
+              <div className="flex h-48 items-stretch relative">
+                
+                {/* A. Vertical Power BI Scroll/Zoom Slider Slider */}
+                <div className="w-5 flex flex-col items-center justify-between py-2 shrink-0 border-r border-slate-200/60 mr-2">
+                  <div className="w-1.5 h-full bg-slate-200 rounded-full relative flex flex-col justify-between">
+                    {/* Top Handle */}
+                    <div className="absolute top-0 -left-1 w-3.5 h-3.5 rounded-full bg-white border border-slate-400 shadow-sm cursor-row-resize flex items-center justify-center">
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+                    </div>
+                    {/* Bottom Handle */}
+                    <div className="absolute bottom-0 -left-1 w-3.5 h-3.5 rounded-full bg-white border border-slate-400 shadow-sm cursor-row-resize flex items-center justify-center">
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+                    </div>
+                  </div>
+                  <span className="text-[7px] font-black text-slate-400 rotate-270 uppercase tracking-widest translate-y-1 block h-2 shrink-0">Zoom</span>
+                </div>
 
-                        return (
-                          <tr 
-                            key={pt.weekKey} 
-                            className={`hover:bg-slate-100/60 transition-colors ${
-                              !isWeekSelected ? 'opacity-30' : ''
-                            } ${isRowFiltered && !selectedChartFilter.category ? 'bg-amber-50/50 font-bold' : ''}`}
-                          >
-                            {/* Week number */}
-                            <td className="py-2 font-black text-slate-800">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: null })}
-                                className="hover:underline text-left cursor-pointer font-black text-slate-800"
-                              >
-                                W{pt.week}
-                              </button>
-                            </td>
+                {/* B. Count of Survey ID label vertical */}
+                <div className="w-4 flex items-center justify-center shrink-0 relative">
+                  <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-wider whitespace-nowrap absolute transform -rotate-90 origin-center">
+                    Count of Survey ID
+                  </span>
+                </div>
 
-                            {/* Total Count */}
-                            <td className="py-2 text-center font-mono font-bold text-slate-600">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: null })}
-                                className="px-1.5 py-0.5 rounded hover:bg-slate-200 transition-colors cursor-pointer text-slate-700 font-bold"
-                              >
-                                {pt.total}
-                              </button>
-                            </td>
-
-                            {/* Promoters */}
-                            <td className="py-2 text-center font-mono">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Promoter' })}
-                                className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-all font-bold ${
-                                  selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName && selectedChartFilter.category === 'Promoter'
-                                    ? 'bg-[#0f2c59] text-white ring-1 ring-[#0f2c59]'
-                                    : 'hover:bg-[#0f2c59]/10 text-[#0f2c59]'
-                                }`}
-                              >
-                                {pt.promoters}
-                              </button>
-                            </td>
-
-                            {/* Passives */}
-                            <td className="py-2 text-center font-mono">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Passive' })}
-                                className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-all font-bold ${
-                                  selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName && selectedChartFilter.category === 'Passive'
-                                    ? 'bg-[#3b82f6] text-white ring-1 ring-[#3b82f6]'
-                                    : 'hover:bg-[#3b82f6]/10 text-[#3b82f6]'
-                                }`}
-                              >
-                                {pt.passives}
-                              </button>
-                            </td>
-
-                            {/* Detractors */}
-                            <td className="py-2 text-center font-mono">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Detractor' })}
-                                className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-all font-bold ${
-                                  selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName && selectedChartFilter.category === 'Detractor'
-                                    ? 'bg-[#ef4444] text-white ring-1 ring-[#ef4444]'
-                                    : 'hover:bg-[#ef4444]/10 text-[#ef4444]'
-                                }`}
-                              >
-                                {pt.detractors}
-                              </button>
-                            </td>
-
-                            {/* NPS score badge */}
-                            <td className="py-2 text-right">
-                              <span className={`inline-block font-mono text-[10px] px-1 rounded ${npsColor}`}>
-                                {npsScore > 0 ? `+${npsScore}` : npsScore}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                {/* C. Grid & Bars container */}
+                <div className="flex-1 flex flex-col justify-between relative px-2">
                   
-                  {/* Footer instruction text */}
-                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider text-center mt-2 pt-2 border-t border-slate-100 select-none">
-                    * Click any cell to apply interactive Power BI filters
+                  {/* Grid Lines behind bars */}
+                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none py-1">
+                    {gridLines.map((gl) => (
+                      <div key={gl} className="w-full flex items-center gap-2">
+                        <span className="text-[8px] font-mono font-bold text-slate-400 w-4 text-right">{gl}</span>
+                        <div className="flex-1 border-t border-dashed border-slate-200" />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Horizontal GREEN Target Line at Y = 10 */}
+                  <div 
+                    style={{ bottom: `${(10 / maxVal) * 100}%` }}
+                    className="absolute left-6 right-3 border-t-2 border-dashed border-emerald-500/90 z-10 pointer-events-none flex justify-end"
+                  >
+                    <span className="bg-emerald-500 text-white text-[7px] font-black uppercase px-1 rounded -translate-y-2 translate-x-1 tracking-wider">
+                      Target 10
+                    </span>
+                  </div>
+
+                  {/* Columns */}
+                  <div className="w-full h-full flex items-end gap-2 sm:gap-3 pl-6 pr-3 pb-2 z-10 pt-4 relative">
+                    {list.map(pt => {
+                      const isWeekSelected = selectedWeeks.includes(pt.weekKey);
+                      const isBarActive = selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName;
+
+                      // Category segment heights in percentage
+                      const promPct = (pt.promoters / maxVal) * 100;
+                      const passPct = (pt.passives / maxVal) * 100;
+                      const detrPct = (pt.detractors / maxVal) * 100;
+
+                      return (
+                        <div 
+                          key={pt.weekKey} 
+                          className={`flex-1 h-full flex flex-col justify-end items-center relative group transition-all duration-300 ${
+                            !isWeekSelected ? 'opacity-20 pointer-events-none' : ''
+                          }`}
+                        >
+                          {/* Floating Total Badge */}
+                          <span className="text-[9px] font-black text-slate-700 mb-1 group-hover:scale-110 transition-transform">
+                            {pt.total}
+                          </span>
+
+                          {/* Stacked bar cylinder */}
+                          <div 
+                            className={`w-6 h-full flex flex-col justify-end rounded bg-slate-100 overflow-hidden shadow-xs border transition-all ${
+                              isBarActive ? 'ring-2 ring-amber-400 border-amber-500 shadow-md scale-105' : 'border-slate-200 hover:border-slate-400'
+                            }`}
+                          >
+                            {/* Promoter - top segment */}
+                            {pt.promoters > 0 && (
+                              <button 
+                                style={{ height: `${promPct}%` }}
+                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Promoter' })}
+                                className="bg-[#0f2c59] w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                title={`Promoters: ${pt.promoters}`}
+                              >
+                                {pt.promoters >= 5 && (
+                                  <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
+                                    {pt.promoters}
+                                  </span>
+                                )}
+                              </button>
+                            )}
+
+                            {/* Passive - middle segment */}
+                            {pt.passives > 0 && (
+                              <button 
+                                style={{ height: `${passPct}%` }}
+                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Passive' })}
+                                className="bg-[#3b82f6] w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                title={`Passives: ${pt.passives}`}
+                              >
+                                {pt.passives >= 3 && (
+                                  <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
+                                    {pt.passives}
+                                  </span>
+                                )}
+                              </button>
+                            )}
+
+                            {/* Detractor - bottom segment */}
+                            {pt.detractors > 0 && (
+                              <button 
+                                style={{ height: `${detrPct}%` }}
+                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Detractor' })}
+                                className="bg-[#ef4444] w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                title={`Detractors: ${pt.detractors}`}
+                              >
+                                {pt.detractors >= 1 && (
+                                  <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
+                                    {pt.detractors}
+                                  </span>
+                                )}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Hover Tooltip Info */}
+                          <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] rounded p-2 shadow-lg z-30 pointer-events-none transition-opacity whitespace-nowrap mb-6 flex flex-col gap-0.5 border border-slate-700/50">
+                            <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5 text-amber-400">Week {pt.week} ({pt.year}) Details</span>
+                            <span className="flex items-center gap-1">🟢 Promoters: <strong className="font-mono">{pt.promoters}</strong></span>
+                            <span className="flex items-center gap-1">🟡 Passives: <strong className="font-mono">{pt.passives}</strong></span>
+                            <span className="flex items-center gap-1">🔴 Detractors: <strong className="font-mono">{pt.detractors}</strong></span>
+                            <span className="flex items-center gap-1 border-t border-slate-700/50 pt-0.5 mt-0.5">📊 Total Count: <strong className="font-mono text-white">{pt.total}</strong></span>
+                          </div>
+
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
+              </div>
+
+              {/* X Axis sequence label (Week numbers) */}
+              <div className="flex items-center text-[10px] text-slate-500 font-extrabold mt-1 border-t border-slate-100 pt-2.5">
+                {/* Offset spacer to match Y-axis controls (A + B offsets) */}
+                <span className="w-11 shrink-0" />
+                
+                {/* Exact layout padding wrapper matching C's px-2 and columns' pl-6 pr-3 */}
+                <div className="flex-1 px-2">
+                  <div className="flex gap-2 sm:gap-3 pl-6 pr-3">
+                    {list.map(pt => (
+                      <span key={pt.weekKey} className="flex-1 text-center font-mono text-[9px]">{pt.week}</span>
+                    ))}
                   </div>
                 </div>
-              ) : (
-                <>
-                  {/* Main SVG/HTML Canvas Arena */}
-                  <div className="flex h-56 items-stretch relative">
-                    
-                    {/* A. Vertical Power BI Scroll/Zoom Slider Slider */}
-                    <div className="w-5 flex flex-col items-center justify-between py-2 shrink-0 border-r border-slate-200/60 mr-2">
-                      <div className="w-1.5 h-full bg-slate-200 rounded-full relative flex flex-col justify-between">
-                        {/* Top Handle */}
-                        <div className="absolute top-0 -left-1 w-3.5 h-3.5 rounded-full bg-white border border-slate-400 shadow-sm cursor-row-resize flex items-center justify-center">
-                          <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
-                        </div>
-                        {/* Bottom Handle */}
-                        <div className="absolute bottom-0 -left-1 w-3.5 h-3.5 rounded-full bg-white border border-slate-400 shadow-sm cursor-row-resize flex items-center justify-center">
-                          <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
-                        </div>
-                      </div>
-                      <span className="text-[7px] font-black text-slate-400 rotate-270 uppercase tracking-widest translate-y-1 block h-2 shrink-0">Zoom</span>
-                    </div>
-
-                    {/* B. Count of Survey ID label vertical */}
-                    <div className="w-4 flex items-center justify-center shrink-0">
-                      <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-wider origin-center -rotate-90 whitespace-nowrap">
-                        Count of Survey ID
-                      </span>
-                    </div>
-
-                    {/* C. Grid & Bars container */}
-                    <div className="flex-1 flex flex-col justify-between relative px-2">
-                      
-                      {/* Grid Lines behind bars */}
-                      <div className="absolute inset-0 flex flex-col justify-between pointer-events-none py-1">
-                        {gridLines.map((gl) => (
-                          <div key={gl} className="w-full flex items-center gap-2">
-                            <span className="text-[8px] font-mono font-bold text-slate-400 w-4 text-right">{gl}</span>
-                            <div className="flex-1 border-t border-dashed border-slate-200" />
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Horizontal GREEN Target Line at Y = 10 */}
-                      <div 
-                        style={{ bottom: `${(10 / maxVal) * 100}%` }}
-                        className="absolute left-6 right-0 border-t-2 border-dashed border-emerald-500/90 z-10 pointer-events-none flex justify-end"
-                      >
-                        <span className="bg-emerald-500 text-white text-[7px] font-black uppercase px-1 rounded -translate-y-2 translate-x-1 tracking-wider">
-                          Target 10
-                        </span>
-                      </div>
-
-                      {/* Columns */}
-                      <div className="w-full h-full flex items-end gap-3 px-6 pb-2 z-10 pt-4 relative">
-                        {list.map(pt => {
-                          const isWeekSelected = selectedWeeks.includes(pt.weekKey);
-                          const isBarActive = selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName;
-
-                          // Category segment heights in percentage
-                          const promPct = (pt.promoters / maxVal) * 100;
-                          const passPct = (pt.passives / maxVal) * 100;
-                          const detrPct = (pt.detractors / maxVal) * 100;
-
-                          return (
-                            <div 
-                              key={pt.weekKey} 
-                              className={`flex-1 h-full flex flex-col justify-end items-center relative group transition-all duration-300 ${
-                                !isWeekSelected ? 'opacity-20 pointer-events-none' : ''
-                              }`}
-                            >
-                              {/* Floating Total Badge */}
-                              <span className="text-[9px] font-black text-slate-700 mb-1 group-hover:scale-110 transition-transform">
-                                {pt.total}
-                              </span>
-
-                              {/* Stacked bar cylinder */}
-                              <div 
-                                className={`w-6 h-full flex flex-col justify-end rounded bg-slate-100 overflow-hidden shadow-xs border transition-all ${
-                                  isBarActive ? 'ring-2 ring-amber-400 border-amber-500 shadow-md scale-105' : 'border-slate-200 hover:border-slate-400'
-                                }`}
-                              >
-                                {/* Promoter - top segment */}
-                                {pt.promoters > 0 && (
-                                  <button 
-                                    style={{ height: `${promPct}%` }}
-                                    onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Promoter' })}
-                                    className="bg-[#0f2c59] w-full hover:brightness-110 transition-all cursor-pointer relative"
-                                    title={`Promoters: ${pt.promoters}`}
-                                  >
-                                    {pt.promoters >= 5 && (
-                                      <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
-                                        {pt.promoters}
-                                      </span>
-                                    )}
-                                  </button>
-                                )}
-
-                                {/* Passive - middle segment */}
-                                {pt.passives > 0 && (
-                                  <button 
-                                    style={{ height: `${passPct}%` }}
-                                    onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Passive' })}
-                                    className="bg-[#3b82f6] w-full hover:brightness-110 transition-all cursor-pointer relative"
-                                    title={`Passives: ${pt.passives}`}
-                                  >
-                                    {pt.passives >= 3 && (
-                                      <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
-                                        {pt.passives}
-                                      </span>
-                                    )}
-                                  </button>
-                                )}
-
-                                {/* Detractor - bottom segment */}
-                                {pt.detractors > 0 && (
-                                  <button 
-                                    style={{ height: `${detrPct}%` }}
-                                    onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Detractor' })}
-                                    className="bg-[#ef4444] w-full hover:brightness-110 transition-all cursor-pointer relative"
-                                    title={`Detractors: ${pt.detractors}`}
-                                  >
-                                    {pt.detractors >= 1 && (
-                                      <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
-                                        {pt.detractors}
-                                      </span>
-                                    )}
-                                  </button>
-                                )}
-                              </div>
-
-                              {/* Hover Tooltip Info */}
-                              <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] rounded p-2 shadow-lg z-30 pointer-events-none transition-opacity whitespace-nowrap mb-6 flex flex-col gap-0.5 border border-slate-700/50">
-                                <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5 text-amber-400">Week {pt.week} ({pt.year}) Details</span>
-                                <span className="flex items-center gap-1">🟢 Promoters: <strong className="font-mono">{pt.promoters}</strong></span>
-                                <span className="flex items-center gap-1">🟡 Passives: <strong className="font-mono">{pt.passives}</strong></span>
-                                <span className="flex items-center gap-1">🔴 Detractors: <strong className="font-mono">{pt.detractors}</strong></span>
-                                <span className="flex items-center gap-1 border-t border-slate-700/50 pt-0.5 mt-0.5">📊 Total Count: <strong className="font-mono text-white">{pt.total}</strong></span>
-                              </div>
-
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                    </div>
-                  </div>
-
-                  {/* X Axis sequence label (Week numbers) */}
-                  <div className="flex justify-between items-center text-[10px] text-slate-500 font-extrabold mt-1 border-t border-slate-100 pt-2.5 px-2">
-                    <span className="w-11 shrink-0" />
-                    <div className="flex-1 flex justify-between px-6">
-                      {list.map(pt => (
-                        <span key={pt.weekKey} className="w-6 text-center">{pt.week}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center block mt-1">
-                    {displayedYearsLabel}
-                  </span>
-                </>
-              )}
+              </div>
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center block mt-1">
+                {displayedYearsLabel}
+              </span>
             </div>
           );
         })}
@@ -852,7 +711,225 @@ export default function PowerBiMirror({
       {/* ========================================================= */}
       {/* 3. NPS RATING TABLE WITH DYNAMIC AI COMMENTS & EXPANDEES */}
       {/* ========================================================= */}
-      <div className="p-6 bg-white flex flex-col flex-1" id="power-bi-table-section">
+      {isPresentationPage ? (
+        /* VOC Presentation Slides List */
+        <div className="flex flex-col gap-8 flex-1" id="power-bi-table-section">
+          {/* Active chart filters indicator */}
+          {(selectedChartFilter.channel || selectedChartFilter.week || selectedChartFilter.category) && (
+            <div className="flex items-center justify-between bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold px-4 py-2.5 rounded-xl animate-pulse">
+              <div className="flex items-center gap-2">
+                <span>ACTIVE SLIDE FILTER:</span>
+                <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[10px]">
+                  {selectedChartFilter.channel ? `${selectedChartFilter.channel} Channel ` : ''}
+                  {selectedChartFilter.week ? `Week ${selectedChartFilter.week} ` : ''}
+                  {selectedChartFilter.category ? `[${selectedChartFilter.category}] ` : ''}
+                </span>
+              </div>
+              <button 
+                onClick={handleClearChartFilter}
+                className="hover:text-amber-900 bg-amber-200/50 hover:bg-amber-200 rounded-full w-5 h-5 flex items-center justify-center font-extrabold cursor-pointer animate-none"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-2">
+            <div>
+              <h2 className="text-base font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Presentation className="w-5 h-5 text-amber-500 shrink-0" />
+                Executive Voice of Customer Slides ({filteredTableRecords.length} Resolved Cases)
+              </h2>
+              <p className="text-xs text-slate-500 font-medium animate-none">
+                A high-fidelity slide deck representing actioned detractor/passive surveys. Open any slide to edit action entries.
+              </p>
+            </div>
+
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input 
+                type="text"
+                placeholder="Search slide titles or comments..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium shadow-xs"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs">
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          {filteredTableRecords.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400">
+              <HelpCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <span className="text-xs font-black uppercase tracking-wider text-slate-700">No Slides Match Filters</span>
+              <p className="text-[11px] text-slate-500 max-w-sm mx-auto mt-1">
+                There are no completed or closed cases that match the active filters. Adjust dropdowns or clear chart selections to populate slides.
+              </p>
+              <button 
+                onClick={() => {
+                  handleClearChartFilter();
+                  setResponseFeed('All');
+                  setNpsCategory('All');
+                  setSelectedWeeks(latest6WeeksKeys);
+                  setSearchQuery('');
+                  if (setCategoryFilter) {
+                    setCategoryFilter('All');
+                  }
+                }}
+                className="mt-3 text-[10px] font-extrabold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded uppercase hover:bg-amber-100 cursor-pointer"
+              >
+                Reset All Filters
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-8">
+              {filteredTableRecords.map((r, idx) => {
+                const getActionLines = (record: VoCRecord) => {
+                  if (record.actionSummary) {
+                    return record.actionSummary.split('\n').map(l => l.trim()).filter(Boolean);
+                  }
+                  if (record.timeline && record.timeline.length > 0) {
+                    const nonAdmin = record.timeline.filter(e => {
+                      const a = e.action.toLowerCase();
+                      return !a.includes('alert created') && !a.includes('automatically assigned');
+                    });
+                    const target = nonAdmin.length > 0 ? nonAdmin : record.timeline;
+                    return target.map(e => {
+                      let txt = e.action.replace(/^(Case Edited:\s*|Alert Assigned:\s*|\d+[\.\)\s]+\s*)/i, '').trim();
+                      return txt;
+                    }).filter(Boolean);
+                  }
+                  return ["Case resolved and customer notified of the corrective actions taken."];
+                };
+
+                const actionLines = getActionLines(r);
+                
+                return (
+                  <div 
+                    key={`${r.id}-${idx}`}
+                    onClick={() => onSelectRecord(r)}
+                    className="bg-white border-[10px] border-[#ffcc00] hover:border-amber-500 rounded-2xl shadow-md hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer flex flex-col group"
+                  >
+                    {/* PowerPoint-inspired Header */}
+                    <div className="bg-red-600 p-4 border-b border-[#ffcc00] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-white font-sans select-none">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-slate-900 text-white font-extrabold font-mono text-[10px] px-2 py-0.5 rounded tracking-wide">
+                          CASE {idx + 1}
+                        </div>
+                        <h3 className="text-sm font-black uppercase tracking-tight">
+                          KEY ACTIONS TAKEN TO ADDRESS VOICE OF CUSTOMER
+                        </h3>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 self-end sm:self-auto">
+                        <span className="bg-white/15 border border-white/10 text-white text-[10px] font-black px-2 py-0.5 rounded font-mono">
+                          {r.interaction || 'PNHGTW'}
+                        </span>
+                        <div className="flex items-center gap-1.5 bg-slate-950/20 px-2.5 py-1 rounded-full text-xs font-black">
+                          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                          <span className="text-[10px] text-white tracking-wider">RESOLVED</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Slide Body */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 divide-y md:divide-y-0 md:divide-x divide-slate-150 p-6 gap-6 md:gap-0 bg-white">
+                      
+                      {/* Left Column: Customer Feedback and details */}
+                      <div className="col-span-12 md:col-span-5 md:pr-6 flex flex-col justify-between space-y-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-wider">
+                            <span>Voice of the Customer (VoC)</span>
+                          </div>
+                          
+                          <div className="bg-amber-400/10 border border-amber-400/20 p-4 rounded-xl relative overflow-hidden">
+                            <span className="absolute -right-1 -bottom-4 text-amber-200/20 text-5xl font-serif pointer-events-none select-none">“</span>
+                            <p className="text-xs text-slate-950 leading-relaxed italic relative z-10 whitespace-pre-line font-semibold">
+                              "{r.comment}"
+                            </p>
+                          </div>
+                          
+                          {r.customSummary && (
+                            <p className="text-[11px] text-slate-600 bg-slate-50 border border-slate-100 p-2.5 rounded-lg font-medium leading-relaxed">
+                              <strong className="text-slate-800 text-[10px] uppercase font-black tracking-wider block mb-0.5">Summary Analysis:</strong>
+                              {r.customSummary}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Survey Metadata at Bottom */}
+                        <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-[10px] text-slate-500 font-semibold">
+                          <div>
+                            <span className="text-slate-400 block uppercase text-[8px]">Survey ID</span>
+                            <span className="text-slate-800 font-mono font-extrabold bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">#{r.id}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block uppercase text-[8px]">NPS Score</span>
+                            <span className="text-slate-800 font-extrabold bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1 w-fit">
+                              <span className={`w-2 h-2 rounded-full ${r.likelihood >= 9 ? 'bg-emerald-500' : r.likelihood >= 7 ? 'bg-amber-400' : 'bg-rose-500'}`}></span>
+                              {r.likelihood} ({r.likelihood >= 9 ? 'Promoter' : r.likelihood >= 7 ? 'Passive' : 'Detractor'})
+                            </span>
+                          </div>
+                          <div className="col-span-2 mt-1">
+                            <span className="text-slate-400 block uppercase text-[8px]">Customer Name</span>
+                            <span className="text-slate-700 truncate block font-bold">({r.customerName || 'Anonymous Company'})</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Column: Key Actions and Resolution */}
+                      <div className="col-span-12 md:col-span-7 md:pl-6 pt-4 md:pt-0 flex flex-col justify-between space-y-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-wider">
+                            <span>Key Resolution Actions Taken</span>
+                          </div>
+
+                          <div className="space-y-2">
+                            {actionLines.map((line, idx) => (
+                              <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-800 leading-relaxed font-semibold">
+                                <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5 bg-emerald-50 border border-emerald-100 rounded p-0.5" />
+                                <span>{line}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* PIC & Status info */}
+                        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-[10px] font-semibold text-slate-500">
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400 uppercase text-[8px]">PIC Owner:</span>
+                            <span className="text-slate-800 bg-slate-100 px-2 py-0.5 rounded font-bold">{r.owner || 'Rothana Art'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400 uppercase text-[8px]">Deadline:</span>
+                            <span className="text-slate-800 bg-slate-100 px-2 py-0.5 rounded font-mono font-bold">30 Apr</span>
+                          </div>
+                          <span className="text-amber-600 group-hover:text-amber-700 text-xs font-black uppercase tracking-wider flex items-center gap-1 ml-auto">
+                            View Full Slide details 
+                            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                          </span>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Presentation Footer Stats */}
+          <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider pt-3 select-none">
+            <span>PRESENTATION DECK: {filteredTableRecords.length} OF {mappedRecords.length} VERIFIED</span>
+            <span>SYSTEM MODE: ACTIVE MEETING PORTABLE</span>
+          </div>
+        </div>
+      ) : (
+        <div className="p-6 bg-white flex flex-col flex-1" id="power-bi-table-section">
         
         {/* Table Title and Controls */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 mb-4 border-b border-slate-200">
@@ -1242,6 +1319,7 @@ export default function PowerBiMirror({
         </div>
 
       </div>
+      )}
 
     </div>
   );
