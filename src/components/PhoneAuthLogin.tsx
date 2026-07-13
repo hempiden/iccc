@@ -55,10 +55,15 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   
-  // Sandbox test bypass mode - default to false unless explicitly enabled via URL param '?sandbox=true'
+  // Sandbox test bypass mode - default to false unless explicitly enabled via URL param '?sandbox=true' and in developer env
   const [isSandboxMode, setIsSandboxMode] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('sandbox') === 'true';
+    const isDev = window.location.hostname === 'localhost' || 
+                  window.location.hostname === '127.0.0.1' || 
+                  window.location.hostname.includes('aistudio') || 
+                  window.location.hostname.includes('googleusercontent') ||
+                  window.location.hostname.includes('webcontainer');
+    return isDev && params.get('sandbox') === 'true';
   });
 
   const confirmationResultRef = useRef<ConfirmationResult | null>(null);
@@ -85,7 +90,12 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
       } catch (err: any) {
         console.error('Error initializing reCAPTCHA:', err);
         const params = new URLSearchParams(window.location.search);
-        const canUseSandbox = params.get('sandbox') === 'true';
+        const isDev = window.location.hostname === 'localhost' || 
+                      window.location.hostname === '127.0.0.1' || 
+                      window.location.hostname.includes('aistudio') || 
+                      window.location.hostname.includes('googleusercontent') ||
+                      window.location.hostname.includes('webcontainer');
+        const canUseSandbox = isDev && params.get('sandbox') === 'true';
         if (canUseSandbox) {
           setError('Failed to initialize reCAPTCHA security. Switching to Sandbox Mode for full reliability.');
           setIsSandboxMode(true);
@@ -325,16 +335,24 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
           </div>
 
           {/* Environment/Sandbox Toggle Banner */}
-          {(new URLSearchParams(window.location.search).get('sandbox') === 'true') && (
+          {(() => {
+            const params = new URLSearchParams(window.location.search);
+            const isDev = window.location.hostname === 'localhost' || 
+                          window.location.hostname === '127.0.0.1' || 
+                          window.location.hostname.includes('aistudio') || 
+                          window.location.hostname.includes('googleusercontent') ||
+                          window.location.hostname.includes('webcontainer');
+            return isDev && params.get('sandbox') === 'true';
+          })() && (
             <div className="w-full bg-slate-900/80 p-2.5 rounded-lg border border-slate-700/60 flex items-center justify-between mb-5 animate-fade-in">
               <div className="flex items-center gap-2">
                 <Globe className={`w-4 h-4 ${isSandboxMode ? 'text-amber-400' : 'text-emerald-400'}`} />
                 <div className="text-left">
                   <span className="text-[10px] font-bold text-white block uppercase tracking-wider">
-                    {isSandboxMode ? 'Sandbox Preview' : 'Live Gateway'}
+                    Sandbox Preview
                   </span>
                   <span className="text-[9px] text-slate-400 block leading-tight">
-                    {isSandboxMode ? 'Mock SMS code for sandboxed iframe' : 'Send actual OTP to real phone'}
+                    Mock SMS code for sandboxed iframe
                   </span>
                 </div>
               </div>
@@ -381,7 +399,15 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                     <div className="whitespace-pre-line leading-relaxed">{error}</div>
                     
                     {/* Sandbox Bypass Trigger */}
-                    {(new URLSearchParams(window.location.search).get('sandbox') === 'true') && (error.includes('billing-not-enabled') || error.includes('reCAPTCHA') || error.includes('unauthorized-domain')) && (
+                    {(() => {
+                      const params = new URLSearchParams(window.location.search);
+                      const isDev = window.location.hostname === 'localhost' || 
+                                    window.location.hostname === '127.0.0.1' || 
+                                    window.location.hostname.includes('aistudio') || 
+                                    window.location.hostname.includes('googleusercontent') ||
+                                    window.location.hostname.includes('webcontainer');
+                      return isDev && params.get('sandbox') === 'true';
+                    })() && (error.includes('billing-not-enabled') || error.includes('reCAPTCHA') || error.includes('unauthorized-domain')) && (
                       <div className="pt-2 border-t border-rose-500/20">
                         <button
                           type="button"

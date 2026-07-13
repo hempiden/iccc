@@ -22,22 +22,27 @@ interface PowerBiMirrorProps {
 // Interface for structured weekly chart data
 interface WeeklyChartPoint {
   week: number;
+  weekKey: string;
+  year: number;
   promoters: number;
   passives: number;
   detractors: number;
   total: number;
 }
 
-// Helper to extract calendar week from a date string (e.g. "2026-06-11 11:00")
-const getWeekFromDate = (dateStr: string): number => {
+// Helper to extract calendar week and year from a date string (e.g. "2026-06-11 11:00")
+const getYearAndWeekFromDate = (dateStr: string): { year: number; week: number; weekKey: string } => {
   try {
     const d = new Date(dateStr.replace(/-/g, '/')); // simple cross-browser sanitize
-    if (isNaN(d.getTime())) return 22; // fallback
-    const startOfYear = new Date(d.getFullYear(), 0, 1);
+    if (isNaN(d.getTime())) return { year: 2026, week: 22, weekKey: '2026-W22' };
+    const year = d.getFullYear();
+    const startOfYear = new Date(year, 0, 1);
     const pastDaysOfYear = (d.getTime() - startOfYear.getTime()) / 86400000;
-    return Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
+    const week = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
+    const weekKey = `${year}-W${String(week).padStart(2, '0')}`;
+    return { year, week, weekKey };
   } catch (e) {
-    return 22;
+    return { year: 2026, week: 22, weekKey: '2026-W22' };
   }
 };
 
@@ -53,7 +58,7 @@ export default function PowerBiMirror({
   // --- States for Dropdown Filters ---
   const [responseFeed, setResponseFeed] = useState<'All' | 'Detractor' | 'Passive' | 'Promoter'>('All');
   const [npsCategory, setNpsCategory] = useState<'All' | 'Detractor' | 'Passive' | 'Promoter'>('All');
-  const [selectedWeeks, setSelectedWeeks] = useState<number[]>([19, 20, 21, 22, 23, 24]);
+  const [selectedWeeks, setSelectedWeeks] = useState<string[]>(['2026-W19', '2026-W20', '2026-W21', '2026-W22', '2026-W23', '2026-W24']);
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [showFeedDropdown, setShowFeedDropdown] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
@@ -62,7 +67,7 @@ export default function PowerBiMirror({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChartFilter, setSelectedChartFilter] = useState<{
     channel: 'SVC' | 'ASC' | 'GTW' | null;
-    week: number | null;
+    week: string | null;
     category: 'Promoter' | 'Passive' | 'Detractor' | null;
   }>({ channel: null, week: null, category: null });
 
@@ -114,57 +119,62 @@ export default function PowerBiMirror({
     return [screenshotRecord, ...records];
   }, [records]);
 
-  // Map each record deterministically to a week between 19 and 24 for high-fidelity rendering
+  // Map each record deterministically to a week key and year for high-fidelity rendering
   const mappedRecords = useMemo(() => {
     return mergedRecords.map((r, idx) => {
       let week = 22; // default middle week
+      let year = 2026;
+      let weekKey = '2026-W22';
       let channel: 'SVC' | 'ASC' | 'GTW' = 'GTW';
       let alertType = 'Detractor: No follow-up';
 
       // Assign realistic weeks 19-24 based on original dates/ids
       if (r.id === '246896936') {
-        week = 19;
+        week = 19; year = 2026; weekKey = '2026-W19';
         channel = 'GTW';
         alertType = 'Detractor: No follow-up';
       } else if (r.id === '263437429') {
-        week = 20;
+        week = 20; year = 2026; weekKey = '2026-W20';
         channel = 'SVC';
         alertType = 'Detractor: No follow-up';
       } else if (r.id === '28167332') {
-        week = 21;
+        week = 21; year = 2026; weekKey = '2026-W21';
         channel = 'SVC';
         alertType = 'Detractor: No follow-up';
       } else if (r.id === '28172901') {
-        week = 22;
+        week = 22; year = 2026; weekKey = '2026-W22';
         channel = 'SVC';
         alertType = 'Promoter feedback';
       } else if (r.id === '28168109') {
-        week = 22;
+        week = 22; year = 2026; weekKey = '2026-W22';
         channel = 'ASC';
         alertType = 'Detractor: Requested follow-up';
       } else if (r.id === '28169450') {
-        week = 23;
+        week = 23; year = 2026; weekKey = '2026-W23';
         channel = 'ASC';
         alertType = 'Passive follow-up required';
       } else if (r.id === '28174411') {
-        week = 24;
+        week = 24; year = 2026; weekKey = '2026-W24';
         channel = 'GTW';
         alertType = 'Critical detractor alert';
       } else if (r.id === '284669518') {
-        week = 22;
+        week = 22; year = 2026; weekKey = '2026-W22';
         channel = 'GTW';
         alertType = 'Detractor: No follow-up';
       } else {
         // Fallback for custom uploaded files - parse week from date if available, otherwise spread
         const idNum = parseInt(r.id.slice(-3), 10) || idx;
-        let weekVal = 22;
         const targetDate = r.responseDate || r.creationDate;
         if (targetDate) {
-          weekVal = getWeekFromDate(targetDate);
+          const res = getYearAndWeekFromDate(targetDate);
+          week = res.week;
+          year = res.year;
+          weekKey = res.weekKey;
         } else {
-          weekVal = 19 + (idNum % 6); // spread across 19-24
+          week = 19 + (idNum % 6); // spread across 19-24
+          year = 2026;
+          weekKey = `2026-W${week}`;
         }
-        week = weekVal;
         
         const facility = (r.interaction || '').toUpperCase();
         if (facility.includes('SVC') || idNum % 3 === 0) channel = 'SVC';
@@ -178,6 +188,8 @@ export default function PowerBiMirror({
       return {
         ...r,
         week,
+        year,
+        weekKey,
         channel,
         alertType,
         facility: r.interaction || `PNH${channel}`
@@ -186,29 +198,29 @@ export default function PowerBiMirror({
   }, [mergedRecords]);
 
   // --- Dynamic Latest 6 Weeks Computation ---
-  const latest6Weeks = useMemo(() => {
-    const weeksSet = new Set<number>();
+  const latest6WeeksKeys = useMemo(() => {
+    const keysSet = new Set<string>();
     mappedRecords.forEach(r => {
-      if (r.week !== undefined) {
-        weeksSet.add(r.week);
+      if (r.weekKey !== undefined) {
+        keysSet.add(r.weekKey);
       }
     });
-    if (weeksSet.size === 0) {
-      return [19, 20, 21, 22, 23, 24];
+    if (keysSet.size === 0) {
+      return ['2026-W19', '2026-W20', '2026-W21', '2026-W22', '2026-W23', '2026-W24'];
     }
-    const sorted = Array.from(weeksSet).sort((a, b) => a - b);
+    const sorted = Array.from(keysSet).sort(); // Alphabetical sort of YYYY-WXX is chronological!
     return sorted.slice(-6);
   }, [mappedRecords]);
 
-  const latest6WeeksStr = latest6Weeks.join(',');
+  const latest6WeeksStr = latest6WeeksKeys.join(',');
   const [prevLatest6WeeksStr, setPrevLatest6WeeksStr] = useState(latest6WeeksStr);
 
   React.useEffect(() => {
     if (latest6WeeksStr !== prevLatest6WeeksStr) {
-      setSelectedWeeks(latest6Weeks);
+      setSelectedWeeks(latest6WeeksKeys);
       setPrevLatest6WeeksStr(latest6WeeksStr);
     }
-  }, [latest6WeeksStr, prevLatest6WeeksStr, latest6Weeks]);
+  }, [latest6WeeksStr, prevLatest6WeeksStr, latest6WeeksKeys]);
 
   // --- Chart Dataset Computations ---
   // To keep the Power BI mirror extremely visually complete and authentic, we overlay the 7 main detailed records 
@@ -243,41 +255,45 @@ export default function PowerBiMirror({
       { promoters: 7, passives: 0, detractors: 1, total: 8 }
     ];
 
-    const baseSVC: { [w: number]: WeeklyChartPoint } = {};
-    const baseASC: { [w: number]: WeeklyChartPoint } = {};
-    const baseGTW: { [w: number]: WeeklyChartPoint } = {};
+    const baseSVC: { [wKey: string]: WeeklyChartPoint } = {};
+    const baseASC: { [wKey: string]: WeeklyChartPoint } = {};
+    const baseGTW: { [wKey: string]: WeeklyChartPoint } = {};
 
-    latest6Weeks.forEach((w, index) => {
+    latest6WeeksKeys.forEach((wKey, index) => {
       const slot = Math.min(index, 5);
-      baseSVC[w] = { week: w, ...baseSVCData[slot] };
-      baseASC[w] = { week: w, ...baseASCData[slot] };
-      baseGTW[w] = { week: w, ...baseGTWData[slot] };
+      const parts = wKey.split('-W');
+      const year = parseInt(parts[0], 10) || 2026;
+      const week = parseInt(parts[1], 10) || 22;
+
+      baseSVC[wKey] = { week, weekKey: wKey, year, ...baseSVCData[slot] };
+      baseASC[wKey] = { week, weekKey: wKey, year, ...baseASCData[slot] };
+      baseGTW[wKey] = { week, weekKey: wKey, year, ...baseGTWData[slot] };
     });
 
     // Integrate actual records into the chart points to make it dynamic
     mappedRecords.forEach(r => {
-      const w = r.week;
+      const wKey = r.weekKey;
       const ch = r.channel;
       const cat = r.category;
 
-      if (latest6Weeks.includes(w)) {
+      if (latest6WeeksKeys.includes(wKey)) {
         const targetMap = ch === 'SVC' ? baseSVC : ch === 'ASC' ? baseASC : baseGTW;
-        if (targetMap[w]) {
-          if (cat === 'Promoter') targetMap[w].promoters++;
-          else if (cat === 'Passive') targetMap[w].passives++;
-          else targetMap[w].detractors++;
-          targetMap[w].total++;
+        if (targetMap[wKey]) {
+          if (cat === 'Promoter') targetMap[wKey].promoters++;
+          else if (cat === 'Passive') targetMap[wKey].passives++;
+          else targetMap[wKey].detractors++;
+          targetMap[wKey].total++;
         }
       }
     });
 
-    // Format as lists
-    const svcList = Object.values(baseSVC);
-    const ascList = Object.values(baseASC);
-    const gtwList = Object.values(baseGTW);
+    // Format as lists preserving the chronological keys order
+    const svcList = latest6WeeksKeys.map(wKey => baseSVC[wKey]).filter(Boolean);
+    const ascList = latest6WeeksKeys.map(wKey => baseASC[wKey]).filter(Boolean);
+    const gtwList = latest6WeeksKeys.map(wKey => baseGTW[wKey]).filter(Boolean);
 
     return { SVC: svcList, ASC: ascList, GTW: gtwList };
-  }, [mappedRecords, latest6Weeks]);
+  }, [mappedRecords, latest6WeeksKeys]);
 
   // --- Filtering & Searching for NPS Rating Table ---
   const filteredTableRecords = useMemo(() => {
@@ -296,7 +312,7 @@ export default function PowerBiMirror({
       }
 
       // 2. Year. Week Checkbox Filter
-      if (!selectedWeeks.includes(r.week)) {
+      if (!selectedWeeks.includes(r.weekKey)) {
         return false;
       }
 
@@ -314,7 +330,7 @@ export default function PowerBiMirror({
       if (selectedChartFilter.channel && r.channel !== selectedChartFilter.channel) {
         return false;
       }
-      if (selectedChartFilter.week && r.week !== selectedChartFilter.week) {
+      if (selectedChartFilter.week && r.weekKey !== selectedChartFilter.week) {
         return false;
       }
       if (selectedChartFilter.category && r.category !== selectedChartFilter.category) {
@@ -388,15 +404,26 @@ export default function PowerBiMirror({
     setSelectedChartFilter({ channel: null, week: null, category: null });
   };
 
-  const toggleWeekSelection = (weekNum: number) => {
-    if (selectedWeeks.includes(weekNum)) {
+  const toggleWeekSelection = (weekKey: string) => {
+    if (selectedWeeks.includes(weekKey)) {
       if (selectedWeeks.length > 1) {
-        setSelectedWeeks(selectedWeeks.filter(w => w !== weekNum));
+        setSelectedWeeks(selectedWeeks.filter(w => w !== weekKey));
       }
     } else {
-      setSelectedWeeks([...selectedWeeks, weekNum].sort());
+      setSelectedWeeks([...selectedWeeks, weekKey].sort());
     }
   };
+
+  const displayedYearsLabel = useMemo(() => {
+    const years = new Set<number>();
+    latest6WeeksKeys.forEach(wKey => {
+      const yr = parseInt(wKey.split('-W')[0], 10);
+      if (!isNaN(yr)) years.add(yr);
+    });
+    if (years.size === 0) return '2026 WEEK';
+    const sortedYears = Array.from(years).sort();
+    return `${sortedYears.join('-')} WEEK`;
+  }, [latest6WeeksKeys]);
 
   return (
     <div className="w-full bg-[#f4f4f4] border border-slate-300 shadow-md rounded-lg overflow-hidden flex flex-col font-sans" id="power-bi-container">
@@ -516,8 +543,8 @@ export default function PowerBiMirror({
                   {/* Columns */}
                   <div className="w-full h-full flex items-end gap-3 px-6 pb-2 z-10 pt-4 relative">
                     {list.map(pt => {
-                      const isWeekSelected = selectedWeeks.includes(pt.week);
-                      const isBarActive = selectedChartFilter.week === pt.week && selectedChartFilter.channel === chName;
+                      const isWeekSelected = selectedWeeks.includes(pt.weekKey);
+                      const isBarActive = selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName;
 
                       // Category segment heights in percentage
                       const promPct = (pt.promoters / maxVal) * 100;
@@ -526,7 +553,7 @@ export default function PowerBiMirror({
 
                       return (
                         <div 
-                          key={pt.week} 
+                          key={pt.weekKey} 
                           className={`flex-1 h-full flex flex-col justify-end items-center relative group transition-all duration-300 ${
                             !isWeekSelected ? 'opacity-20 pointer-events-none' : ''
                           }`}
@@ -546,7 +573,7 @@ export default function PowerBiMirror({
                             {pt.promoters > 0 && (
                               <button 
                                 style={{ height: `${promPct}%` }}
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.week, category: 'Promoter' })}
+                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Promoter' })}
                                 className="bg-[#0f2c59] w-full hover:brightness-110 transition-all cursor-pointer relative"
                                 title={`Promoters: ${pt.promoters}`}
                               >
@@ -562,7 +589,7 @@ export default function PowerBiMirror({
                             {pt.passives > 0 && (
                               <button 
                                 style={{ height: `${passPct}%` }}
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.week, category: 'Passive' })}
+                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Passive' })}
                                 className="bg-[#3b82f6] w-full hover:brightness-110 transition-all cursor-pointer relative"
                                 title={`Passives: ${pt.passives}`}
                               >
@@ -578,7 +605,7 @@ export default function PowerBiMirror({
                             {pt.detractors > 0 && (
                               <button 
                                 style={{ height: `${detrPct}%` }}
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.week, category: 'Detractor' })}
+                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Detractor' })}
                                 className="bg-[#ef4444] w-full hover:brightness-110 transition-all cursor-pointer relative"
                                 title={`Detractors: ${pt.detractors}`}
                               >
@@ -593,7 +620,7 @@ export default function PowerBiMirror({
 
                           {/* Hover Tooltip Info */}
                           <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] rounded p-2 shadow-lg z-30 pointer-events-none transition-opacity whitespace-nowrap mb-6 flex flex-col gap-0.5 border border-slate-700/50">
-                            <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5 text-amber-400">Week {pt.week} Details</span>
+                            <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5 text-amber-400">Week {pt.week} ({pt.year}) Details</span>
                             <span className="flex items-center gap-1">🟢 Promoters: <strong className="font-mono">{pt.promoters}</strong></span>
                             <span className="flex items-center gap-1">🟡 Passives: <strong className="font-mono">{pt.passives}</strong></span>
                             <span className="flex items-center gap-1">🔴 Detractors: <strong className="font-mono">{pt.detractors}</strong></span>
@@ -613,12 +640,12 @@ export default function PowerBiMirror({
                 <span className="w-11 shrink-0" />
                 <div className="flex-1 flex justify-between px-6">
                   {list.map(pt => (
-                    <span key={pt.week} className="w-6 text-center">{pt.week}</span>
+                    <span key={pt.weekKey} className="w-6 text-center">{pt.week}</span>
                   ))}
                 </div>
               </div>
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center block mt-1">
-                2026 Week
+                {displayedYearsLabel}
               </span>
             </div>
           );
@@ -710,7 +737,7 @@ export default function PowerBiMirror({
                           handleClearChartFilter();
                           setResponseFeed('All');
                           setNpsCategory('All');
-                          setSelectedWeeks(latest6Weeks);
+                          setSelectedWeeks(latest6WeeksKeys);
                           setSearchQuery('');
                           if (setCategoryFilter) {
                             setCategoryFilter('All');

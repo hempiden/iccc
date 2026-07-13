@@ -59,11 +59,7 @@ const getPicEmail = (picName: string, facility: string, loadedColleagues: Action
     picEmail = cleanName ? `${cleanName}@dhl.com` : '';
   }
 
-  const facEmail = getFacilityEmail(facility);
-  if (picEmail && picEmail !== facEmail) {
-    return `${picEmail}, ${facEmail}`;
-  }
-  return facEmail;
+  return picEmail || getFacilityEmail(facility);
 };
 
 export default function CustomerDetail({ 
@@ -479,6 +475,48 @@ ${currentUser?.role || ''} (${currentUser?.department || ''})`;
     });
 
     alert('Email response successfully saved and synchronized into the Conversation History!');
+  };
+
+  const handleSimulateFacilityReply = () => {
+    const mockReplies = [
+      "Hello team, thank you for the dispatch. We have received the request and have assigned our supervisor to investigate this case. We will expedite the resolution and report back shortly.",
+      "Hi Customer Care, we checked the AWB records. The shipment was briefly held for customs clearance and duty assessment, but has now been cleared and released to the dispatch courier. Scheduled for delivery tomorrow morning.",
+      "Dear Resolution team, we have contacted the customer directly to coordinate a preferred delivery time slot to avoid further inconvenience. Thanks for highlighting this!",
+      "Operations Team Note: Warehouse search completed. The package was sorted into the wrong cage, causing a 24-hour delay. Corrective actions taken, and the package is on the way."
+    ];
+    const randomReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
+
+    const replyComment: VoCComment = {
+      id: `outlook-simulate-${Date.now()}`,
+      timestamp: getFormattedDateTime(),
+      author: `Facility Team (${recordFacility})`,
+      role: 'Facility Operations',
+      text: randomReply
+    };
+
+    const updatedComments = [...editComments, replyComment];
+    setEditComments(updatedComments);
+
+    // Also append to the timeline!
+    const updatedTimeline = [
+      {
+        timestamp: 'Today',
+        action: `Facility Team Reply synced via Outlook: "${randomReply.substring(0, 50)}..."`,
+        pic: `Facility Team`,
+        status: 'In Progress' as const
+      },
+      ...editTimeline
+    ];
+    setEditTimeline(updatedTimeline);
+
+    onUpdateRecord({
+      ...record,
+      status: 'In Progress',
+      comments: updatedComments,
+      timeline: updatedTimeline
+    });
+
+    alert('Mock email response from Facility Team successfully simulated and synchronized as a comment in the VoC Portal!');
   };
 
   const handleRegister = (e: React.FormEvent) => {
@@ -1645,27 +1683,40 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
               </div>
 
               {/* Step 2: Sync replies */}
-              <form onSubmit={handleSyncManualReply} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                 <span className="text-[10px] font-bold text-slate-400 uppercase block tracking-wider">Step 2: Sync Outlook Reply back to Conversation History</span>
                 <p className="text-xs text-slate-600">
-                  Did the facility team reply? Paste their email response here to immediately save and synchronize it back as a timeline comment.
+                  Did the facility team reply? Paste their email response here or simulate a live incoming email response to save and synchronize it back as a timeline comment.
                 </p>
-                <textarea
-                  rows={3}
-                  value={manualReplyText}
-                  onChange={(e) => setManualReplyText(e.target.value)}
-                  placeholder="Paste Facility Team email reply text here..."
-                  className="w-full p-2.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-amber-500 resize-none font-sans"
-                />
-                <button
-                  type="submit"
-                  disabled={!manualReplyText.trim()}
-                  className="w-full py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 rounded-lg text-xs font-black shadow-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  Sync Reply to Conversation History
-                </button>
-              </form>
+                <form onSubmit={handleSyncManualReply} className="space-y-3">
+                  <textarea
+                    rows={3}
+                    value={manualReplyText}
+                    onChange={(e) => setManualReplyText(e.target.value)}
+                    placeholder="Paste Facility Team email reply text here..."
+                    className="w-full p-2.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-amber-500 resize-none font-sans"
+                  />
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="submit"
+                      disabled={!manualReplyText.trim()}
+                      className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 rounded-lg text-xs font-black shadow-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Sync Typed Reply
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSimulateFacilityReply}
+                      className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-black shadow-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      title="Simulates a real Outlook email incoming back to this system"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Simulate Incoming Reply
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
 
             <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end">
