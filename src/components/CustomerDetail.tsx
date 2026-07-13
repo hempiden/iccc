@@ -86,7 +86,7 @@ export default function CustomerDetail({
   
   // Slide style toggle: 'table' (exact match with user's PowerPoint slide!) or 'bento' (visual modern layout)
   const [slideStyle, setSlideStyle] = useState<'table' | 'bento'>('table');
-  const [showOriginalFeedback, setShowOriginalFeedback] = useState(false);
+  const [showOriginalFeedback, setShowOriginalFeedback] = useState(true);
   const [showOriginalActions, setShowOriginalActions] = useState(false);
 
   // Outlook & Facility Dispatch Hub states
@@ -155,7 +155,7 @@ export default function CustomerDetail({
     setEditActionSummary(record.actionSummary || '');
     setEditFollowUpComments(record.followUpComments || '');
     setEditTimeline([...record.timeline]);
-    setShowOriginalFeedback(false);
+    setShowOriginalFeedback(true);
     setShowOriginalActions(false);
 
     // Infer a default deadline from timeline if exists, else blank
@@ -636,22 +636,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
               <Table className="w-3.5 h-3.5" />
               PowerPoint Layout
             </button>
-            <button
-              onClick={() => setSlideStyle('bento')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${slideStyle === 'bento' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              <Layout className="w-3.5 h-3.5" />
-              Bento Grid Layout
-            </button>
           </div>
-
-          <button
-            onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-xs transition-colors cursor-pointer"
-          >
-            <Printer className="w-4 h-4 text-slate-500" />
-            Print/Save PDF
-          </button>
 
           <button
             onClick={handleCopyText}
@@ -667,23 +652,6 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
           >
             <Mail className="w-4 h-4 text-amber-500 animate-pulse" />
             Outlook Dispatch
-          </button>
-
-          <button
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-xl shadow-sm transition-colors cursor-pointer"
-          >
-            {isFullscreen ? (
-              <>
-                <Minimize2 className="w-4 h-4" />
-                Exit Presentation Layout
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-4 h-4" />
-                Presentation Focus Mode
-              </>
-            )}
           </button>
         </div>
       </div>

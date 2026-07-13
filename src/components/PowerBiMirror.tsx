@@ -1215,8 +1215,28 @@ export default function PowerBiMirror({
                           <div className="flex flex-col gap-2">
                             {/* Toggleable view to save space and avoid scrolling */}
                             {!isExpanded ? (
-                              /* 1-2 line summarized view with sparkles and button to click */
+                              /* Full verbatim comment by default */
                               <div className="space-y-1.5">
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-inner">
+                                  <p className="text-xs text-slate-800 leading-relaxed font-serif whitespace-pre-line italic">
+                                    "{r.comment}"
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => toggleCommentExpand(r.id)}
+                                  className="text-[10px] font-extrabold text-amber-600 hover:text-amber-800 flex items-center gap-1 uppercase tracking-wider cursor-pointer mt-1"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
+                                  View AI Summary
+                                  <ChevronRight className="w-3.5 h-3.5 text-amber-600" />
+                                </button>
+                              </div>
+                            ) : (
+                              /* Toggled view: AI summary */
+                              <div className="space-y-1.5">
+                                <span className="text-[9px] font-extrabold text-slate-400 block uppercase tracking-wider">
+                                  AI Summary Analysis:
+                                </span>
                                 <div className="bg-amber-50/60 border border-amber-200/50 rounded-xl p-3 text-[11px] text-slate-800 flex items-start gap-2 shadow-xs">
                                   <div className="font-medium leading-relaxed">
                                     {summary}
@@ -1224,29 +1244,10 @@ export default function PowerBiMirror({
                                 </div>
                                 <button
                                   onClick={() => toggleCommentExpand(r.id)}
-                                  className="text-[10px] font-extrabold text-[#0f2c59] hover:text-blue-800 hover:underline flex items-center gap-0.5 uppercase tracking-wider cursor-pointer mt-1"
+                                  className="text-[10px] font-extrabold text-[#0f2c59] hover:text-blue-800 flex items-center gap-0.5 uppercase tracking-wider cursor-pointer mt-1"
                                 >
-                                  Read Full Verbatim Feedback
-                                  <ChevronRight className="w-3.5 h-3.5 text-[#0f2c59]" />
-                                </button>
-                              </div>
-                            ) : (
-                              /* Full verbatim comment with a back-button style toggle to avoid scrolling */
-                              <div className="space-y-2">
-                                <span className="text-[9px] font-extrabold text-slate-400 block uppercase tracking-wider">
-                                  Original Verbatim Feedback:
-                                </span>
-                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-inner">
-                                  <p className="text-xs text-slate-800 leading-relaxed font-serif whitespace-pre-line italic">
-                                    "{r.comment}"
-                                  </p>
-                                </div>
-                                <button
-                                  onClick={() => toggleCommentExpand(r.id)}
-                                  className="text-[10px] font-extrabold text-amber-600 hover:text-amber-800 flex items-center gap-0.5 uppercase tracking-wider cursor-pointer mt-1"
-                                >
-                                  Collapse Verbatim (Show AI Summary)
-                                  <ChevronRight className="w-3.5 h-3.5 text-amber-600 transform rotate-90" />
+                                  Show Original Verbatim
+                                  <ChevronRight className="w-3.5 h-3.5 text-[#0f2c59] transform rotate-90" />
                                 </button>
                               </div>
                             )}
