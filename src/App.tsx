@@ -299,6 +299,7 @@ export default function App() {
       await batchSaveVoCRecords(newRecords);
     } catch (e) {
       console.error('Failed to batch save loaded records to Firestore:', e);
+      throw e;
     } finally {
       setLoadingDb(false);
     }
@@ -316,6 +317,7 @@ export default function App() {
       await batchSaveVoCRecords(uniqueNew);
     } catch (e) {
       console.error('Failed to batch save appended records to Firestore:', e);
+      throw e;
     } finally {
       setLoadingDb(false);
     }
@@ -552,16 +554,6 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Cloud Sync Database Status Badge */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-slate-50 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-500 select-none">
-            {loadingDb ? (
-              <RefreshCw className="w-3 h-3 text-amber-500 animate-spin" />
-            ) : (
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-            )}
-            <span>{records.length} Surveys</span>
-          </div>
-
           {/* Reset button to clear uploaded data and restore original sample records */}
           <button
             onClick={handleResetToSample}
@@ -591,22 +583,6 @@ export default function App() {
               className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-all shrink-0"
             >
               Dashboard
-            </button>
-          )}
-
-          {/* Presentation Mode Toggle */}
-          {activeTab !== 'presentation' && (
-            <button
-              onClick={() => setPresentationMode(!presentationMode)}
-              className={`flex items-center gap-1 px-2 py-1 text-[11px] font-bold rounded-lg border transition-all select-none cursor-pointer shrink-0 ${
-                presentationMode 
-                  ? 'bg-emerald-600 text-white border-emerald-700' 
-                  : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-              }`}
-              title="Presentation Mode"
-            >
-              <Presentation className="w-3.5 h-3.5 shrink-0" />
-              <span>Pres. Mode</span>
             </button>
           )}
 
@@ -765,12 +741,12 @@ export default function App() {
                 {/* Uploader Component */}
                 <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs">
                   <ExcelUploader 
-                    onRecordsLoaded={(recs) => {
-                      handleRecordsLoaded(recs);
+                    onRecordsLoaded={async (recs) => {
+                      await handleRecordsLoaded(recs);
                       setActiveTab('dashboard');
                     }}
-                    onAppendRecords={(recs) => {
-                      handleAppendRecords(recs);
+                    onAppendRecords={async (recs) => {
+                      await handleAppendRecords(recs);
                       setActiveTab('dashboard');
                     }}
                     currentCount={records.length}

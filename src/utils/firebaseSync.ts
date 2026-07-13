@@ -6,6 +6,32 @@ const COLLECTION_NAME = 'voc_records';
 const COLLEAGUE_COLLECTION = 'colleagues';
 
 /**
+ * Strips all keys with undefined values from an object, recursively,
+ * to prevent Firestore "Unsupported field value: undefined" errors.
+ */
+function sanitizeForFirestore<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeForFirestore(item)) as unknown as T;
+  }
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const val = obj[key];
+        if (val !== undefined) {
+          cleaned[key] = sanitizeForFirestore(val);
+        }
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
+}
+
+/**
  * Normalizes a phone number by stripping spaces, dashes, parentheses,
  * and removing any leading '0' after the '+855' or '855' country code.
  * e.g. +855061999905 -> +85561999905, +855 061 999 905 -> +85561999905, 061999905 -> +85561999905
@@ -61,8 +87,9 @@ export async function fetchVoCRecords(): Promise<VoCRecord[]> {
  */
 export async function saveVoCRecord(record: VoCRecord): Promise<void> {
   try {
+    const cleaned = sanitizeForFirestore(record);
     const docRef = doc(db, COLLECTION_NAME, record.id);
-    await setDoc(docRef, record);
+    await setDoc(docRef, cleaned);
   } catch (error) {
     console.error(`Error saving record ${record.id} to Firestore:`, error);
     throw error;
@@ -83,8 +110,9 @@ export async function batchSaveVoCRecords(records: VoCRecord[]): Promise<void> {
     for (const chunk of chunks) {
       const batch = writeBatch(db);
       chunk.forEach((r) => {
+        const cleaned = sanitizeForFirestore(r);
         const docRef = doc(db, COLLECTION_NAME, r.id);
-        batch.set(docRef, r);
+        batch.set(docRef, cleaned);
       });
       await batch.commit();
     }
@@ -190,8 +218,9 @@ export async function fetchColleagues(): Promise<ActionOwner[]> {
  */
 export async function saveColleague(colleague: ActionOwner): Promise<void> {
   try {
+    const cleaned = sanitizeForFirestore(colleague);
     const docRef = doc(db, COLLEAGUE_COLLECTION, colleague.id);
-    await setDoc(docRef, colleague);
+    await setDoc(docRef, cleaned);
   } catch (error) {
     console.error(`Error saving colleague ${colleague.id}:`, error);
     throw error;

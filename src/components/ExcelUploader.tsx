@@ -5,8 +5,8 @@ import { VoCRecord } from '../types';
 import { parseActionDetails, inferStatus, getNPSCategory, classifyTopic, analyzeSentiment } from '../utils/parser';
 
 interface ExcelUploaderProps {
-  onRecordsLoaded: (records: VoCRecord[]) => void;
-  onAppendRecords: (records: VoCRecord[]) => void;
+  onRecordsLoaded: (records: VoCRecord[]) => Promise<void>;
+  onAppendRecords: (records: VoCRecord[]) => Promise<void>;
   currentCount: number;
 }
 
@@ -139,7 +139,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
     setStatus({ type: 'idle', message: '' });
     const reader = new FileReader();
 
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = e.target?.result;
         let workbook: XLSX.WorkBook;
@@ -326,13 +326,21 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
         }
 
         if (uploadMode === 'append') {
-          onAppendRecords(parsedRecords);
+          setStatus({
+            type: 'idle',
+            message: `Saving ${parsedRecords.length} appended records to Cloud Firestore...`
+          });
+          await onAppendRecords(parsedRecords);
           setStatus({
             type: 'success',
             message: `Successfully appended ${parsedRecords.length} customer records to the active database!`
           });
         } else {
-          onRecordsLoaded(parsedRecords);
+          setStatus({
+            type: 'idle',
+            message: `Saving ${parsedRecords.length} new records to Cloud Firestore (replacing existing)...`
+          });
+          await onRecordsLoaded(parsedRecords);
           setStatus({
             type: 'success',
             message: `Successfully overwrote the database with ${parsedRecords.length} new customer records!`
