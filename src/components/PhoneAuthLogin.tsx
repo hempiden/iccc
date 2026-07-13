@@ -54,6 +54,17 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Resend cooldown timer countdown
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => {
+        setResendCooldown((prev) => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
   
   // Sandbox test bypass mode - default to false unless explicitly enabled via URL param '?sandbox=true' and in developer env
   const [isSandboxMode, setIsSandboxMode] = useState(() => {
@@ -169,6 +180,7 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
 
   // Master function to trigger real or simulated SMS
   const triggerSmsOtp = async (cleanPhone: string) => {
+    setResendCooldown(30); // Start 30s resend cooldown timer on code dispatch
     if (isSandboxMode) {
       setTimeout(() => {
         setLoading(false);
@@ -210,6 +222,21 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
       }
       
       setError(errMsg);
+    }
+  };
+
+  // Handler to resend OTP
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const cleanPhone = normalizePhoneNumber(phoneNumber);
+      await triggerSmsOtp(cleanPhone);
+    } catch (err: any) {
+      console.error('Failed to resend OTP:', err);
+      setError(err.message || 'Failed to resend SMS verification code.');
+      setLoading(false);
     }
   };
 
@@ -623,13 +650,24 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                     <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider">
                       6-Digit Security Code
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setStep('phone')}
-                      className="text-[10px] text-amber-400 font-semibold hover:underline"
-                    >
-                      Change Phone
-                    </button>
+                    <div className="flex items-center gap-2 text-[10px]">
+                      <button
+                        type="button"
+                        disabled={resendCooldown > 0 || loading}
+                        onClick={handleResendOtp}
+                        className="text-amber-400 font-semibold hover:underline disabled:text-slate-500 disabled:no-underline disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        {resendCooldown > 0 ? `Resend (${resendCooldown}s)` : 'Resend Code'}
+                      </button>
+                      <span className="text-slate-600">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setStep('phone')}
+                        className="text-amber-400 font-semibold hover:underline cursor-pointer"
+                      >
+                        Change Phone
+                      </button>
+                    </div>
                   </div>
 
                   <div className="relative">
