@@ -73,6 +73,8 @@ export default function PowerBiMirror({
     category: 'Promoter' | 'Passive' | 'Detractor' | null;
   }>({ channel: null, week: null, category: null });
 
+  const [chartViewMode, setChartViewMode] = useState<'chart' | 'text'>('text');
+
   // Toggle rows for comment expansions
   const [expandedComments, setExpandedComments] = useState<{ [id: string]: boolean }>({});
 
@@ -486,6 +488,32 @@ export default function PowerBiMirror({
           <TrendingUp className="w-4 h-4 text-slate-900 shrink-0" />
           Voice (iCCC) Dashboard
         </span>
+        
+        {/* Toggle between Text View and Bar Chart View */}
+        <div className="flex bg-slate-900/10 p-0.5 rounded-lg border border-slate-950/10 shrink-0">
+          <button
+            type="button"
+            onClick={() => setChartViewMode('text')}
+            className={`px-2.5 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer uppercase tracking-wider ${
+              chartViewMode === 'text'
+                ? 'bg-slate-900 text-[#ffcc00] shadow-sm'
+                : 'text-slate-800 hover:text-black hover:bg-slate-950/5'
+            }`}
+          >
+            Text View
+          </button>
+          <button
+            type="button"
+            onClick={() => setChartViewMode('chart')}
+            className={`px-2.5 py-1 text-[10px] font-black rounded-md transition-all cursor-pointer uppercase tracking-wider ${
+              chartViewMode === 'chart'
+                ? 'bg-slate-900 text-[#ffcc00] shadow-sm'
+                : 'text-slate-800 hover:text-black hover:bg-slate-950/5'
+            }`}
+          >
+            Bar Chart View
+          </button>
+        </div>
       </div>
 
       {/* ========================================================= */}
@@ -542,161 +570,279 @@ export default function PowerBiMirror({
                 )}
               </div>
 
-              {/* Main SVG/HTML Canvas Arena */}
-              <div className="flex h-56 items-stretch relative">
-                
-                {/* A. Vertical Power BI Scroll/Zoom Slider Slider */}
-                <div className="w-5 flex flex-col items-center justify-between py-2 shrink-0 border-r border-slate-200/60 mr-2">
-                  <div className="w-1.5 h-full bg-slate-200 rounded-full relative flex flex-col justify-between">
-                    {/* Top Handle */}
-                    <div className="absolute top-0 -left-1 w-3.5 h-3.5 rounded-full bg-white border border-slate-400 shadow-sm cursor-row-resize flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
-                    </div>
-                    {/* Bottom Handle */}
-                    <div className="absolute bottom-0 -left-1 w-3.5 h-3.5 rounded-full bg-white border border-slate-400 shadow-sm cursor-row-resize flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
-                    </div>
-                  </div>
-                  <span className="text-[7px] font-black text-slate-400 rotate-270 uppercase tracking-widest translate-y-1 block h-2 shrink-0">Zoom</span>
-                </div>
+              {/* Main SVG/HTML Canvas Arena or Text Grid alternative */}
+              {chartViewMode === 'text' ? (
+                /* High-density, gorgeous text table for perfect responsive viewing */
+                <div className="flex flex-col h-[235px] justify-between overflow-y-auto pt-2">
+                  <table className="w-full text-left text-[11px] font-sans">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-400 font-extrabold uppercase tracking-wider text-[9px] select-none">
+                        <th className="py-2">Week</th>
+                        <th className="py-2 text-center">Total</th>
+                        <th className="py-2 text-center text-[#0f2c59]">Prom</th>
+                        <th className="py-2 text-center text-[#3b82f6]">Pass</th>
+                        <th className="py-2 text-center text-[#ef4444]">Detr</th>
+                        <th className="py-2 text-right">NPS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {list.map(pt => {
+                        const isWeekSelected = selectedWeeks.includes(pt.weekKey);
+                        const npsScore = pt.total > 0 ? Math.round(((pt.promoters - pt.detractors) / pt.total) * 100) : 0;
+                        const npsColor = npsScore > 0 ? 'text-emerald-600 font-black' : npsScore < 0 ? 'text-rose-600 font-black' : 'text-slate-500 font-black';
+                        
+                        const isRowFiltered = selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName;
 
-                {/* B. Count of Survey ID label vertical */}
-                <div className="w-4 flex items-center justify-center shrink-0">
-                  <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-wider origin-center -rotate-90 whitespace-nowrap">
-                    Count of Survey ID
-                  </span>
-                </div>
-
-                {/* C. Grid & Bars container */}
-                <div className="flex-1 flex flex-col justify-between relative px-2">
-                  
-                  {/* Grid Lines behind bars */}
-                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none py-1">
-                    {gridLines.map((gl) => (
-                      <div key={gl} className="w-full flex items-center gap-2">
-                        <span className="text-[8px] font-mono font-bold text-slate-400 w-4 text-right">{gl}</span>
-                        <div className="flex-1 border-t border-dashed border-slate-200" />
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Horizontal GREEN Target Line at Y = 10 */}
-                  <div 
-                    style={{ bottom: `${(10 / maxVal) * 100}%` }}
-                    className="absolute left-6 right-0 border-t-2 border-dashed border-emerald-500/90 z-10 pointer-events-none flex justify-end"
-                  >
-                    <span className="bg-emerald-500 text-white text-[7px] font-black uppercase px-1 rounded -translate-y-2 translate-x-1 tracking-wider">
-                      Target 10
-                    </span>
-                  </div>
-
-                  {/* Columns */}
-                  <div className="w-full h-full flex items-end gap-3 px-6 pb-2 z-10 pt-4 relative">
-                    {list.map(pt => {
-                      const isWeekSelected = selectedWeeks.includes(pt.weekKey);
-                      const isBarActive = selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName;
-
-                      // Category segment heights in percentage
-                      const promPct = (pt.promoters / maxVal) * 100;
-                      const passPct = (pt.passives / maxVal) * 100;
-                      const detrPct = (pt.detractors / maxVal) * 100;
-
-                      return (
-                        <div 
-                          key={pt.weekKey} 
-                          className={`flex-1 h-full flex flex-col justify-end items-center relative group transition-all duration-300 ${
-                            !isWeekSelected ? 'opacity-20 pointer-events-none' : ''
-                          }`}
-                        >
-                          {/* Floating Total Badge */}
-                          <span className="text-[9px] font-black text-slate-700 mb-1 group-hover:scale-110 transition-transform">
-                            {pt.total}
-                          </span>
-
-                          {/* Stacked bar cylinder */}
-                          <div 
-                            className={`w-6 h-full flex flex-col justify-end rounded bg-slate-100 overflow-hidden shadow-xs border transition-all ${
-                              isBarActive ? 'ring-2 ring-amber-400 border-amber-500 shadow-md scale-105' : 'border-slate-200 hover:border-slate-400'
-                            }`}
+                        return (
+                          <tr 
+                            key={pt.weekKey} 
+                            className={`hover:bg-slate-100/60 transition-colors ${
+                              !isWeekSelected ? 'opacity-30' : ''
+                            } ${isRowFiltered && !selectedChartFilter.category ? 'bg-amber-50/50 font-bold' : ''}`}
                           >
-                            {/* Promoter - top segment */}
-                            {pt.promoters > 0 && (
-                              <button 
-                                style={{ height: `${promPct}%` }}
+                            {/* Week number */}
+                            <td className="py-2 font-black text-slate-800">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: null })}
+                                className="hover:underline text-left cursor-pointer font-black text-slate-800"
+                              >
+                                W{pt.week}
+                              </button>
+                            </td>
+
+                            {/* Total Count */}
+                            <td className="py-2 text-center font-mono font-bold text-slate-600">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: null })}
+                                className="px-1.5 py-0.5 rounded hover:bg-slate-200 transition-colors cursor-pointer text-slate-700 font-bold"
+                              >
+                                {pt.total}
+                              </button>
+                            </td>
+
+                            {/* Promoters */}
+                            <td className="py-2 text-center font-mono">
+                              <button
+                                type="button"
                                 onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Promoter' })}
-                                className="bg-[#0f2c59] w-full hover:brightness-110 transition-all cursor-pointer relative"
-                                title={`Promoters: ${pt.promoters}`}
+                                className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-all font-bold ${
+                                  selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName && selectedChartFilter.category === 'Promoter'
+                                    ? 'bg-[#0f2c59] text-white ring-1 ring-[#0f2c59]'
+                                    : 'hover:bg-[#0f2c59]/10 text-[#0f2c59]'
+                                }`}
                               >
-                                {pt.promoters >= 5 && (
-                                  <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
-                                    {pt.promoters}
-                                  </span>
-                                )}
+                                {pt.promoters}
                               </button>
-                            )}
+                            </td>
 
-                            {/* Passive - middle segment */}
-                            {pt.passives > 0 && (
-                              <button 
-                                style={{ height: `${passPct}%` }}
+                            {/* Passives */}
+                            <td className="py-2 text-center font-mono">
+                              <button
+                                type="button"
                                 onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Passive' })}
-                                className="bg-[#3b82f6] w-full hover:brightness-110 transition-all cursor-pointer relative"
-                                title={`Passives: ${pt.passives}`}
+                                className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-all font-bold ${
+                                  selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName && selectedChartFilter.category === 'Passive'
+                                    ? 'bg-[#3b82f6] text-white ring-1 ring-[#3b82f6]'
+                                    : 'hover:bg-[#3b82f6]/10 text-[#3b82f6]'
+                                }`}
                               >
-                                {pt.passives >= 3 && (
-                                  <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
-                                    {pt.passives}
-                                  </span>
-                                )}
+                                {pt.passives}
                               </button>
-                            )}
+                            </td>
 
-                            {/* Detractor - bottom segment */}
-                            {pt.detractors > 0 && (
-                              <button 
-                                style={{ height: `${detrPct}%` }}
+                            {/* Detractors */}
+                            <td className="py-2 text-center font-mono">
+                              <button
+                                type="button"
                                 onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Detractor' })}
-                                className="bg-[#ef4444] w-full hover:brightness-110 transition-all cursor-pointer relative"
-                                title={`Detractors: ${pt.detractors}`}
+                                className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-all font-bold ${
+                                  selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName && selectedChartFilter.category === 'Detractor'
+                                    ? 'bg-[#ef4444] text-white ring-1 ring-[#ef4444]'
+                                    : 'hover:bg-[#ef4444]/10 text-[#ef4444]'
+                                }`}
                               >
-                                {pt.detractors >= 1 && (
-                                  <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
-                                    {pt.detractors}
-                                  </span>
-                                )}
+                                {pt.detractors}
                               </button>
-                            )}
-                          </div>
+                            </td>
 
-                          {/* Hover Tooltip Info */}
-                          <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] rounded p-2 shadow-lg z-30 pointer-events-none transition-opacity whitespace-nowrap mb-6 flex flex-col gap-0.5 border border-slate-700/50">
-                            <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5 text-amber-400">Week {pt.week} ({pt.year}) Details</span>
-                            <span className="flex items-center gap-1">🟢 Promoters: <strong className="font-mono">{pt.promoters}</strong></span>
-                            <span className="flex items-center gap-1">🟡 Passives: <strong className="font-mono">{pt.passives}</strong></span>
-                            <span className="flex items-center gap-1">🔴 Detractors: <strong className="font-mono">{pt.detractors}</strong></span>
-                            <span className="flex items-center gap-1 border-t border-slate-700/50 pt-0.5 mt-0.5">📊 Total Count: <strong className="font-mono text-white">{pt.total}</strong></span>
-                          </div>
-
+                            {/* NPS score badge */}
+                            <td className="py-2 text-right">
+                              <span className={`inline-block font-mono text-[10px] px-1 rounded ${npsColor}`}>
+                                {npsScore > 0 ? `+${npsScore}` : npsScore}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  
+                  {/* Footer instruction text */}
+                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider text-center mt-2 pt-2 border-t border-slate-100 select-none">
+                    * Click any cell to apply interactive Power BI filters
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Main SVG/HTML Canvas Arena */}
+                  <div className="flex h-56 items-stretch relative">
+                    
+                    {/* A. Vertical Power BI Scroll/Zoom Slider Slider */}
+                    <div className="w-5 flex flex-col items-center justify-between py-2 shrink-0 border-r border-slate-200/60 mr-2">
+                      <div className="w-1.5 h-full bg-slate-200 rounded-full relative flex flex-col justify-between">
+                        {/* Top Handle */}
+                        <div className="absolute top-0 -left-1 w-3.5 h-3.5 rounded-full bg-white border border-slate-400 shadow-sm cursor-row-resize flex items-center justify-center">
+                          <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
                         </div>
-                      );
-                    })}
+                        {/* Bottom Handle */}
+                        <div className="absolute bottom-0 -left-1 w-3.5 h-3.5 rounded-full bg-white border border-slate-400 shadow-sm cursor-row-resize flex items-center justify-center">
+                          <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+                        </div>
+                      </div>
+                      <span className="text-[7px] font-black text-slate-400 rotate-270 uppercase tracking-widest translate-y-1 block h-2 shrink-0">Zoom</span>
+                    </div>
+
+                    {/* B. Count of Survey ID label vertical */}
+                    <div className="w-4 flex items-center justify-center shrink-0">
+                      <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-wider origin-center -rotate-90 whitespace-nowrap">
+                        Count of Survey ID
+                      </span>
+                    </div>
+
+                    {/* C. Grid & Bars container */}
+                    <div className="flex-1 flex flex-col justify-between relative px-2">
+                      
+                      {/* Grid Lines behind bars */}
+                      <div className="absolute inset-0 flex flex-col justify-between pointer-events-none py-1">
+                        {gridLines.map((gl) => (
+                          <div key={gl} className="w-full flex items-center gap-2">
+                            <span className="text-[8px] font-mono font-bold text-slate-400 w-4 text-right">{gl}</span>
+                            <div className="flex-1 border-t border-dashed border-slate-200" />
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Horizontal GREEN Target Line at Y = 10 */}
+                      <div 
+                        style={{ bottom: `${(10 / maxVal) * 100}%` }}
+                        className="absolute left-6 right-0 border-t-2 border-dashed border-emerald-500/90 z-10 pointer-events-none flex justify-end"
+                      >
+                        <span className="bg-emerald-500 text-white text-[7px] font-black uppercase px-1 rounded -translate-y-2 translate-x-1 tracking-wider">
+                          Target 10
+                        </span>
+                      </div>
+
+                      {/* Columns */}
+                      <div className="w-full h-full flex items-end gap-3 px-6 pb-2 z-10 pt-4 relative">
+                        {list.map(pt => {
+                          const isWeekSelected = selectedWeeks.includes(pt.weekKey);
+                          const isBarActive = selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName;
+
+                          // Category segment heights in percentage
+                          const promPct = (pt.promoters / maxVal) * 100;
+                          const passPct = (pt.passives / maxVal) * 100;
+                          const detrPct = (pt.detractors / maxVal) * 100;
+
+                          return (
+                            <div 
+                              key={pt.weekKey} 
+                              className={`flex-1 h-full flex flex-col justify-end items-center relative group transition-all duration-300 ${
+                                !isWeekSelected ? 'opacity-20 pointer-events-none' : ''
+                              }`}
+                            >
+                              {/* Floating Total Badge */}
+                              <span className="text-[9px] font-black text-slate-700 mb-1 group-hover:scale-110 transition-transform">
+                                {pt.total}
+                              </span>
+
+                              {/* Stacked bar cylinder */}
+                              <div 
+                                className={`w-6 h-full flex flex-col justify-end rounded bg-slate-100 overflow-hidden shadow-xs border transition-all ${
+                                  isBarActive ? 'ring-2 ring-amber-400 border-amber-500 shadow-md scale-105' : 'border-slate-200 hover:border-slate-400'
+                                }`}
+                              >
+                                {/* Promoter - top segment */}
+                                {pt.promoters > 0 && (
+                                  <button 
+                                    style={{ height: `${promPct}%` }}
+                                    onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Promoter' })}
+                                    className="bg-[#0f2c59] w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                    title={`Promoters: ${pt.promoters}`}
+                                  >
+                                    {pt.promoters >= 5 && (
+                                      <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
+                                        {pt.promoters}
+                                      </span>
+                                    )}
+                                  </button>
+                                )}
+
+                                {/* Passive - middle segment */}
+                                {pt.passives > 0 && (
+                                  <button 
+                                    style={{ height: `${passPct}%` }}
+                                    onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Passive' })}
+                                    className="bg-[#3b82f6] w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                    title={`Passives: ${pt.passives}`}
+                                  >
+                                    {pt.passives >= 3 && (
+                                      <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
+                                        {pt.passives}
+                                      </span>
+                                    )}
+                                  </button>
+                                )}
+
+                                {/* Detractor - bottom segment */}
+                                {pt.detractors > 0 && (
+                                  <button 
+                                    style={{ height: `${detrPct}%` }}
+                                    onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Detractor' })}
+                                    className="bg-[#ef4444] w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                    title={`Detractors: ${pt.detractors}`}
+                                  >
+                                    {pt.detractors >= 1 && (
+                                      <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
+                                        {pt.detractors}
+                                      </span>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Hover Tooltip Info */}
+                              <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] rounded p-2 shadow-lg z-30 pointer-events-none transition-opacity whitespace-nowrap mb-6 flex flex-col gap-0.5 border border-slate-700/50">
+                                <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5 text-amber-400">Week {pt.week} ({pt.year}) Details</span>
+                                <span className="flex items-center gap-1">🟢 Promoters: <strong className="font-mono">{pt.promoters}</strong></span>
+                                <span className="flex items-center gap-1">🟡 Passives: <strong className="font-mono">{pt.passives}</strong></span>
+                                <span className="flex items-center gap-1">🔴 Detractors: <strong className="font-mono">{pt.detractors}</strong></span>
+                                <span className="flex items-center gap-1 border-t border-slate-700/50 pt-0.5 mt-0.5">📊 Total Count: <strong className="font-mono text-white">{pt.total}</strong></span>
+                              </div>
+
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                    </div>
                   </div>
 
-                </div>
-              </div>
-
-              {/* X Axis sequence label (Week numbers) */}
-              <div className="flex justify-between items-center text-[10px] text-slate-500 font-extrabold mt-1 border-t border-slate-100 pt-2.5 px-2">
-                <span className="w-11 shrink-0" />
-                <div className="flex-1 flex justify-between px-6">
-                  {list.map(pt => (
-                    <span key={pt.weekKey} className="w-6 text-center">{pt.week}</span>
-                  ))}
-                </div>
-              </div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center block mt-1">
-                {displayedYearsLabel}
-              </span>
+                  {/* X Axis sequence label (Week numbers) */}
+                  <div className="flex justify-between items-center text-[10px] text-slate-500 font-extrabold mt-1 border-t border-slate-100 pt-2.5 px-2">
+                    <span className="w-11 shrink-0" />
+                    <div className="flex-1 flex justify-between px-6">
+                      {list.map(pt => (
+                        <span key={pt.weekKey} className="w-6 text-center">{pt.week}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center block mt-1">
+                    {displayedYearsLabel}
+                  </span>
+                </>
+              )}
             </div>
           );
         })}
