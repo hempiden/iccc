@@ -5,37 +5,99 @@ import { TimelineEvent, VoCRecord } from '../types';
  * Handles messy text with timestamp brackets: [YYYY-MM-DD HH:MM:SS] Action description;
  * Even works across multiple lines and with or without semicolon delimiters.
  */
-export function parseActionDetails(rawText: string): TimelineEvent[] {
+export function parseActionDetails(rawText: string, fallbackDate: string = 'N/A'): TimelineEvent[] {
   if (!rawText) return [];
 
   const timeline: TimelineEvent[] = [];
   
-  // Lookahead regex to find [YYYY-MM-DD HH:MM:SS] and capture everything up to the next timestamp or end of text.
-  const regex = /\[(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\]\s*([\s\S]*?)(?=\[(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})\]|$)/g;
-  
+  // A highly robust timestamp regex that matches various formats inside brackets, allowing optional spaces:
+  // e.g. [2026-06-02 16:58:34], [ 2026-06-02 16:58:34 ], [02/06/2026 16:58:34], [2026-06-02], [2026-06-02 16:58]
+  const timestampRegex = /\[\s*(\d{1,4}[-/.]\d{1,4}[-/.]\d{2,4}(?:[\s\u00A0T]+\d{1,2}:\d{1,2}(?::\d{1,2})?(?:\s*[AaPpMm]{2})?)?)\s*\]/g;
+
+  interface TempMatch {
+    timestamp: string;
+    startIndex: number;
+    endIndex: number;
+  }
+
+  const matches: TempMatch[] = [];
   let match;
-  while ((match = regex.exec(rawText)) !== null) {
-    const timestamp = match[1].trim();
-    let action = match[2].trim();
-    
-    // Clean up trailing semicolons or comma separators often found in logs
-    action = action.replace(/;\s*$/, '').replace(/,\s*$/, '').trim();
-    
-    if (timestamp && action) {
-      timeline.push({ timestamp, action });
+  
+  timestampRegex.lastIndex = 0;
+  while ((match = timestampRegex.exec(rawText)) !== null) {
+    matches.push({
+      timestamp: match[1].trim(),
+      startIndex: match.index,
+      endIndex: timestampRegex.lastIndex
+    });
+  }
+
+  if (matches.length > 0) {
+    for (let i = 0; i < matches.length; i++) {
+      const current = matches[i];
+      const next = matches[i + 1];
+      
+      const actionStart = current.endIndex;
+      const actionEnd = next ? next.startIndex : rawText.length;
+      
+      let action = rawText.substring(actionStart, actionEnd).trim();
+      
+      // Clean up trailing/leading punctuation, semicolons, commas, or extra separator noise
+      action = action
+        .replace(/^[:;\s,·•-]+/, '') // leading punctuation/whitespace
+        .replace(/[:;\s,·•-]+$/, '') // trailing punctuation/whitespace
+        .trim();
+        
+      if (action) {
+        timeline.push({
+          timestamp: current.timestamp,
+          action: action
+        });
+      }
     }
   }
 
   // If regex parsing didn't find any standard timestamps, but text exists, treat the entire text as one initial action
   if (timeline.length === 0 && rawText.trim().length > 0) {
     timeline.push({
-      timestamp: 'N/A',
+      timestamp: fallbackDate,
       action: rawText.trim()
     });
   }
 
   // Sort timeline events chronologically (or preserve order as in log)
   return timeline;
+}
+
+/**
+ * Heals a record's parsed timeline if it was previously saved with a failed/N/A parsing,
+ * but still has the raw logs in `actionDetailsRaw`.
+ */
+export function healRecordTimeline(record: VoCRecord): VoCRecord {
+  if (!record) return record;
+  
+  let timeline = record.timeline || [];
+  const fallbackDate = record.creationDate || record.responseDate || 'N/A';
+
+  if (timeline.length === 0 && record.actionDetailsRaw) {
+    timeline = parseActionDetails(record.actionDetailsRaw, fallbackDate);
+  } else {
+    // If any event has 'N/A' as timestamp, heal it with record dates
+    timeline = timeline.map(event => {
+      if (!event.timestamp || event.timestamp === 'N/A') {
+        return {
+          ...event,
+          timestamp: fallbackDate
+        };
+      }
+      return event;
+    });
+  }
+
+  return {
+    ...record,
+    timeline
+  };
 }
 
 /**

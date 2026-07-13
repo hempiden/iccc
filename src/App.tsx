@@ -17,6 +17,7 @@ import ColleagueManager from './components/ColleagueManager';
 import UserProfileModal from './components/UserProfileModal';
 import NotificationCenter, { CommentNotification } from './components/NotificationCenter';
 import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber, clearVoCRecords, deleteVoCRecords } from './utils/firebaseSync';
+import { healRecordTimeline } from './utils/parser';
 
 // Helper to sanitize database loaded date fields that might contain Excel serial formats (e.g. "45980")
 const sanitizeExcelDateString = (val: string | undefined): string | undefined => {
@@ -169,11 +170,14 @@ export default function App() {
     setLoadingDb(true);
     seedFirestoreIfNeeded(sampleRecords)
       .then((data) => {
-        const sanitized = data.map(r => ({
-          ...r,
-          responseDate: sanitizeExcelDateString(r.responseDate),
-          creationDate: sanitizeExcelDateString(r.creationDate)
-        }));
+        const sanitized = data.map(r => {
+          const healed = healRecordTimeline(r);
+          return {
+            ...healed,
+            responseDate: sanitizeExcelDateString(healed.responseDate),
+            creationDate: sanitizeExcelDateString(healed.creationDate)
+          };
+        });
         setRecords(sanitized);
         setLoadingDb(false);
       })

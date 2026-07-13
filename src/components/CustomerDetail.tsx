@@ -7,7 +7,7 @@ import {
   MessageSquare, Mail, Share2, ExternalLink, Check, FileText
 } from 'lucide-react';
 import { VoCRecord, ActionOwner, TimelineEvent, VoCComment } from '../types';
-import { getSurveyUrl } from '../utils/parser';
+import { getSurveyUrl, healRecordTimeline } from '../utils/parser';
 import { fetchColleagues } from '../utils/firebaseSync';
 import MetricCards from './MetricCards';
 import Timeline from './Timeline';
@@ -149,17 +149,18 @@ export default function CustomerDetail({
 
   // Synchronize parameter form editing states with loaded record strictly when record ID changes
   useEffect(() => {
-    setEditStatus(record.status);
-    setEditOwner(record.owner || '');
-    setEditCustomSummary(record.customSummary || '');
-    setEditActionSummary(record.actionSummary || '');
-    setEditFollowUpComments(record.followUpComments || '');
-    setEditTimeline([...record.timeline]);
+    const healed = healRecordTimeline(record);
+    setEditStatus(healed.status);
+    setEditOwner(healed.owner || '');
+    setEditCustomSummary(healed.customSummary || '');
+    setEditActionSummary(healed.actionSummary || '');
+    setEditFollowUpComments(healed.followUpComments || '');
+    setEditTimeline([...healed.timeline]);
     setShowOriginalFeedback(true);
     setShowOriginalActions(false);
 
     // Infer a default deadline from timeline if exists, else blank
-    const inferredDeadline = record.timeline[0]?.deadline || '30 Apr';
+    const inferredDeadline = healed.timeline[0]?.deadline || '30 Apr';
     setEditDeadline(inferredDeadline);
 
     // Sync Outlook dispatch details

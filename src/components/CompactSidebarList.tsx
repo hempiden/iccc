@@ -72,6 +72,25 @@ export default function CompactSidebarList({
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  const toInputDate = (timestamp: number) => {
+    const d = new Date(timestamp);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const fromInputDate = (dateStr: string, isEnd: boolean) => {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return Date.now();
+    if (isEnd) {
+      d.setHours(23, 59, 59, 999);
+    } else {
+      d.setHours(0, 0, 0, 0);
+    }
+    return d.getTime();
+  };
+
   return (
     <div className="flex flex-col h-full bg-white text-slate-800 border-r border-slate-200">
       {/* Sidebar Controls Panel */}
@@ -171,7 +190,27 @@ export default function CompactSidebarList({
             <div className="space-y-1">
               <div className="flex justify-between items-center text-slate-500 font-semibold">
                 <span>From:</span>
-                <span className="font-black text-slate-700 bg-white border border-slate-100 px-1 py-0.5 rounded">{formatDateShort(sliderStart)}</span>
+                <div className="relative inline-block cursor-pointer">
+                  <span className="font-black text-slate-700 bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-1.5 py-0.5 rounded transition-all flex items-center gap-1">
+                    {formatDateShort(sliderStart)}
+                    <Calendar className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                  </span>
+                  <input 
+                    type="date"
+                    value={toInputDate(sliderStart)}
+                    min={toInputDate(safeMin)}
+                    max={toInputDate(sliderEnd)}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const val = fromInputDate(e.target.value, false);
+                        if (val <= sliderEnd) {
+                          setSliderStart(val);
+                        }
+                      }
+                    }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                  />
+                </div>
               </div>
               <input 
                 type="range"
@@ -191,7 +230,27 @@ export default function CompactSidebarList({
             <div className="space-y-1">
               <div className="flex justify-between items-center text-slate-500 font-semibold">
                 <span>To:</span>
-                <span className="font-black text-slate-700 bg-white border border-slate-100 px-1 py-0.5 rounded">{formatDateShort(sliderEnd)}</span>
+                <div className="relative inline-block cursor-pointer">
+                  <span className="font-black text-slate-700 bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-1.5 py-0.5 rounded transition-all flex items-center gap-1">
+                    {formatDateShort(sliderEnd)}
+                    <Calendar className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                  </span>
+                  <input 
+                    type="date"
+                    value={toInputDate(sliderEnd)}
+                    min={toInputDate(sliderStart)}
+                    max={toInputDate(safeMax)}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const val = fromInputDate(e.target.value, true);
+                        if (val >= sliderStart) {
+                          setSliderEnd(val);
+                        }
+                      }
+                    }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                  />
+                </div>
               </div>
               <input 
                 type="range"

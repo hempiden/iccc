@@ -77,6 +77,9 @@ export default function PowerBiMirror({
 
   // Toggle rows for comment expansions
   const [expandedComments, setExpandedComments] = useState<{ [id: string]: boolean }>({});
+  // Toggle for action expansions and original text views
+  const [expandedActions, setExpandedActions] = useState<{ [id: string]: boolean }>({});
+  const [viewOriginalAction, setViewOriginalAction] = useState<{ [id: string]: boolean }>({});
 
   // Checkbox selection for accidentally uploaded survey removal
   const [selectedSurveyIds, setSelectedSurveyIds] = useState<string[]>([]);
@@ -1080,8 +1083,7 @@ export default function PowerBiMirror({
                   const isScreenshotRecord = r.id === '284669518';
                   const summary = getAiSummary(r);
                   
-                  // Helper inside to get a clean key action summary
-                  const getActionSummaryText = (record: VoCRecord) => {
+                  const getSimplifiedActionText = (record: VoCRecord) => {
                     if (record.timeline && record.timeline.length > 0) {
                       const nonAdmin = record.timeline.filter(e => {
                         const a = e.action.toLowerCase();
@@ -1091,15 +1093,26 @@ export default function PowerBiMirror({
                       const latest = target[target.length - 1];
                       let txt = latest.action;
                       txt = txt.replace(/^(Case Edited:\s*|Alert Assigned:\s*|\d+[\.\)\s]+\s*)/i, '');
-                      if (txt.length > 85) {
-                        return txt.substring(0, 82) + '...';
-                      }
                       return txt;
                     }
                     return "No formal actions registered yet.";
                   };
 
-                  const actionSummary = getActionSummaryText(r);
+                  const getOriginalActionText = (record: VoCRecord) => {
+                    if (record.timeline && record.timeline.length > 0) {
+                      const nonAdmin = record.timeline.filter(e => {
+                        const a = e.action.toLowerCase();
+                        return !a.includes('alert created') && !a.includes('automatically assigned');
+                      });
+                      const target = nonAdmin.length > 0 ? nonAdmin : record.timeline;
+                      const latest = target[target.length - 1];
+                      return latest.action;
+                    }
+                    return "No formal actions registered yet.";
+                  };
+
+                  const simplifiedAction = getSimplifiedActionText(r);
+                  const originalAction = getOriginalActionText(r);
 
                   // Dynamic color styling helper based on Likelihood score
                   const getScoreColors = (score: number) => {
@@ -1271,11 +1284,46 @@ export default function PowerBiMirror({
                             </div>
 
                             {/* Key action summary */}
-                            <div className="text-[11px] text-slate-600 leading-normal">
-                              <span className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider">Latest Action Taken (AI Summary):</span>
-                              <p className="font-semibold text-slate-700 italic mt-0.5 leading-snug">
-                                {actionSummary}
-                              </p>
+                            <div className="text-[11px] text-slate-600 leading-normal space-y-1">
+                              <div className="flex justify-between items-center gap-2">
+                                <span className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider">
+                                  {viewOriginalAction[r.id] ? "Latest Action (Original Log):" : "Latest Action (AI Summary):"}
+                                </span>
+                                {r.timeline && r.timeline.length > 0 && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setViewOriginalAction(prev => ({ ...prev, [r.id]: !prev[r.id] }));
+                                    }}
+                                    className="text-[8px] font-extrabold text-blue-600 hover:text-blue-800 uppercase tracking-widest cursor-pointer px-1 py-0.5 rounded hover:bg-blue-50 transition-colors"
+                                  >
+                                    {viewOriginalAction[r.id] ? "Show Summary" : "Show Original"}
+                                  </button>
+                                )}
+                              </div>
+                              
+                              <div className="font-semibold text-slate-700 italic mt-0.5 leading-snug">
+                                {viewOriginalAction[r.id] ? (
+                                  <p className="whitespace-pre-wrap">{originalAction}</p>
+                                ) : (
+                                  <div>
+                                    <p className={`${expandedActions[r.id] ? '' : 'line-clamp-3'} whitespace-pre-wrap`}>
+                                      {simplifiedAction}
+                                    </p>
+                                    {simplifiedAction.length > 85 && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedActions(prev => ({ ...prev, [r.id]: !prev[r.id] }));
+                                        }}
+                                        className="text-[8px] font-extrabold text-amber-600 hover:text-amber-800 mt-1 uppercase cursor-pointer"
+                                      >
+                                        {expandedActions[r.id] ? "Show Less" : "Read Full Summary"}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </div>
 
                             {/* Additional Action Owner Details/Bulletin */}
