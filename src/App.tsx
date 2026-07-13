@@ -16,7 +16,7 @@ import PhoneAuthLogin from './components/PhoneAuthLogin';
 import ColleagueManager from './components/ColleagueManager';
 import UserProfileModal from './components/UserProfileModal';
 import NotificationCenter, { CommentNotification } from './components/NotificationCenter';
-import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber, clearVoCRecords } from './utils/firebaseSync';
+import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber, clearVoCRecords, deleteVoCRecords } from './utils/firebaseSync';
 
 // Helper to sanitize database loaded date fields that might contain Excel serial formats (e.g. "45980")
 const sanitizeExcelDateString = (val: string | undefined): string | undefined => {
@@ -262,6 +262,23 @@ export default function App() {
       await saveVoCRecord(updatedRecord);
     } catch (e) {
       console.error('Failed to sync updated record to Firestore:', e);
+    }
+  };
+
+  // Delete records from Firestore and local state
+  const handleDeleteRecords = async (idsToDelete: string[]) => {
+    try {
+      setLoadingDb(true);
+      await deleteVoCRecords(idsToDelete);
+      setRecords(prev => prev.filter(r => !idsToDelete.includes(r.id)));
+      if (selectedRecordId && idsToDelete.includes(selectedRecordId)) {
+        setSelectedRecordId(null);
+      }
+    } catch (e) {
+      console.error('Failed to delete selected records:', e);
+      alert('Failed to delete selected surveys. Please try again.');
+    } finally {
+      setLoadingDb(false);
     }
   };
 
@@ -656,6 +673,7 @@ export default function App() {
                 <PowerBiMirror 
                   records={filteredByTimelineAndChannel} 
                   onSelectRecord={(r) => setSelectedRecordId(r.id)} 
+                  onDeleteRecords={handleDeleteRecords}
                   presentationMode={presentationMode}
                   onTogglePresentationMode={setPresentationMode}
                   statusFilter={statusFilter}

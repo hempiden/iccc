@@ -3,7 +3,7 @@ import {
   Sparkles, ChevronDown, ChevronRight, Search, RotateCcw, 
   ArrowRight, ExternalLink, HelpCircle, Eye, EyeOff, Check, X,
   TrendingUp, BarChart3, List, Award, ShieldAlert, Sliders, Calendar,
-  Presentation
+  Presentation, Trash2
 } from 'lucide-react';
 import { VoCRecord, TimelineEvent } from '../types';
 import { getSurveyUrl } from '../utils/parser';
@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'motion/react';
 interface PowerBiMirrorProps {
   records: VoCRecord[];
   onSelectRecord: (record: VoCRecord) => void;
+  onDeleteRecords?: (ids: string[]) => Promise<void>;
   presentationMode?: boolean;
   onTogglePresentationMode?: (val: boolean) => void;
   statusFilter?: 'All' | 'New' | 'In Progress' | 'Completed';
@@ -49,6 +50,7 @@ const getYearAndWeekFromDate = (dateStr: string): { year: number; week: number; 
 export default function PowerBiMirror({ 
   records, 
   onSelectRecord,
+  onDeleteRecords,
   presentationMode: presentationModeProp,
   onTogglePresentationMode,
   statusFilter,
@@ -73,6 +75,11 @@ export default function PowerBiMirror({
 
   // Toggle rows for comment expansions
   const [expandedComments, setExpandedComments] = useState<{ [id: string]: boolean }>({});
+
+  // Checkbox selection for accidentally uploaded survey removal
+  const [selectedSurveyIds, setSelectedSurveyIds] = useState<string[]>([]);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // --- Presentation Mode ---
   const [localPresentationMode, setLocalPresentationMode] = useState(false);
@@ -359,6 +366,49 @@ export default function PowerBiMirror({
       return true;
     });
   }, [mappedRecords, searchQuery, selectedWeeks, responseFeed, npsCategory, selectedChartFilter, presentationMode, statusFilter, categoryFilter]);
+
+  // Checkbox selection utility helpers
+  const isAllSelected = useMemo(() => {
+    return filteredTableRecords.length > 0 && filteredTableRecords.every(r => selectedSurveyIds.includes(r.id));
+  }, [filteredTableRecords, selectedSurveyIds]);
+
+  const handleSelectAllToggle = () => {
+    if (isAllSelected) {
+      // Unselect all currently displayed records
+      const displayedIds = filteredTableRecords.map(r => r.id);
+      setSelectedSurveyIds(prev => prev.filter(id => !displayedIds.includes(id)));
+    } else {
+      // Select all currently displayed records
+      const displayedIds = filteredTableRecords.map(r => r.id);
+      setSelectedSurveyIds(prev => {
+        const union = new Set([...prev, ...displayedIds]);
+        return Array.from(union);
+      });
+    }
+  };
+
+  const handleSelectRowToggle = (id: string) => {
+    setSelectedSurveyIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(item => item !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedSurveyIds.length === 0) return;
+    try {
+      if (onDeleteRecords) {
+        await onDeleteRecords(selectedSurveyIds);
+      }
+      setSelectedSurveyIds([]);
+      setShowConfirmDelete(false);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // --- AI Summary Generator (Instant Client-side AI) ---
   const getAiSummary = (record: VoCRecord) => {
@@ -707,16 +757,67 @@ export default function PowerBiMirror({
           </div>
         </div>
 
+        {/* Dynamic Selection/Removal Action Banner */}
+        {selectedSurveyIds.length > 0 && (
+          <div className="mb-4 p-4 bg-rose-50 border border-rose-100 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fade-in shadow-xs">
+            <div className="flex items-center gap-2.5 text-rose-800 text-xs font-extrabold">
+              <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>
+                {selectedSurveyIds.length} survey{selectedSurveyIds.length > 1 ? 's' : ''} selected. You can permanently remove them from the database.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              {showConfirmDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-rose-700 uppercase tracking-wide">Confirm permanent deletion?</span>
+                  <button
+                    type="button"
+                    onClick={handleDeleteSelected}
+                    disabled={deleting}
+                    className="px-3 py-1.5 bg-rose-600 text-white text-[10px] font-black rounded-lg hover:bg-rose-700 uppercase tracking-wider transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    {deleting ? 'Removing...' : 'Yes, Delete'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmDelete(false)}
+                    className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-black rounded-lg uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmDelete(true)}
+                  className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-black rounded-lg flex items-center gap-1.5 transition-all shadow-md cursor-pointer uppercase tracking-wider"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Remove Accidentally Uploaded</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
          {/* Table layout container */}
         <div className="overflow-x-auto border border-slate-200 rounded-lg">
           <table className="w-full border-collapse text-left text-xs text-slate-600 font-sans select-text">
             
-            {/* 4 beautifully-designed columns for a professional modular grid layout */}
+            {/* columns for a professional modular grid layout */}
             <thead>
               <tr className="bg-slate-50 text-[10px] font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 select-none">
+                <th className="px-3 py-3 text-center w-[5%]">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    onChange={handleSelectAllToggle}
+                    className="w-3.5 h-3.5 rounded border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                  />
+                </th>
                 <th className="px-4 py-3 text-center w-[10%]">Score</th>
                 <th className="px-4 py-3 text-left w-[25%]">Survey Details & Profile</th>
-                <th className="px-4 py-3 text-left w-[38%]">Primary Customer Comment (Combined)</th>
+                <th className="px-4 py-3 text-left w-[33%]">Primary Customer Comment (Combined)</th>
                 <th className="px-4 py-3 text-left w-[27%]">Action Details & Resolution</th>
               </tr>
             </thead>
@@ -725,7 +826,7 @@ export default function PowerBiMirror({
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               {filteredTableRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-16 text-center text-slate-400 select-none">
+                  <td colSpan={5} className="px-6 py-16 text-center text-slate-400 select-none">
                     <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
                       <HelpCircle className="w-8 h-8 text-slate-300" />
                       <span className="text-xs font-black uppercase tracking-wider text-slate-700">No Surveys Match Filter</span>
@@ -809,6 +910,16 @@ export default function PowerBiMirror({
                           isScreenshotRecord ? 'bg-amber-50/10' : ''
                         }`}
                       >
+                        {/* Checkbox Column */}
+                        <td className="px-3 py-4 text-center border-r border-slate-100 align-top">
+                          <input
+                            type="checkbox"
+                            checked={selectedSurveyIds.includes(r.id)}
+                            onChange={() => handleSelectRowToggle(r.id)}
+                            className="w-3.5 h-3.5 rounded border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer mt-1"
+                          />
+                        </td>
+
                         {/* 1. NPS RATING (Big Number with Sentiment Outline) */}
                         <td className="px-3 py-4 text-center border-r border-slate-100 align-top">
                           <div className="flex flex-col items-center gap-2 pt-1 select-none">
