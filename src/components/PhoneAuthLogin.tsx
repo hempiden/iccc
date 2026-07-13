@@ -73,7 +73,8 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                   window.location.hostname === '127.0.0.1' || 
                   window.location.hostname.includes('aistudio') || 
                   window.location.hostname.includes('googleusercontent') ||
-                  window.location.hostname.includes('webcontainer');
+                  window.location.hostname.includes('webcontainer') ||
+                  window.location.hostname.includes('run.app');
     return isDev && params.get('sandbox') === 'true';
   });
 
@@ -363,13 +364,13 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
 
           {/* Environment/Sandbox Toggle Banner */}
           {(() => {
-            const params = new URLSearchParams(window.location.search);
             const isDev = window.location.hostname === 'localhost' || 
                           window.location.hostname === '127.0.0.1' || 
                           window.location.hostname.includes('aistudio') || 
                           window.location.hostname.includes('googleusercontent') ||
-                          window.location.hostname.includes('webcontainer');
-            return isDev && params.get('sandbox') === 'true';
+                          window.location.hostname.includes('webcontainer') ||
+                          window.location.hostname.includes('run.app');
+            return isDev;
           })() && (
             <div className="w-full bg-slate-900/80 p-2.5 rounded-lg border border-slate-700/60 flex items-center justify-between mb-5 animate-fade-in">
               <div className="flex items-center gap-2">
@@ -427,14 +428,14 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                     
                     {/* Sandbox Bypass Trigger */}
                     {(() => {
-                      const params = new URLSearchParams(window.location.search);
                       const isDev = window.location.hostname === 'localhost' || 
                                     window.location.hostname === '127.0.0.1' || 
                                     window.location.hostname.includes('aistudio') || 
                                     window.location.hostname.includes('googleusercontent') ||
-                                    window.location.hostname.includes('webcontainer');
-                      return isDev && params.get('sandbox') === 'true';
-                    })() && (error.includes('billing-not-enabled') || error.includes('reCAPTCHA') || error.includes('unauthorized-domain')) && (
+                                    window.location.hostname.includes('webcontainer') ||
+                                    window.location.hostname.includes('run.app');
+                      return isDev;
+                    })() && (
                       <div className="pt-2 border-t border-rose-500/20">
                         <button
                           type="button"
