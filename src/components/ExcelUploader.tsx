@@ -13,6 +13,7 @@ interface ExcelUploaderProps {
 export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, currentCount }: ExcelUploaderProps) {
   const [dragActive, setDragActive] = useState(false);
   const [status, setStatus] = useState<{ type: 'idle' | 'success' | 'error'; message: string }>({ type: 'idle', message: '' });
+  const [uploadMode, setUploadMode] = useState<'replace' | 'append'>('replace');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -324,13 +325,19 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
           return;
         }
 
-        setStatus({
-          type: 'success',
-          message: `Successfully parsed ${parsedRecords.length} customer records!`
-        });
-
-        // Trigger loading records in main view
-        onRecordsLoaded(parsedRecords);
+        if (uploadMode === 'append') {
+          onAppendRecords(parsedRecords);
+          setStatus({
+            type: 'success',
+            message: `Successfully appended ${parsedRecords.length} customer records to the active database!`
+          });
+        } else {
+          onRecordsLoaded(parsedRecords);
+          setStatus({
+            type: 'success',
+            message: `Successfully overwrote the database with ${parsedRecords.length} new customer records!`
+          });
+        }
 
       } catch (err: any) {
         console.error(err);
@@ -370,6 +377,38 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
             Currently loaded: <span className="text-emerald-700 font-bold">{currentCount}</span> records
           </div>
         )}
+      </div>
+
+      {/* Upload Mode Selector */}
+      <div className="mb-5 p-3.5 bg-slate-50 rounded-xl border border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wide block">Upload Mode</span>
+          <span className="text-[11px] text-slate-500 block">Choose how to handle the uploaded dataset in Firestore.</span>
+        </div>
+        <div className="flex bg-slate-200/60 p-1 rounded-lg border border-slate-200 shrink-0 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setUploadMode('replace')}
+            className={`px-3 py-1.5 text-xs font-black rounded-md transition-all cursor-pointer ${
+              uploadMode === 'replace' 
+                ? 'bg-emerald-600 text-white shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Replace Entire DB (Default)
+          </button>
+          <button
+            type="button"
+            onClick={() => setUploadMode('append')}
+            className={`px-3 py-1.5 text-xs font-black rounded-md transition-all cursor-pointer ${
+              uploadMode === 'append' 
+                ? 'bg-emerald-600 text-white shadow-xs' 
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Append Records
+          </button>
+        </div>
       </div>
 
       <div

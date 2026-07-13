@@ -16,7 +16,7 @@ import PhoneAuthLogin from './components/PhoneAuthLogin';
 import ColleagueManager from './components/ColleagueManager';
 import UserProfileModal from './components/UserProfileModal';
 import NotificationCenter, { CommentNotification } from './components/NotificationCenter';
-import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber } from './utils/firebaseSync';
+import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber, clearVoCRecords } from './utils/firebaseSync';
 
 // Helper to sanitize database loaded date fields that might contain Excel serial formats (e.g. "45980")
 const sanitizeExcelDateString = (val: string | undefined): string | undefined => {
@@ -277,6 +277,7 @@ export default function App() {
     
     try {
       setLoadingDb(true);
+      await clearVoCRecords();
       await batchSaveVoCRecords(newRecords);
     } catch (e) {
       console.error('Failed to batch save loaded records to Firestore:', e);

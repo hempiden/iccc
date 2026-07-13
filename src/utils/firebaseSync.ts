@@ -95,6 +95,36 @@ export async function batchSaveVoCRecords(records: VoCRecord[]): Promise<void> {
 }
 
 /**
+ * Deletes all VoC records from Firestore.
+ */
+export async function clearVoCRecords(): Promise<void> {
+  try {
+    const colRef = collection(db, COLLECTION_NAME);
+    const snapshot = await getDocs(colRef);
+    const docIds: string[] = [];
+    snapshot.forEach((doc) => {
+      docIds.push(doc.id);
+    });
+
+    if (docIds.length === 0) return;
+
+    // Delete in batches of 400
+    for (let i = 0; i < docIds.length; i += 400) {
+      const batch = writeBatch(db);
+      const chunk = docIds.slice(i, i + 400);
+      chunk.forEach((id) => {
+        const docRef = doc(db, COLLECTION_NAME, id);
+        batch.delete(docRef);
+      });
+      await batch.commit();
+    }
+  } catch (error) {
+    console.error('Error clearing VoC records in Firestore:', error);
+    throw error;
+  }
+}
+
+/**
  * Seeds Firestore with default sample records if the collection is empty.
  * Returns the current set of records.
  */
