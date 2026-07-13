@@ -18,14 +18,50 @@ import UserProfileModal from './components/UserProfileModal';
 import NotificationCenter, { CommentNotification } from './components/NotificationCenter';
 import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber } from './utils/firebaseSync';
 
+// Helper to sanitize database loaded date fields that might contain Excel serial formats (e.g. "45980")
+const sanitizeExcelDateString = (val: string | undefined): string | undefined => {
+  if (!val) return val;
+  const trimmed = val.trim();
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const serial = Number(trimmed);
+    if (serial > 1000 && serial < 100000) {
+      const date = new Date((serial - 25569) * 86400 * 1000);
+      if (!isNaN(date.getTime())) {
+        const yyyy = date.getFullYear();
+        if (yyyy >= 1970 && yyyy <= 2100) {
+          const mm = String(date.getMonth() + 1).padStart(2, '0');
+          const dd = String(date.getDate()).padStart(2, '0');
+          return `${yyyy}-${mm}-${dd}`;
+        }
+      }
+    }
+  }
+  return val;
+};
+
 // Helper to get time representation of a record's response/creation date
 const getRecordTime = (r: VoCRecord): number => {
-  const dateStr = r.responseDate || r.creationDate;
+  let dateStr = r.responseDate || r.creationDate;
   if (!dateStr) return 0;
+  
+  const trimmed = dateStr.trim();
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const serial = Number(trimmed);
+    if (serial > 1000 && serial < 100000) {
+      return (serial - 25569) * 86400 * 1000;
+    }
+  }
+
   try {
     const cleaned = dateStr.replace(/-/g, '/');
     const parsed = Date.parse(cleaned);
-    return isNaN(parsed) ? 0 : parsed;
+    if (isNaN(parsed)) return 0;
+    
+    const year = new Date(parsed).getFullYear();
+    if (year < 1970 || year > 2100) {
+      return 0;
+    }
+    return parsed;
   } catch (e) {
     return 0;
   }
@@ -132,7 +168,12 @@ export default function App() {
     setLoadingDb(true);
     seedFirestoreIfNeeded(sampleRecords)
       .then((data) => {
-        setRecords(data);
+        const sanitized = data.map(r => ({
+          ...r,
+          responseDate: sanitizeExcelDateString(r.responseDate),
+          creationDate: sanitizeExcelDateString(r.creationDate)
+        }));
+        setRecords(sanitized);
         setLoadingDb(false);
       })
       .catch((err) => {
@@ -452,17 +493,15 @@ export default function App() {
             <span>{records.length} Surveys</span>
           </div>
 
-          {/* Reset button if records modified */}
-          {records.length !== sampleRecords.length && (
-            <button
-              onClick={handleResetToSample}
-              disabled={loadingDb}
-              className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-slate-50 border border-slate-200 rounded-lg transition-all cursor-pointer shrink-0 disabled:opacity-55"
-              title="Reset Database"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-          )}
+          {/* Reset button to clear uploaded data and restore original sample records */}
+          <button
+            onClick={handleResetToSample}
+            disabled={loadingDb}
+            className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-slate-50 border border-slate-200 rounded-lg transition-all cursor-pointer shrink-0 disabled:opacity-55"
+            title="Reset Database to Default Samples"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
 
           {/* Manage Colleagues button for superadmin */}
           {currentUser.role === 'superadmin' && (

@@ -59,6 +59,72 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
     return undefined;
   };
 
+  const parseExcelDate = (val: any): string | undefined => {
+    if (val === undefined || val === null) return undefined;
+
+    // 1. If it's a JS Date object
+    if (val instanceof Date) {
+      if (!isNaN(val.getTime())) {
+        const yyyy = val.getFullYear();
+        const mm = String(val.getMonth() + 1).padStart(2, '0');
+        const dd = String(val.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      return undefined;
+    }
+
+    // 2. If it's a number (Excel serial date)
+    const num = Number(val);
+    if (!isNaN(num) && typeof val !== 'string' && num > 0) {
+      if (num > 1 && num < 100000) {
+        const ms = (num - 25569) * 86400 * 1000;
+        const date = new Date(ms);
+        if (!isNaN(date.getTime())) {
+          const yyyy = date.getFullYear();
+          if (yyyy >= 1970 && yyyy <= 2100) {
+            const mm = String(date.getMonth() + 1).padStart(2, '0');
+            const dd = String(date.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+          }
+        }
+      }
+    }
+
+    // 3. If it's a string
+    const str = String(val).trim();
+    if (!str) return undefined;
+
+    // Check if string is a numeric Excel serial date
+    if (/^\d+(\.\d+)?$/.test(str)) {
+      const numStr = Number(str);
+      if (numStr > 1000 && numStr < 100000) {
+        const ms = (numStr - 25569) * 86400 * 1000;
+        const date = new Date(ms);
+        if (!isNaN(date.getTime())) {
+          const yyyy = date.getFullYear();
+          if (yyyy >= 1970 && yyyy <= 2100) {
+            const mm = String(date.getMonth() + 1).padStart(2, '0');
+            const dd = String(date.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+          }
+        }
+      }
+    }
+
+    // Fallback to standard JS date parser
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      const yyyy = parsed.getFullYear();
+      if (yyyy >= 1970 && yyyy <= 2100) {
+        const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+        const dd = String(parsed.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+    }
+
+    return str;
+  };
+
   const processFile = (file: File) => {
     const fileExtension = file.name.split('.').pop()?.toLowerCase();
     if (fileExtension !== 'xlsx' && fileExtension !== 'xls' && fileExtension !== 'csv') {
@@ -87,10 +153,38 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
 
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-        const rawJson = XLSX.utils.sheet_to_json(worksheet);
+
+        // Find the actual header row dynamically to avoid issues with blank rows on top
+        const sheetRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        let headerRowIdx = 0;
+        const targetKeywords = [
+          'survey id', 'id', 'surveyid', 'likelihood', 'nps', 'score', 'rating',
+          'comment', 'feedback', 'action details', 'actiondetails', 'owner'
+        ];
+
+        if (sheetRows && sheetRows.length > 0) {
+          for (let i = 0; i < Math.min(sheetRows.length, 25); i++) {
+            const row = sheetRows[i];
+            if (!row || !Array.isArray(row)) continue;
+
+            const hasKeyword = row.some(cell => {
+              if (cell === undefined || cell === null) return false;
+              const str = String(cell).toLowerCase().replace(/[^a-z0-9]/g, '');
+              return targetKeywords.some(kw => str.includes(kw));
+            });
+
+            if (hasKeyword) {
+              headerRowIdx = i;
+              break;
+            }
+          }
+        }
+
+        // Parse starting from the detected header row index
+        const rawJson = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIdx });
 
         if (rawJson.length === 0) {
-          setStatus({ type: 'error', message: 'The uploaded file appears to be empty.' });
+          setStatus({ type: 'error', message: 'The uploaded file appears to be empty or has no recognizable header row.' });
           return;
         }
 
@@ -103,6 +197,17 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
           const surveyIdVal = findValueByHeader(row, ['Survey ID', 'id', 'SurveyID', 'Survey_ID', 'Interaction', 'Interaction ID']);
           const likelihoodVal = findValueByHeader(row, ['Likelihood', 'likelihood', 'NPS', 'Score', 'rating', 'NPS Score', 'Likelihood to Recommend']);
           const commentVal = findValueByHeader(row, ['Primary Customer Comment (Combined)', 'Primary Customer Comment', 'comment', 'feedback', 'Primary Comment', 'Comments', 'Primary Customer Comment (Translated)']);
+          
+          // Skip completely empty or unmapped rows to prevent phantom empty cards
+          const hasSurveyId = surveyIdVal !== undefined && String(surveyIdVal).trim() !== '';
+          const hasLikelihood = likelihoodVal !== undefined && String(likelihoodVal).trim() !== '';
+          const hasComment = commentVal !== undefined && String(commentVal).trim() !== '';
+
+          if (!hasSurveyId && !hasLikelihood && !hasComment) {
+            skippedRows++;
+            return; // Skip empty row
+          }
+
           const actionDetailsVal = findValueByHeader(row, ['Action Details', 'Logs', 'ActionDetails', 'Action description', 'All log notes combined (if any)', 'timeline']);
           const ownerVal = findValueByHeader(row, ['Current Follow-up Owner', 'owner', 'staff', 'Follow-up Owner', 'Current Alert Owner', 'Follow up Owner']);
           const interactionVal = findValueByHeader(row, ['Interaction', 'Interaction ID', 'InteractionID', 'Code']);
@@ -195,8 +300,8 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
             momentOfTruthName: momentOfTruthNameVal ? String(momentOfTruthNameVal).trim() : undefined,
             transactionName,
             easeOfUse,
-            responseDate: responseDateVal ? String(responseDateVal).trim() : undefined,
-            creationDate: creationDateVal ? String(creationDateVal).trim() : undefined,
+            responseDate: parseExcelDate(responseDateVal),
+            creationDate: parseExcelDate(creationDateVal),
             customerName: customerNameVal ? String(customerNameVal).trim() : undefined,
             contactPhone: contactPhoneVal ? String(contactPhoneVal).trim() : undefined,
             contactEmail: contactEmailVal ? String(contactEmailVal).trim() : undefined,

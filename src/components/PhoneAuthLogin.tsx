@@ -325,7 +325,7 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
           </div>
 
           {/* Environment/Sandbox Toggle Banner */}
-          {(new URLSearchParams(window.location.search).get('sandbox') === 'true' || isSandboxMode) && (
+          {(new URLSearchParams(window.location.search).get('sandbox') === 'true') && (
             <div className="w-full bg-slate-900/80 p-2.5 rounded-lg border border-slate-700/60 flex items-center justify-between mb-5 animate-fade-in">
               <div className="flex items-center gap-2">
                 <Globe className={`w-4 h-4 ${isSandboxMode ? 'text-amber-400' : 'text-emerald-400'}`} />
@@ -381,7 +381,7 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                     <div className="whitespace-pre-line leading-relaxed">{error}</div>
                     
                     {/* Sandbox Bypass Trigger */}
-                    {(error.includes('billing-not-enabled') || error.includes('reCAPTCHA') || error.includes('unauthorized-domain')) && (
+                    {(new URLSearchParams(window.location.search).get('sandbox') === 'true') && (error.includes('billing-not-enabled') || error.includes('reCAPTCHA') || error.includes('unauthorized-domain')) && (
                       <div className="pt-2 border-t border-rose-500/20">
                         <button
                           type="button"
