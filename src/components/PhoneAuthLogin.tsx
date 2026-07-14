@@ -24,6 +24,20 @@ const DEMO_ACCOUNTS = [
     name: 'Hempiden (Superadmin)',
     role: 'superadmin',
     facility: 'All',
+    phone: '+85561999906',
+    color: 'border-amber-400 bg-amber-400/10 text-amber-300'
+  },
+  {
+    name: 'Hempiden (Superadmin)',
+    role: 'superadmin',
+    facility: 'All',
+    phone: '+85561999905',
+    color: 'border-amber-400 bg-amber-400/10 text-amber-300'
+  },
+  {
+    name: 'Hempiden (Superadmin)',
+    role: 'superadmin',
+    facility: 'All',
     phone: '+15555555555',
     color: 'border-amber-400 bg-amber-400/10 text-amber-300'
   },
