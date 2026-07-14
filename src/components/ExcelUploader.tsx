@@ -61,7 +61,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
   };
 
   const parseExcelDate = (val: any): string | undefined => {
-    if (val === undefined || val === null) return undefined;
+    if (val === undefined || val === null || val === '') return undefined;
 
     // 1. If it's a JS Date object
     if (val instanceof Date) {
@@ -112,8 +112,44 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
       }
     }
 
+    // Try regex-based match for DD/MM/YYYY, MM/DD/YYYY, or YYYY/MM/DD
+    const dmyRegex = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/;
+    const ymdRegex = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/;
+
+    let match = str.match(ymdRegex);
+    if (match) {
+      const y = parseInt(match[1], 10);
+      const m = String(parseInt(match[2], 10)).padStart(2, '0');
+      const d = String(parseInt(match[3], 10)).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    match = str.match(dmyRegex);
+    if (match) {
+      const p1 = parseInt(match[1], 10);
+      const p2 = parseInt(match[2], 10);
+      let y = parseInt(match[3], 10);
+      if (y < 100) {
+        y += y < 50 ? 2000 : 1900;
+      }
+
+      let day = p1;
+      let month = p2;
+      if (p2 > 12) {
+        day = p2;
+        month = p1;
+      } else if (p1 <= 12 && p2 <= 12) {
+        day = p1;
+        month = p2;
+      }
+
+      const mm = String(month).padStart(2, '0');
+      const dd = String(day).padStart(2, '0');
+      return `${y}-${mm}-${dd}`;
+    }
+
     // Fallback to standard JS date parser
-    const parsed = new Date(str);
+    const parsed = new Date(str.replace(/-/g, '/'));
     if (!isNaN(parsed.getTime())) {
       const yyyy = parsed.getFullYear();
       if (yyyy >= 1970 && yyyy <= 2100) {
@@ -476,7 +512,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
           Excel Column Format Guidelines:
         </span>
         <ul className="list-disc list-inside space-y-1 text-slate-500 pl-1">
-          <li><strong>Survey ID:</strong> Number or code, e.g., <code className="bg-white px-1 py-0.5 rounded border border-slate-200">28168109</code></li>
+          <li><strong>Survey ID:</strong> Number or code, e.g., <code className="bg-white px-1 py-0.5 rounded border border-slate-200">281681709</code></li>
           <li><strong>Likelihood:</strong> NPS score from <code className="bg-white px-1 py-0.5 rounded border border-slate-200">0 to 10</code></li>
           <li><strong>Primary Customer Comment:</strong> The raw text feedback string</li>
           <li><strong>Action Details:</strong> Long string of logs formatted with timestamps in brackets like: <code className="bg-white px-1 py-0.5 rounded border border-slate-200">[2026-06-02 16:58:34] Case Opened;</code></li>

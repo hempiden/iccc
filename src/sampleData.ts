@@ -27,7 +27,7 @@ const sampleRecordsRaw = [
 - Forwarded details to the retail counter to implement spelling verification workflows, especially for overseas university destination documents.`
   },
   {
-    id: '28168109',
+    id: '281681709',
     likelihood: 4,
     interaction: 'PNHGTW',
     comment: `DHL customs clearance is a bit complicated. I have used DHL many times before without any clearance issues, but this problem only happened this year. When my shipment went through formal clearance, the first DHL staff (Sreynich) told me they could not process the clearance for the customer but did not give a reason. They advised me to do the clearance myself or use my own broker. The next day, another person contacted me and said the same thing, this time through Telegram (0975800200).
@@ -113,7 +113,7 @@ export const sampleRecords: VoCRecord[] = sampleRecordsRaw.map(r => {
     awbNumber = '1381772966';
     customSummary = 'Consignee details & university name misspelled twice by staff, causing document shipment to arrive in South Korea with critical address errors.';
     responseFeedbackChannel = 'Retail';
-  } else if (r.id === '28168109') {
+  } else if (r.id === '281681709') {
     transactionName = 'Duties and Taxes Payment to Employee';
     easeOfUse = 4;
     customerName = 'RETH SEREYROTH';

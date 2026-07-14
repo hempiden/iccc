@@ -53,19 +53,61 @@ const getRecordTime = (r: VoCRecord): number => {
     }
   }
 
+  // Handle DD/MM/YYYY or YYYY-MM-DD
+  const dmyRegex = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/;
+  const ymdRegex = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/;
+
+  let match = trimmed.match(ymdRegex);
+  if (match) {
+    const y = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10) - 1;
+    const d = parseInt(match[3], 10);
+    const hr = match[4] ? parseInt(match[4], 10) : 0;
+    const min = match[5] ? parseInt(match[5], 10) : 0;
+    const sec = match[6] ? parseInt(match[6], 10) : 0;
+    const date = new Date(y, m, d, hr, min, sec);
+    if (!isNaN(date.getTime())) return date.getTime();
+  }
+
+  match = trimmed.match(dmyRegex);
+  if (match) {
+    const p1 = parseInt(match[1], 10);
+    const p2 = parseInt(match[2], 10);
+    let y = parseInt(match[3], 10);
+    if (y < 100) {
+      y += y < 50 ? 2000 : 1900;
+    }
+
+    let day = p1;
+    let month = p2;
+    if (p2 > 12) {
+      day = p2;
+      month = p1;
+    } else if (p1 <= 12 && p2 <= 12) {
+      day = p1;
+      month = p2;
+    }
+
+    const hr = match[4] ? parseInt(match[4], 10) : 0;
+    const min = match[5] ? parseInt(match[5], 10) : 0;
+    const sec = match[6] ? parseInt(match[6], 10) : 0;
+    
+    const date = new Date(y, month - 1, day, hr, min, sec);
+    if (!isNaN(date.getTime())) return date.getTime();
+  }
+
   try {
     const cleaned = dateStr.replace(/-/g, '/');
     const parsed = Date.parse(cleaned);
-    if (isNaN(parsed)) return 0;
-    
-    const year = new Date(parsed).getFullYear();
-    if (year < 1970 || year > 2100) {
-      return 0;
+    if (!isNaN(parsed)) {
+      const year = new Date(parsed).getFullYear();
+      if (year >= 1970 && year <= 2100) {
+        return parsed;
+      }
     }
-    return parsed;
-  } catch (e) {
-    return 0;
-  }
+  } catch (e) {}
+
+  return 0;
 };
 
 export default function App() {

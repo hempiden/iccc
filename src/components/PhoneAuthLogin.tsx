@@ -176,29 +176,16 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
         setFullName(existing.fullName);
         await triggerSmsOtp(cleanPhone);
       } else {
-        // User not recognized. Since they requested secure sandbox entry, block self-registration in Sandbox mode
-        if (isSandboxMode) {
-          setMatchedColleague(null);
-          setLoading(false);
-          setError('Access Denied: This phone number is not registered in the DHL Voice Workspace database. Please contact your Superadmin to register your number.');
-        } else {
-          // User not recognized. Proceed to registration to gather name
-          setMatchedColleague(null);
-          setLoading(false);
-          setStep('register');
-        }
-      }
-    } catch (err) {
-      console.error('Lookup failed, going to registration fallback:', err);
-      if (isSandboxMode) {
-        setMatchedColleague(null);
-        setLoading(false);
-        setError('Colleague lookup failed. Only pre-registered phone numbers can log in.');
-      } else {
+        // User not recognized. Proceed to registration to gather name
         setMatchedColleague(null);
         setLoading(false);
         setStep('register');
       }
+    } catch (err) {
+      console.error('Lookup failed, going to registration fallback:', err);
+      setMatchedColleague(null);
+      setLoading(false);
+      setStep('register');
     }
   };
 

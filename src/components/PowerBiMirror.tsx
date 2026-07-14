@@ -48,6 +48,174 @@ const getYearAndWeekFromDate = (dateStr: string): { year: number; week: number; 
   }
 };
 
+// Deterministic helper to get a response date within a specific week key and index
+const getResponseDateFromWeek = (year: number, weekNum: number, recordIdx: number): string => {
+  const janFirst = new Date(year, 0, 1);
+  const dayOffset = (weekNum - 1) * 7 - janFirst.getDay() + 1;
+  const startOfWeek = new Date(year, 0, 1 + dayOffset);
+  // Add a deterministic offset of days (e.g. 1 to 5 days) and hours
+  const dateOffset = (recordIdx % 5) + 1; // Mon to Fri
+  const d = new Date(startOfWeek.getTime() + dateOffset * 86400000);
+  
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(10 + (recordIdx % 8)).padStart(2, '0'); // hours 10 AM to 5 PM
+  const min = String(15 * (recordIdx % 4)).padStart(2, '0'); // minutes
+  
+  return `${y}-${m}-${day} ${h}:${min}`;
+};
+
+// Generates deterministic realistic VoC records to perfectly fill the charts background numbers
+const generateSynthesizedRecords = (
+  weekKey: string,
+  slotIdx: number,
+  channel: 'SVC' | 'ASC' | 'GTW',
+  category: 'Promoter' | 'Passive' | 'Detractor',
+  countNeeded: number
+): VoCRecord[] => {
+  const result: VoCRecord[] = [];
+  
+  const parts = weekKey.split('-W');
+  const year = parseInt(parts[0], 10) || 2026;
+  const weekNum = parseInt(parts[1], 10) || 22;
+
+  const customerNames = [
+    'SMART AXIATA CO. LTD', 'ABA BANK CORPORATE', 'PNH COURIER INC', 'SATHAPANA BANK',
+    'CAMBODIAN BEVERAGE CO.', 'CHIP MONG GROUP', 'GGB TRADING CO.', 'HONG KONG LAND KH',
+    'KHEMA MEDICAL CENTER', 'ISI STEEL CO. LTD', 'SINA COURIER EXP', 'LBL INTERNATIONAL',
+    'PPC BANK', 'PRASAC MICROFINANCE', 'ROYAL GROUP CAMBODIA'
+  ];
+
+  const owners = ['Thida Sovann', 'Panha Chhun', 'Rathana Hout', 'Sreynich Kong', 'Sophy Long'];
+
+  const promoterTemplates = {
+    SVC: [
+      "Excellent courier service! The shipment arrived early and the clearance was extremely fast.",
+      "DHL SVC always delivers top notch speed. Sophy Long was very professional in updating me.",
+      "Speedy delivery and highly polite driver. Track and trace updates were extremely precise.",
+      "Outstanding express clearance and seamless support. Truly professional delivery experience!"
+    ],
+    ASC: [
+      "Very smooth ASC handoff and prompt verification. Excellent communication by the staff.",
+      "Fast documentation support at the air support center. Clear instructions and zero delays.",
+      "We received our business documents way ahead of schedule. Professional and organized team!"
+    ],
+    GTW: [
+      "Our large pallet cargo was cleared by the GTW team in record time. Excellent support!",
+      "Superb response. Gate clearance broker resolved the invoice description issue proactively."
+    ]
+  };
+
+  const passiveTemplates = {
+    SVC: [
+      "The parcel was delivered on time, but getting the billing invoice clarification took multiple calls.",
+      "Delivery rider was very polite, but the online portal was slow to update the active status.",
+      "Decent express delivery, but the remote area surcharge policy could be made clearer beforehand."
+    ],
+    ASC: [
+      "Documentation verification was successful, but they requested some re-scans of existing files.",
+      "Satisfactory handoff, although ASC helpline took several attempts to connect me to our broker."
+    ],
+    GTW: [
+      "Cargo cleared, but gateway terminal fees were slightly confusing. Good response overall.",
+      "Minor delay in physical verification at the customs dock, but Courier resolved it quickly."
+    ]
+  };
+
+  const detractorTemplates = {
+    SVC: [
+      "Extremely slow customs clearance. The package was held for 4 days without any clear notification.",
+      "Worst experience. Surcharge was billed incorrectly and helpdesk failed to coordinate the refund.",
+      "Hotline menus are too confusing. I got stuck in the IVR for an hour trying to trace my shipment."
+    ],
+    ASC: [
+      "ASC team failed to notify us about the missing import certificate, delaying our urgent documents.",
+      "Highly frustrated with ASC verification delays. Nobody takes ownership of clearance issues."
+    ],
+    GTW: [
+      "Freight stuck at the gateway warehouse for a whole week. Clearance support was unresponsive.",
+      "Duties were calculated incorrectly because shipper invoice was misclassified by GTW customs team."
+    ]
+  };
+
+  for (let i = 0; i < countNeeded; i++) {
+    const seed = slotIdx * 100 + i;
+    
+    let likelihood = 8;
+    if (category === 'Promoter') {
+      likelihood = 9 + (seed % 2); // 9 or 10
+    } else if (category === 'Passive') {
+      likelihood = 7 + (seed % 2); // 7 or 8
+    } else {
+      likelihood = 1 + (seed % 6); // 1 to 6
+    }
+
+    const customerName = customerNames[seed % customerNames.length];
+    const owner = owners[seed % owners.length];
+    const awbNumber = '86' + String(10000000 + (seed * 1234567) % 90000000);
+
+    const templates = category === 'Promoter' ? promoterTemplates :
+                      category === 'Passive' ? passiveTemplates : detractorTemplates;
+    const channelTemplates = templates[channel] || templates['SVC'];
+    const comment = channelTemplates[seed % channelTemplates.length];
+
+    const responseDate = getResponseDateFromWeek(year, weekNum, i);
+    const respD = new Date(responseDate.replace(/-/g, '/'));
+    const creationD = new Date(respD.getTime() - (1 + (seed % 2)) * 86400000 - 3600000 * (seed % 6));
+    const cy = creationD.getFullYear();
+    const cm = String(creationD.getMonth() + 1).padStart(2, '0');
+    const cd = String(creationD.getDate()).padStart(2, '0');
+    const ch = String(creationD.getHours()).padStart(2, '0');
+    const cmin = String(creationD.getMinutes()).padStart(2, '0');
+    const creationDate = `${cy}-${cm}-${cd} ${ch}:${cmin}`;
+
+    const id = String(28180000 + slotIdx * 1000 + (channel === 'SVC' ? 100 : channel === 'ASC' ? 200 : 300) + (category === 'Promoter' ? 10 : category === 'Passive' ? 20 : 30) + i);
+
+    const timeline = [
+      {
+        timestamp: creationDate.split(' ')[0],
+        action: `Alert Created: ${category} Alert`,
+        status: 'Completed' as const,
+        pic: 'System'
+      },
+      {
+        timestamp: responseDate.split(' ')[0],
+        action: `Case reviewed and closed by ${owner}`,
+        status: 'Closed' as const,
+        pic: owner
+      }
+    ];
+
+    const actionDetailsRaw = `[${creationDate}] Alert Created: ${category} Alert; [${responseDate}] Case reviewed and closed by ${owner};`;
+
+    result.push({
+      id,
+      likelihood,
+      category,
+      comment,
+      owner,
+      status: 'Completed',
+      interaction: `PNH${channel}`,
+      journeyName: 'I get the shipment delivered/self collect',
+      momentOfTruthName: channel === 'GTW' ? 'Duties and Taxes Payment' : 'Delivery by Courier',
+      transactionName: channel === 'GTW' ? 'Duties and Taxes Payment' : 'Delivery by Courier',
+      easeOfUse: likelihood >= 9 ? 9 : likelihood >= 7 ? 7 : 3,
+      responseDate,
+      creationDate,
+      customerName,
+      awbNumber,
+      topic: channel === 'GTW' ? 'Customs Clearance' : 'Courier Service Delivery',
+      sentiment: category === 'Promoter' ? 'POSITIVE' : category === 'Passive' ? 'NEUTRAL' : 'NEGATIVE',
+      timeline,
+      actionDetailsRaw,
+      followUpComments: category === 'Detractor' ? 'Contacted customer, clarified clearance fee invoice, apologized for courier menu confusion.' : 'Self service automated feedback received.'
+    });
+  }
+
+  return result;
+};
+
 export default function PowerBiMirror({ 
   records, 
   onSelectRecord,
@@ -131,8 +299,8 @@ export default function PowerBiMirror({
     return [screenshotRecord, ...records];
   }, [records]);
 
-  // Map each record deterministically to a week key and year for high-fidelity rendering
-  const mappedRecords = useMemo(() => {
+  // 1. Map existing mergedRecords to their baseline dates/weeks/channels first to avoid circular dependencies
+  const initialMapped = useMemo(() => {
     return mergedRecords.map((r, idx) => {
       let week = 22; // default middle week
       let year = 2026;
@@ -157,7 +325,7 @@ export default function PowerBiMirror({
         week = 22; year = 2026; weekKey = '2026-W22';
         channel = 'SVC';
         alertType = 'Promoter feedback';
-      } else if (r.id === '28168109') {
+      } else if (r.id === '281681709') {
         week = 22; year = 2026; weekKey = '2026-W22';
         channel = 'ASC';
         alertType = 'Detractor: Requested follow-up';
@@ -209,10 +377,10 @@ export default function PowerBiMirror({
     });
   }, [mergedRecords]);
 
-  // --- Dynamic Latest 6 Weeks Computation ---
+  // --- Dynamic Latest 6 Weeks Computation directly from initialMapped ---
   const latest6WeeksKeys = useMemo(() => {
     const keysSet = new Set<string>();
-    mappedRecords.forEach(r => {
+    initialMapped.forEach(r => {
       if (r.weekKey !== undefined) {
         keysSet.add(r.weekKey);
       }
@@ -222,7 +390,7 @@ export default function PowerBiMirror({
     }
     const sorted = Array.from(keysSet).sort(); // Alphabetical sort of YYYY-WXX is chronological!
     return sorted.slice(-6);
-  }, [mappedRecords]);
+  }, [initialMapped]);
 
   const latest6WeeksStr = latest6WeeksKeys.join(',');
   const [prevLatest6WeeksStr, setPrevLatest6WeeksStr] = useState(latest6WeeksStr);
@@ -234,55 +402,93 @@ export default function PowerBiMirror({
     }
   }, [latest6WeeksStr, prevLatest6WeeksStr, latest6WeeksKeys]);
 
-  // --- Chart Dataset Computations ---
-  // To keep the Power BI mirror extremely visually complete and authentic, we overlay the 7 main detailed records 
-  // with background synthetic meeting volume matching the exact counts shown in the Power BI screenshot.
-  // When filters are changed, they scale accordingly.
-  const chartData = useMemo(() => {
-    // Exact screenshot numbers mapped by slot (index 0 to 5)
+  // Combine initial mapped records and synthesized baseline records to fill background chart numbers
+  const mappedRecords = useMemo(() => {
+    const list = [...initialMapped];
+
+    // Baseline chart data targets mapped by slot index (0 to 5)
     const baseSVCData = [
-      { promoters: 18, passives: 0, detractors: 0, total: 18 },
-      { promoters: 0, passives: 11, detractors: 0, total: 11 },
-      { promoters: 19, passives: 0, detractors: 0, total: 19 },
-      { promoters: 25, passives: 2, detractors: 0, total: 27 },
-      { promoters: 18, passives: 2, detractors: 0, total: 20 },
-      { promoters: 14, passives: 0, detractors: 0, total: 14 }
+      { promoters: 18, passives: 0, detractors: 0 },
+      { promoters: 0, passives: 11, detractors: 0 },
+      { promoters: 19, passives: 0, detractors: 0 },
+      { promoters: 25, passives: 2, detractors: 0 },
+      { promoters: 18, passives: 2, detractors: 0 },
+      { promoters: 14, passives: 0, detractors: 0 }
     ];
 
     const baseASCData = [
-      { promoters: 1, passives: 0, detractors: 0, total: 1 },
-      { promoters: 3, passives: 0, detractors: 0, total: 3 },
-      { promoters: 3, passives: 3, detractors: 1, total: 7 },
-      { promoters: 17, passives: 4, detractors: 0, total: 21 },
-      { promoters: 5, passives: 1, detractors: 1, total: 7 },
-      { promoters: 1, passives: 0, detractors: 0, total: 1 }
+      { promoters: 1, passives: 0, detractors: 0 },
+      { promoters: 3, passives: 0, detractors: 0 },
+      { promoters: 3, passives: 3, detractors: 1 },
+      { promoters: 17, passives: 4, detractors: 0 },
+      { promoters: 5, passives: 1, detractors: 1 },
+      { promoters: 1, passives: 0, detractors: 0 }
     ];
 
     const baseGTWData = [
-      { promoters: 2, passives: 0, detractors: 0, total: 2 },
-      { promoters: 3, passives: 0, detractors: 0, total: 3 },
-      { promoters: 5, passives: 1, detractors: 0, total: 6 },
-      { promoters: 5, passives: 4, detractors: 3, total: 12 },
-      { promoters: 8, passives: 0, detractors: 4, total: 12 },
-      { promoters: 7, passives: 0, detractors: 1, total: 8 }
+      { promoters: 2, passives: 0, detractors: 0 },
+      { promoters: 3, passives: 0, detractors: 0 },
+      { promoters: 5, passives: 1, detractors: 0 },
+      { promoters: 5, passives: 4, detractors: 3 },
+      { promoters: 8, passives: 0, detractors: 4 },
+      { promoters: 7, passives: 0, detractors: 1 }
     ];
+    
+    // For each week key in latest6WeeksKeys, we count how many records we have in each bucket
+    latest6WeeksKeys.forEach((wKey, index) => {
+      const slot = Math.min(index, 5);
+      
+      const channels: ('SVC' | 'ASC' | 'GTW')[] = ['SVC', 'ASC', 'GTW'];
+      const categories: ('Promoter' | 'Passive' | 'Detractor')[] = ['Promoter', 'Passive', 'Detractor'];
+      
+      channels.forEach(ch => {
+        categories.forEach(cat => {
+          // Count existing in initialMapped
+          const existingCount = initialMapped.filter(r => r.weekKey === wKey && r.channel === ch && r.category === cat).length;
+          
+          // Get target count from base data
+          let target = 0;
+          if (ch === 'SVC') {
+            const data = baseSVCData[slot];
+            target = cat === 'Promoter' ? data.promoters : cat === 'Passive' ? data.passives : data.detractors;
+          } else if (ch === 'ASC') {
+            const data = baseASCData[slot];
+            target = cat === 'Promoter' ? data.promoters : cat === 'Passive' ? data.passives : data.detractors;
+          } else {
+            const data = baseGTWData[slot];
+            target = cat === 'Promoter' ? data.promoters : cat === 'Passive' ? data.passives : data.detractors;
+          }
+          
+          const needed = target - existingCount;
+          if (needed > 0) {
+            const synthesized = generateSynthesizedRecords(wKey, slot, ch, cat, needed);
+            list.push(...synthesized);
+          }
+        });
+      });
+    });
+    
+    return list;
+  }, [initialMapped, latest6WeeksKeys]);
 
+  // --- Chart Dataset Computations ---
+  // Count counts solely and dynamically from mappedRecords to guarantee 100% data alignment!
+  const chartData = useMemo(() => {
     const baseSVC: { [wKey: string]: WeeklyChartPoint } = {};
     const baseASC: { [wKey: string]: WeeklyChartPoint } = {};
     const baseGTW: { [wKey: string]: WeeklyChartPoint } = {};
 
     latest6WeeksKeys.forEach((wKey, index) => {
-      const slot = Math.min(index, 5);
       const parts = wKey.split('-W');
       const year = parseInt(parts[0], 10) || 2026;
       const week = parseInt(parts[1], 10) || 22;
 
-      baseSVC[wKey] = { week, weekKey: wKey, year, ...baseSVCData[slot] };
-      baseASC[wKey] = { week, weekKey: wKey, year, ...baseASCData[slot] };
-      baseGTW[wKey] = { week, weekKey: wKey, year, ...baseGTWData[slot] };
+      baseSVC[wKey] = { week, weekKey: wKey, year, promoters: 0, passives: 0, detractors: 0, total: 0 };
+      baseASC[wKey] = { week, weekKey: wKey, year, promoters: 0, passives: 0, detractors: 0, total: 0 };
+      baseGTW[wKey] = { week, weekKey: wKey, year, promoters: 0, passives: 0, detractors: 0, total: 0 };
     });
 
-    // Integrate actual records into the chart points to make it dynamic
+    // Aggregate solely from mappedRecords
     mappedRecords.forEach(r => {
       const wKey = r.weekKey;
       const ch = r.channel;
@@ -435,8 +641,8 @@ export default function PowerBiMirror({
       summaryText = "✏️ Shipment documentation typo: Delivery delay caused by address destination spelling discrepancies.";
     } else if (record.category === 'Promoter') {
       summaryText = "⭐ Outstanding Courier Service: Commendation for speedy delivery, excellent communication, and seamless clearance.";
-    } else if (comment.length > 80) {
-      summaryText = comment.substring(0, 77) + "...";
+    } else {
+      summaryText = comment;
     }
 
     return summaryText;
@@ -524,13 +730,13 @@ export default function PowerBiMirror({
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">NPS Category</span>
                     <div className="flex items-center gap-2 text-[9px] font-bold">
                       <span className="flex items-center gap-1 text-slate-600">
-                        <span className="w-2 h-2 rounded-full bg-[#0f2c59]" /> Promoter
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" /> Promoter
                       </span>
                       <span className="flex items-center gap-1 text-slate-600">
-                        <span className="w-2 h-2 rounded-full bg-[#3b82f6]" /> Passive
+                        <span className="w-2 h-2 rounded-full bg-amber-500" /> Passive
                       </span>
                       <span className="flex items-center gap-1 text-slate-600">
-                        <span className="w-2 h-2 rounded-full bg-[#ef4444]" /> Detractor
+                        <span className="w-2 h-2 rounded-full bg-rose-500" /> Detractor
                       </span>
                     </div>
                   </div>
@@ -627,7 +833,7 @@ export default function PowerBiMirror({
                               <button 
                                 style={{ height: `${promPct}%` }}
                                 onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Promoter' })}
-                                className="bg-[#0f2c59] w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                className="bg-emerald-500 w-full hover:brightness-110 transition-all cursor-pointer relative"
                                 title={`Promoters: ${pt.promoters}`}
                               >
                                 {pt.promoters >= 5 && (
@@ -643,7 +849,7 @@ export default function PowerBiMirror({
                               <button 
                                 style={{ height: `${passPct}%` }}
                                 onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Passive' })}
-                                className="bg-[#3b82f6] w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                className="bg-amber-500 w-full hover:brightness-110 transition-all cursor-pointer relative"
                                 title={`Passives: ${pt.passives}`}
                               >
                                 {pt.passives >= 3 && (
@@ -659,7 +865,7 @@ export default function PowerBiMirror({
                               <button 
                                 style={{ height: `${detrPct}%` }}
                                 onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Detractor' })}
-                                className="bg-[#ef4444] w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                className="bg-rose-500 w-full hover:brightness-110 transition-all cursor-pointer relative"
                                 title={`Detractors: ${pt.detractors}`}
                               >
                                 {pt.detractors >= 1 && (

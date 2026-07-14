@@ -234,7 +234,7 @@ export default function CustomerDetail({
         { timestamp: '12 Mar 2026', action: 'Escalated to Retail Team Manager to prevent destination misspelling recurrences.', status: 'Completed', pic: 'Rothana Art' }
       ];
     }
-    if (id === '28168109') {
+    if (id === '281681709') {
       return [
         { timestamp: '02 Jun 2026', action: 'Escalated case to Customs Clearance Specialist Panha Chhun.', status: 'Completed', pic: 'Panha Chhun' },
         { timestamp: '03 Jun 2026', action: 'Confirmed agent already explained self-clearance rules for sample shipments.', status: 'Completed', pic: 'Panha Chhun' },
