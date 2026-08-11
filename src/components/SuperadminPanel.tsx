@@ -45,10 +45,10 @@ export default function SuperadminPanel({ onClose, records, currentUser }: Super
       }
     }
     return {
-      tenantId: 'dhl.sharepoint.com',
+      tenantId: 'dpdhl.sharepoint.com',
       clientId: '8f7a3b2c-4d5e-6f7a-8b9c-0d1e2f3a4b5c',
-      siteUrl: 'https://dhl.sharepoint.com/sites/DHL-Cambodia-VoC',
-      filePath: '/Shared Documents/VoC_Master_Database.xlsx',
+      siteUrl: 'https://dpdhl.sharepoint.com/teams/NetOpsPD',
+      filePath: '/Shared Documents/General/30. Voice (ICCC)/Voice Data.xlsx',
       autoSync: true,
       syncInterval: 'hourly',
       lastSyncTimestamp: new Date().toLocaleString()
