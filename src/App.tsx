@@ -129,7 +129,7 @@ export default function App() {
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [showColleagueManager, setShowColleagueManager] = useState(false);
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'presentation' | 'upload'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'upload'>('dashboard');
 
   // Notifications states and handlers
   const [readNotifications, setReadNotifications] = useState<string[]>(() => {
@@ -569,20 +569,6 @@ export default function App() {
               </button>
               <button
                 onClick={() => {
-                  setActiveTab('presentation');
-                  setSelectedRecordId(null);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === 'presentation'
-                    ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Presentation className="w-3.5 h-3.5 text-amber-500 animate-none" />
-                <span>Presentation Deck</span>
-              </button>
-              <button
-                onClick={() => {
                   setActiveTab('upload');
                   setSelectedRecordId(null);
                 }}
@@ -855,41 +841,6 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-              </div>
-            ) : activeTab === 'presentation' ? (
-              /* Executive Presentation Dashboard Portfolios */
-              <div className="space-y-6 animate-fade-in print:hidden">
-                <div className="bg-gradient-to-r from-red-700 to-red-900 text-white rounded-2xl p-6 md:p-8 border border-red-800 shadow-md relative overflow-hidden">
-                  <div className="absolute right-0 bottom-0 translate-x-12 translate-y-12 opacity-5 pointer-events-none select-none">
-                    <Presentation className="w-80 h-80 text-white opacity-5" />
-                  </div>
-                  
-                  <div className="relative z-10 max-w-2xl space-y-3">
-                    <span className="text-xs font-bold text-yellow-300 bg-yellow-400/10 px-2.5 py-1 rounded-md border border-yellow-400/20 uppercase tracking-widest">
-                      Executive Showcase
-                    </span>
-                    <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight uppercase">
-                      DHL iCCC Voice of Customer Presentation Deck
-                    </h2>
-                    <p className="text-xs sm:text-sm text-red-100 leading-relaxed font-medium">
-                      Curated slides presenting action plans and key resolutions for customer escalations. Perfect for presentation, executive reviews, and stakeholder showcases.
-                    </p>
-                  </div>
-                </div>
-
-                <ExecutiveOverview records={filteredByTimelineAndChannel} allRecords={records} />
-
-                {/* Unified Interactive Power BI Mirror Component (Presentation Style) */}
-                <PowerBiMirror 
-                  records={filteredByTimelineAndChannel} 
-                  onSelectRecord={(r) => setSelectedRecordId(r.id)} 
-                  onDeleteRecords={handleDeleteRecords}
-                  presentationMode={true}
-                  isPresentationPage={true}
-                  statusFilter={statusFilter}
-                  categoryFilter={categoryFilter}
-                  setCategoryFilter={setCategoryFilter}
-                />
               </div>
             ) : (
               /* Welcome block & Executive KPI overview portfolio & Power BI Mirror integrated */
