@@ -2,11 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { 
   Shield, KeyRound, FileSpreadsheet, Users, CheckCircle2, XCircle, 
   RefreshCw, Sliders, Globe, Plus, Phone, Save, X, Building2, 
-  AlertTriangle, Check, ExternalLink, Database, Lock, Smartphone, UserCheck
+  AlertTriangle, Check, ExternalLink, Database, Lock, Smartphone, UserCheck,
+  Webhook, Copy, Send, Zap, Code, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { ActionOwner, VoCRecord } from '../types';
 import { fetchColleagues, saveColleague } from '../utils/firebaseSync';
 import { exportMasterExcelWorkbook } from '../utils/excelDatabase';
+import { 
+  getPowerAutomateConfig, 
+  savePowerAutomateConfig, 
+  sendPowerAutomatePayload, 
+  syncBatchToPowerAutomate, 
+  POWER_AUTOMATE_JSON_SCHEMA, 
+  PowerAutomateConfig 
+} from '../utils/powerAutomateSync';
 
 interface SuperadminPanelProps {
   onClose: () => void;
@@ -57,6 +66,14 @@ export default function SuperadminPanel({ onClose, records, currentUser }: Super
   const [spTesting, setSpTesting] = useState(false);
   const [spStatus, setSpStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [spSavedMsg, setSpSavedMsg] = useState(false);
+
+  // --- POWER AUTOMATE WEBHOOK STATE ---
+  const [paConfig, setPaConfig] = useState<PowerAutomateConfig>(getPowerAutomateConfig);
+  const [paTesting, setPaTesting] = useState(false);
+  const [paStatus, setPaStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [paSavedMsg, setPaSavedMsg] = useState(false);
+  const [copiedSchema, setCopiedSchema] = useState(false);
+  const [showGuide, setShowGuide] = useState(true);
 
   // --- 3. USER MANAGEMENT STATE ---
   const [colleagues, setColleagues] = useState<ActionOwner[]>([]);
@@ -135,6 +152,57 @@ export default function SuperadminPanel({ onClose, records, currentUser }: Super
     };
     setSpConfig(updatedConfig);
     localStorage.setItem('dhl_sharepoint_config', JSON.stringify(updatedConfig));
+  };
+
+  // --- HANDLERS FOR POWER AUTOMATE WEBHOOK ---
+  const handleSavePaConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    savePowerAutomateConfig(paConfig);
+    setPaSavedMsg(true);
+    setTimeout(() => setPaSavedMsg(false), 2500);
+  };
+
+  const handleTestPaWebhook = async () => {
+    setPaTesting(true);
+    setPaStatus(null);
+    const testPayload = {
+      action: 'PING_TEST',
+      timestamp: new Date().toISOString(),
+      sourceApp: 'DHL VoC Management Portal',
+      recordCount: 1,
+      record: {
+        id: 'TEST-001',
+        customerName: 'DHL Express Cambodia Test',
+        surveyDate: new Date().toISOString().split('T')[0],
+        score: 10,
+        rating: 'Promoter',
+        status: 'In Progress',
+        rootCause: 'Power Automate Webhook Connection Test',
+        followUpComments: 'Ping test sent from Superadmin Command Center.',
+        owner: currentUser?.fullName || 'Superadmin',
+        facility: 'PNHGTW'
+      }
+    };
+
+    const res = await sendPowerAutomatePayload(testPayload, paConfig.webhookUrl);
+    setPaTesting(false);
+    setPaStatus(res);
+    setPaConfig(getPowerAutomateConfig());
+  };
+
+  const handleSyncAllToPowerAutomate = async () => {
+    setPaTesting(true);
+    setPaStatus(null);
+    const res = await syncBatchToPowerAutomate(records, 'FULL_DB_SYNC');
+    setPaTesting(false);
+    setPaStatus(res);
+    setPaConfig(getPowerAutomateConfig());
+  };
+
+  const handleCopySchema = () => {
+    navigator.clipboard.writeText(JSON.stringify(POWER_AUTOMATE_JSON_SCHEMA, null, 2));
+    setCopiedSchema(true);
+    setTimeout(() => setCopiedSchema(false), 2000);
   };
 
   // --- HANDLERS FOR USER APPROVALS & MANAGEMENT ---
@@ -578,6 +646,198 @@ export default function SuperadminPanel({ onClose, records, currentUser }: Super
                     Last SharePoint verification: {spConfig.lastSyncTimestamp}
                   </div>
                 )}
+              </div>
+
+              {/* POWER AUTOMATE WEBHOOK CARD */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5">
+                {paSavedMsg && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold flex items-center gap-2 animate-fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Power Automate Webhook configuration saved!</span>
+                  </div>
+                )}
+
+                {paStatus && (
+                  <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+                    paStatus.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
+                  }`}>
+                    {paStatus.success ? <Zap className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />}
+                    <span>{paStatus.message}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                  <div className="space-y-1">
+                    <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                      <Webhook className="w-4 h-4 text-sky-600" />
+                      Power Automate Webhook Trigger (Live SharePoint DB Sync)
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Send HTTP POST payloads directly to Microsoft Power Automate to append/update rows in <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-slate-800">Voice Data.xlsx</code> on SharePoint.
+                    </p>
+                  </div>
+                  <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full flex items-center gap-1 border ${
+                    paConfig.webhookUrl ? 'bg-sky-50 text-sky-800 border-sky-200' : 'bg-slate-100 text-slate-600 border-slate-200'
+                  }`}>
+                    <Zap className="w-3 h-3 text-sky-600" />
+                    {paConfig.webhookUrl ? 'Webhook Configured' : 'Webhook Inactive'}
+                  </span>
+                </div>
+
+                <form onSubmit={handleSavePaConfig} className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                      <span>Power Automate HTTP POST Webhook URL</span>
+                      <span className="text-[10px] text-slate-400 font-normal lowercase font-mono">https://prod-*.southeastasia.logic.azure.com/...</span>
+                    </label>
+                    <input 
+                      type="url" 
+                      value={paConfig.webhookUrl}
+                      onChange={(e) => setPaConfig(prev => ({ ...prev, webhookUrl: e.target.value }))}
+                      placeholder="Paste your HTTP POST trigger URL generated by Power Automate flow..."
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:bg-white focus:outline-hidden focus:border-sky-500"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-amber-500" />
+                        Auto-Trigger Sync on Survey Edits & Uploads
+                      </span>
+                      <p className="text-[11px] text-slate-500">
+                        Automatically dispatch HTTP POST payloads when users edit survey status, comments, or upload Excel files.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                      <input 
+                        type="checkbox" 
+                        checked={paConfig.autoSyncEnabled} 
+                        onChange={(e) => {
+                          const updated = { ...paConfig, autoSyncEnabled: e.target.checked };
+                          setPaConfig(updated);
+                          savePowerAutomateConfig(updated);
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-600"></div>
+                    </label>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleTestPaWebhook}
+                        disabled={paTesting || !paConfig.webhookUrl}
+                        className="px-3.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-800 text-xs font-bold rounded-lg border border-sky-200 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {paTesting ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-600" />
+                            <span>Sending Ping...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5 text-sky-600" />
+                            <span>Test Webhook Payload</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleSyncAllToPowerAutomate}
+                        disabled={paTesting || !paConfig.webhookUrl}
+                        className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-lg border border-emerald-200 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Webhook className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Sync All Records ({records.length})</span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs ml-auto"
+                    >
+                      <Save className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Save Webhook URL</span>
+                    </button>
+                  </div>
+                </form>
+
+                {/* POWER AUTOMATE SETUP GUIDE ACCORDION */}
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowGuide(!showGuide)}
+                    className="w-full p-3.5 bg-slate-100 hover:bg-slate-200/70 text-slate-800 text-xs font-bold flex items-center justify-between transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Code className="w-4 h-4 text-sky-600" />
+                      Step-by-Step Microsoft Power Automate Setup & JSON Schema
+                    </span>
+                    {showGuide ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                  </button>
+
+                  {showGuide && (
+                    <div className="p-4 space-y-4 text-xs text-slate-700 bg-white border-t border-slate-200">
+                      <ol className="list-decimal list-inside space-y-2.5 font-medium leading-relaxed">
+                        <li>
+                          Open <a href="https://make.powerautomate.com" target="_blank" rel="noreferrer" className="text-sky-600 underline font-bold">Microsoft Power Automate</a> in your DHL Office 365 account.
+                        </li>
+                        <li>
+                          Create a new <strong>Automated Cloud Flow</strong> or <strong>Instant Cloud Flow</strong>.
+                        </li>
+                        <li>
+                          Search for and select the trigger: <strong>"When an HTTP request is received"</strong>.
+                        </li>
+                        <li>
+                          In the trigger settings, click <strong>"Use sample payload to generate schema"</strong> and paste the schema below.
+                        </li>
+                        <li>
+                          Add an action step: <strong>Excel Online (Business) → "Add a row into a table"</strong> or <strong>"Update a row"</strong>.
+                        </li>
+                        <li>
+                          Select Site Location: <code className="bg-slate-100 px-1 py-0.5 rounded font-mono font-bold text-slate-800">https://dpdhl.sharepoint.com/teams/NetOpsPD</code>, Document Library: <code className="bg-slate-100 px-1 py-0.5 rounded font-mono font-bold text-slate-800">Shared Documents</code>, File: <code className="bg-slate-100 px-1 py-0.5 rounded font-mono font-bold text-slate-800">/General/30. Voice (ICCC)/Voice Data.xlsx</code>.
+                        </li>
+                        <li>
+                          Save the Flow, then copy the generated <strong>HTTP POST URL</strong> and paste it into the input field above!
+                        </li>
+                      </ol>
+
+                      {/* JSON SCHEMA BOX */}
+                      <div className="pt-2">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <Code className="w-3.5 h-3.5 text-sky-600" />
+                            Request Body JSON Schema for Power Automate
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleCopySchema}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            {copiedSchema ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                <span className="text-emerald-700">Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Copy JSON Schema</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <pre className="p-3 bg-slate-900 text-slate-200 rounded-xl font-mono text-[10px] leading-snug overflow-x-auto max-h-48 border border-slate-800 shadow-inner">
+                          {JSON.stringify(POWER_AUTOMATE_JSON_SCHEMA, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

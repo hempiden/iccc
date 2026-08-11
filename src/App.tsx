@@ -20,6 +20,7 @@ import NotificationCenter, { CommentNotification } from './components/Notificati
 import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber, clearVoCRecords, deleteVoCRecords } from './utils/firebaseSync';
 import { healRecordTimeline } from './utils/parser';
 import { exportMasterExcelWorkbook } from './utils/excelDatabase';
+import { syncRecordToPowerAutomate, syncBatchToPowerAutomate } from './utils/powerAutomateSync';
 
 // Helper to sanitize database loaded date fields that might contain Excel serial formats (e.g. "45980")
 const sanitizeExcelDateString = (val: string | undefined): string | undefined => {
@@ -302,15 +303,17 @@ export default function App() {
     });
   }, [filteredByTimelineAndChannel, statusFilter]);
 
-  // Synchronize records updates to Firestore and LocalState
+  // Synchronize records updates to local storage and trigger Power Automate webhook
   const handleUpdateRecord = async (updatedRecord: VoCRecord) => {
     const nextRecords = records.map(r => r.id === updatedRecord.id ? updatedRecord : r);
     setRecords(nextRecords);
     
     try {
       await saveVoCRecord(updatedRecord);
+      // Automatically trigger Power Automate webhook if configured
+      syncRecordToPowerAutomate(updatedRecord, 'UPDATE');
     } catch (e) {
-      console.error('Failed to sync updated record to Firestore:', e);
+      console.error('Failed to sync updated record:', e);
     }
   };
 
@@ -336,7 +339,7 @@ export default function App() {
     return records.find(r => r.id === selectedRecordId) || null;
   }, [records, selectedRecordId]);
 
-  // Handler for uploading new files to Cloud Firestore
+  // Handler for uploading new files
   const handleRecordsLoaded = async (newRecords: VoCRecord[]) => {
     setRecords(newRecords);
     setSelectedRecordId(null); // Clear selected
@@ -345,15 +348,17 @@ export default function App() {
       setLoadingDb(true);
       await clearVoCRecords();
       await batchSaveVoCRecords(newRecords);
+      // Automatically trigger Power Automate batch sync
+      syncBatchToPowerAutomate(newRecords, 'BATCH_OVERWRITE_UPLOAD');
     } catch (e) {
-      console.error('Failed to batch save loaded records to Firestore:', e);
+      console.error('Failed to batch save loaded records:', e);
       throw e;
     } finally {
       setLoadingDb(false);
     }
   };
 
-  // Handler for appending files to Cloud Firestore
+  // Handler for appending files
   const handleAppendRecords = async (newRecords: VoCRecord[]) => {
     const existingIds = new Set(records.map(r => r.id));
     const uniqueNew = newRecords.filter(r => !existingIds.has(r.id));
@@ -363,8 +368,10 @@ export default function App() {
     try {
       setLoadingDb(true);
       await batchSaveVoCRecords(uniqueNew);
+      // Automatically trigger Power Automate batch sync
+      syncBatchToPowerAutomate(uniqueNew, 'APPEND_UPLOAD');
     } catch (e) {
-      console.error('Failed to batch save appended records to Firestore:', e);
+      console.error('Failed to batch save appended records:', e);
       throw e;
     } finally {
       setLoadingDb(false);
