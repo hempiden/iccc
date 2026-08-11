@@ -433,6 +433,44 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
             </div>
           )}
 
+          {/* Mode Switcher Tabs (Log In vs Register) */}
+          {step !== 'otp' && (
+            <div className="grid grid-cols-2 gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80 mb-5 text-xs font-bold w-full">
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('phone');
+                  setError(null);
+                  setInfoMessage(null);
+                }}
+                className={`py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  step === 'phone'
+                    ? 'bg-amber-400 text-slate-950 font-black shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Phone className="w-3.5 h-3.5" />
+                <span>Log In</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('register');
+                  setError(null);
+                  setInfoMessage(null);
+                }}
+                className={`py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  step === 'register'
+                    ? 'bg-amber-400 text-slate-950 font-black shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>New Registration</span>
+              </button>
+            </div>
+          )}
+
           {/* Form Content Steps */}
           <div className="w-full relative">
             <div id="recaptcha-container" className="hidden"></div>
@@ -512,13 +550,13 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                         required
                         value={phoneNumber}
                         onChange={(e) => setPhoneNumber(e.target.value)}
-                        placeholder={isSandboxMode ? "+1 (555) 555-5555" : "International format (+855...)"}
+                        placeholder={isSandboxMode ? "+855 (12) 345-678" : "International format (+855...)"}
                         className="w-full bg-slate-900 text-slate-100 text-xs pl-10 pr-3.5 py-2.5 rounded-lg border border-slate-700 focus:outline-hidden focus:border-amber-400 transition-colors"
                       />
                     </div>
                     <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
                       {isSandboxMode 
-                        ? "Enter your pre-assigned colleague phone number. If registered, we will grant secure Sandbox authentication access."
+                        ? "Enter your pre-assigned colleague phone number or select New Registration above."
                         : "Enter your phone number. If registered, we will instantly recognize you. If not, we will register you as a brand-new Facility Agent."}
                     </p>
                   </div>
@@ -540,18 +578,33 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                       </>
                     )}
                   </button>
+
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStep('register');
+                        setError(null);
+                        setInfoMessage(null);
+                      }}
+                      className="text-xs text-amber-400 font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>New colleague? Register your account here</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
                 </form>
 
                 {/* SECURE SANDBOX ACCESS NOTICE */}
                 {isSandboxMode && (
-                  <div className="mt-5 pt-4 border-t border-slate-700/60">
-                    <div className="p-3.5 bg-amber-400/10 border border-amber-400/20 rounded-xl text-left flex gap-2.5">
+                  <div className="mt-4 pt-3 border-t border-slate-700/60">
+                    <div className="p-3 bg-amber-400/10 border border-amber-400/20 rounded-xl text-left flex gap-2.5">
                       <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                       <div className="text-[10px] text-slate-300 leading-normal">
                         <span className="font-extrabold uppercase text-amber-400 block tracking-wider mb-1">
                           Enterprise Sandbox Active
                         </span>
-                        Carrier-free secure testing is active. Only users whose phone numbers have been registered can authenticate using standard simulated OTP. No demo accounts are exposed here to maintain workspace confidentiality.
+                        Carrier-free testing active. Log in with registered numbers or click <strong className="text-amber-300">New Registration</strong> above to register a brand-new colleague profile.
                       </div>
                     </div>
                   </div>
@@ -559,14 +612,14 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
               </div>
             )}
 
-            {/* STEP 2: PROFILE REGISTRATION (ONLY FOR NEW UNRECOGNIZED PHONES) */}
+            {/* STEP 2: PROFILE REGISTRATION */}
             {step === 'register' && (
               <form onSubmit={handleRegisterAndSendCode} className="space-y-4 text-left">
-                <div className="p-3.5 bg-amber-400/10 border border-amber-400/20 rounded-xl flex gap-3 text-amber-200">
+                <div className="p-3 bg-amber-400/10 border border-amber-400/20 rounded-xl flex gap-3 text-amber-200">
                   <UserCheck className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
-                  <div className="text-xs">
+                  <div className="text-xs leading-relaxed">
                     <span className="font-bold block text-white">New Colleague Registration</span>
-                    Phone number <span className="font-mono font-bold text-amber-400">{phoneNumber}</span> is not registered yet. Please enter your details below.
+                    Register your profile to access the DHL Voice of Customer Workspace.
                   </div>
                 </div>
 
@@ -579,9 +632,26 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Enter full name (e.g. John Doe)"
+                    placeholder="Enter full name (e.g. Sok Chea)"
                     className="w-full bg-slate-900 text-slate-100 text-xs px-3.5 py-2.5 rounded-lg border border-slate-700 focus:outline-hidden focus:border-amber-400 transition-colors"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">
+                    Mobile Phone Number
+                  </label>
+                  <div className="relative">
+                    <Phone className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                    <input
+                      type="tel"
+                      required
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="+855 12 345 678"
+                      className="w-full bg-slate-900 text-slate-100 text-xs pl-10 pr-3.5 py-2.5 rounded-lg border border-slate-700 focus:outline-hidden focus:border-amber-400 transition-colors"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -596,36 +666,42 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
                     <option value="PNHGTW">PNHGTW (Gateway)</option>
                     <option value="PNHASC">PNHASC (ASC)</option>
                     <option value="PNHSVC">PNHSVC (SVC)</option>
+                    <option value="All">All Facilities</option>
                   </select>
-                  <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-                    Select your primary physical work facility. This registration requires approval from a DHL Superadmin.
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                    Select your primary work facility. Registration requires review by a DHL Superadmin.
                   </p>
                 </div>
 
-                <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-amber-400 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 text-xs font-black uppercase tracking-wider py-3 rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
+                >
+                  {loading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Registering & Sending OTP...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Register & Send OTP</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+
+                <div className="text-center pt-1">
                   <button
                     type="button"
-                    onClick={() => setStep('phone')}
-                    className="w-1/3 border border-slate-700 hover:bg-slate-700/40 text-slate-300 text-xs font-bold py-3 rounded-lg text-center cursor-pointer transition-colors"
+                    onClick={() => {
+                      setStep('phone');
+                      setError(null);
+                      setInfoMessage(null);
+                    }}
+                    className="text-xs text-amber-400 font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
                   >
-                    Change Phone
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-2/3 bg-amber-400 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 text-xs font-black uppercase tracking-wider py-3 rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
-                  >
-                    {loading ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Sending OTP...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Send OTP Code</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
+                    <span>Already registered? Log In here</span>
                   </button>
                 </div>
               </form>
