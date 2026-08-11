@@ -629,25 +629,6 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
         </button>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Slide Style Layout Selector */}
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/60 mr-2">
-            <button
-              onClick={() => setSlideStyle('table')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${slideStyle === 'table' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              <Table className="w-3.5 h-3.5" />
-              PowerPoint Layout
-            </button>
-          </div>
-
-          <button
-            onClick={handleCopyText}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-xs transition-colors cursor-pointer"
-          >
-            <Clipboard className="w-4 h-4 text-slate-500" />
-            {copied ? 'Copied!' : 'Copy Raw Report'}
-          </button>
-
           <button
             onClick={() => setShowShareModal(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-xs transition-colors cursor-pointer"
@@ -658,91 +639,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
         </div>
       </div>
 
-      {/* 2. Slide Live Customizer Panel */}
-      <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200/60 print:hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-            <Palette className="w-4 h-4 text-slate-500" />
-            Slide customizer (Pro-Tip settings)
-          </span>
-          <p className="text-[11px] text-slate-500">
-            Tailor frame colors, feedback formatting, and presentation layout templates.
-          </p>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-4 text-xs">
-          {/* Brand Border Theme */}
-          <div className="flex flex-col gap-1">
-            <span className="font-semibold text-slate-600">Slide Frame Border:</span>
-            <div className="flex items-center gap-1">
-              <button 
-                onClick={() => setBrandColorTheme('dhl')} 
-                className={`px-2 py-1 rounded border text-[10px] font-bold ${brandColorTheme === 'dhl' ? 'bg-amber-100 border-amber-400 text-amber-800' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'}`}
-              >
-                DHL Gold
-              </button>
-              <button 
-                onClick={() => setBrandColorTheme('indigo')} 
-                className={`px-2 py-1 rounded border text-[10px] font-bold ${brandColorTheme === 'indigo' ? 'bg-indigo-100 border-indigo-400 text-indigo-800' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'}`}
-              >
-                Corporate Indigo
-              </button>
-              <button 
-                onClick={() => setBrandColorTheme('emerald')} 
-                className={`px-2 py-1 rounded border text-[10px] font-bold ${brandColorTheme === 'emerald' ? 'bg-emerald-100 border-emerald-400 text-emerald-800' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'}`}
-              >
-                Mint Fresh
-              </button>
-              <button 
-                onClick={() => setBrandColorTheme('monochrome')} 
-                className={`px-2 py-1 rounded border text-[10px] font-bold ${brandColorTheme === 'monochrome' ? 'bg-slate-100 border-slate-400 text-slate-800' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'}`}
-              >
-                Slate
-              </button>
-            </div>
-          </div>
-
-          {/* Voice of Customer Box color */}
-          <div className="flex flex-col gap-1">
-            <span className="font-semibold text-slate-600">Comment Background:</span>
-            <div className="flex items-center gap-1">
-              {(['blue', 'yellow', 'slate', 'white'] as const).map((color) => (
-                <button
-                  key={color}
-                  onClick={() => setCommentBoxBg(color)}
-                  className={`px-2.5 py-1 rounded-md border capitalize text-[10px] font-medium ${
-                    commentBoxBg === color 
-                      ? 'bg-slate-800 border-slate-800 text-white' 
-                      : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'
-                  }`}
-                >
-                  {color}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Comment Text Font Size */}
-          <div className="flex flex-col gap-1">
-            <span className="font-semibold text-slate-600">Feedback Size:</span>
-            <div className="flex items-center gap-1">
-              {(['md', 'lg', 'xl'] as const).map((sz) => (
-                <button
-                  key={sz}
-                  onClick={() => setCommentFontSize(sz)}
-                  className={`px-2.5 py-1 rounded-md border uppercase text-[10px] font-extrabold ${
-                    commentFontSize === sz 
-                      ? 'bg-slate-800 border-slate-800 text-white' 
-                      : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'
-                  }`}
-                >
-                  {sz}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* 3. The Slide-Ready Document Card Frame */}
       <div 
