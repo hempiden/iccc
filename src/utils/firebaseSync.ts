@@ -64,119 +64,82 @@ export function normalizePhoneNumber(raw: string): string {
   return cleaned;
 }
 
+const LOCAL_STORAGE_KEY = 'dhl_voc_local_survey_records';
+
 /**
- * Fetches all VoC records from Firestore.
+ * Fetches all VoC survey records from local storage.
+ * Customer survey records are strictly kept client-side and not sent to Firestore.
  */
 export async function fetchVoCRecords(): Promise<VoCRecord[]> {
   try {
-    const colRef = collection(db, COLLECTION_NAME);
-    const snapshot = await getDocs(colRef);
-    const records: VoCRecord[] = [];
-    snapshot.forEach((doc) => {
-      records.push(doc.data() as VoCRecord);
-    });
-    return records;
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (raw) {
+      return JSON.parse(raw) as VoCRecord[];
+    }
+    return [];
   } catch (error) {
-    console.error('Error fetching records from Firestore:', error);
-    throw error;
+    console.error('Error fetching records from local storage:', error);
+    return [];
   }
 }
 
 /**
- * Saves or updates a single VoC record in Firestore.
+ * Saves or updates a single VoC survey record in local storage.
  */
 export async function saveVoCRecord(record: VoCRecord): Promise<void> {
   try {
-    const cleaned = sanitizeForFirestore(record);
-    const docRef = doc(db, COLLECTION_NAME, record.id);
-    await setDoc(docRef, cleaned);
+    const existing = await fetchVoCRecords();
+    const idx = existing.findIndex(r => r.id === record.id);
+    if (idx >= 0) {
+      existing[idx] = record;
+    } else {
+      existing.push(record);
+    }
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(existing));
   } catch (error) {
-    console.error(`Error saving record ${record.id} to Firestore:`, error);
-    throw error;
+    console.error(`Error saving record ${record.id} locally:`, error);
   }
 }
 
 /**
- * Saves multiple records in batches of 400 (Firestore max batch limit is 500).
+ * Saves multiple survey records to local storage.
  */
 export async function batchSaveVoCRecords(records: VoCRecord[]): Promise<void> {
   try {
-    // Partition records into chunks of 400 to prevent exceeding Firestore limits
-    const chunks: VoCRecord[][] = [];
-    for (let i = 0; i < records.length; i += 400) {
-      chunks.push(records.slice(i, i + 400));
-    }
-
-    for (const chunk of chunks) {
-      const batch = writeBatch(db);
-      chunk.forEach((r) => {
-        const cleaned = sanitizeForFirestore(r);
-        const docRef = doc(db, COLLECTION_NAME, r.id);
-        batch.set(docRef, cleaned);
-      });
-      await batch.commit();
-    }
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(records));
   } catch (error) {
-    console.error('Error saving batch records to Firestore:', error);
-    throw error;
+    console.error('Error saving batch records to local storage:', error);
   }
 }
 
 /**
- * Deletes all VoC records from Firestore.
+ * Deletes all VoC survey records from local storage.
  */
 export async function clearVoCRecords(): Promise<void> {
   try {
-    const colRef = collection(db, COLLECTION_NAME);
-    const snapshot = await getDocs(colRef);
-    const docIds: string[] = [];
-    snapshot.forEach((doc) => {
-      docIds.push(doc.id);
-    });
-
-    if (docIds.length === 0) return;
-
-    // Delete in batches of 400
-    for (let i = 0; i < docIds.length; i += 400) {
-      const batch = writeBatch(db);
-      const chunk = docIds.slice(i, i + 400);
-      chunk.forEach((id) => {
-        const docRef = doc(db, COLLECTION_NAME, id);
-        batch.delete(docRef);
-      });
-      await batch.commit();
-    }
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
   } catch (error) {
-    console.error('Error clearing VoC records in Firestore:', error);
-    throw error;
+    console.error('Error clearing VoC records in local storage:', error);
   }
 }
 
 /**
- * Deletes selected VoC records from Firestore.
+ * Deletes selected VoC survey records from local storage.
  */
 export async function deleteVoCRecords(ids: string[]): Promise<void> {
   if (!ids || ids.length === 0) return;
   try {
-    // Delete in batches of 400
-    for (let i = 0; i < ids.length; i += 400) {
-      const batch = writeBatch(db);
-      const chunk = ids.slice(i, i + 400);
-      chunk.forEach((id) => {
-        const docRef = doc(db, COLLECTION_NAME, id);
-        batch.delete(docRef);
-      });
-      await batch.commit();
-    }
+    const existing = await fetchVoCRecords();
+    const filtered = existing.filter(r => !ids.includes(r.id));
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(filtered));
   } catch (error) {
-    console.error('Error deleting specific VoC records in Firestore:', error);
-    throw error;
+    console.error('Error deleting specific VoC records in local storage:', error);
   }
 }
 
 /**
- * Seeds Firestore with default sample records if the collection is empty.
- * Returns the current set of records.
+ * Seeds local storage with default sample records if empty.
+ * Returns the current set of records. Customer survey data is strictly isolated from Firestore.
  */
 export async function seedFirestoreIfNeeded(defaultSampleRecords: VoCRecord[]): Promise<VoCRecord[]> {
   try {
@@ -185,12 +148,11 @@ export async function seedFirestoreIfNeeded(defaultSampleRecords: VoCRecord[]): 
       return existing;
     }
     
-    // Seed database
-    console.log('Firestore is empty. Seeding with pre-loaded DHL records...');
-    await batchSaveVoCRecords(defaultSampleRecords);
+    // Seed local storage
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(defaultSampleRecords));
     return defaultSampleRecords;
   } catch (error) {
-    console.error('Error seeding Firestore:', error);
+    console.error('Error seeding local survey records:', error);
     return defaultSampleRecords;
   }
 }

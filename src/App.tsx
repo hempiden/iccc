@@ -208,7 +208,7 @@ export default function App() {
     localStorage.setItem('dhl_voc_read_notifications', JSON.stringify(ids));
   };
 
-  // Load and seed records from shared Cloud Firestore on authentication
+  // Load and seed records locally on authentication
   useEffect(() => {
     if (!currentUser) return;
     
@@ -227,8 +227,7 @@ export default function App() {
         setLoadingDb(false);
       })
       .catch((err) => {
-        console.error('Error seeding/fetching shared Firestore database:', err);
-        // Resilient fallback to local sample data
+        console.error('Error loading local survey records:', err);
         setRecords(sampleRecords);
         setLoadingDb(false);
       });
@@ -372,16 +371,16 @@ export default function App() {
     }
   };
 
-  // Reset to original DHL sample records in shared Firestore
+  // Reset to original DHL sample records locally
   const handleResetToSample = async () => {
-    if (window.confirm('This will restore the default DHL VoC sample dataset in the shared cloud Firestore database, overwriting changes. Proceed?')) {
+    if (window.confirm('This will restore the default DHL VoC sample dataset locally, overwriting changes. Proceed?')) {
       try {
         setLoadingDb(true);
         setRecords(sampleRecords);
         setSelectedRecordId(null);
         await batchSaveVoCRecords(sampleRecords);
       } catch (e) {
-        console.error('Failed to reset Firestore database:', e);
+        console.error('Failed to reset dataset:', e);
       } finally {
         setLoadingDb(false);
       }
