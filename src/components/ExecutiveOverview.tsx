@@ -509,33 +509,70 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
         };
       });
     } else {
-      // Weekly
-      const weeks = [
-        { name: 'W-01', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'W-02', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'W-03', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'W-04', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'W-05', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } }
-      ];
+      // Weekly - Calculate actual week numbers from record dates
+      const getWeekNumFromDateStr = (dateStr?: string): number => {
+        if (!dateStr) return 23;
+        try {
+          const d = new Date(dateStr.replace(/-/g, '/'));
+          if (isNaN(d.getTime())) return 23;
+          const year = d.getFullYear();
+          const startOfYear = new Date(year, 0, 1);
+          const pastDaysOfYear = (d.getTime() - startOfYear.getTime()) / 86400000;
+          return Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
+        } catch {
+          return 23;
+        }
+      };
+
+      // Extract week numbers for all records with dates
+      const weekNumsInRecords = records
+        .map(r => getWeekNumFromDateStr(r.responseDate || r.creationDate))
+        .filter(w => w > 0 && w <= 53);
+
+      // Determine max week in dataset (for June 2026, max week is ~26 or 27)
+      const maxWeek = weekNumsInRecords.length > 0
+        ? Math.max(...weekNumsInRecords)
+        : 26;
+
+      // Ensure 5 consecutive week numbers ending at maxWeek (e.g. 22, 23, 24, 25, 26 for June)
+      const targetWeeks = Array.from({ length: 5 }, (_, i) => maxWeek - 4 + i);
+
+      const weeks = targetWeeks.map(wNum => ({
+        weekNum: wNum,
+        name: `W-${String(wNum).padStart(2, '0')}`,
+        cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 },
+        ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }
+      }));
 
       records.forEach((r, idx) => {
-        const weekIndex = parseInt(r.id.slice(-2), 10) % 5 || idx % 5;
-        const week = weeks[weekIndex].cy;
-        week.count++;
-        week.sumScore += r.likelihood;
-        if (r.category === 'Promoter') week.promoters++;
-        else if (r.category === 'Passive') week.passives++;
-        else week.detractors++;
+        const dStr = r.responseDate || r.creationDate;
+        const wNum = getWeekNumFromDateStr(dStr);
+        let weekObj = weeks.find(w => w.weekNum === wNum);
+        if (!weekObj) {
+          // Fallback to index mapping if date falls outside the 5-week range
+          weekObj = weeks[idx % 5];
+        }
+        const cy = weekObj.cy;
+        cy.count++;
+        cy.sumScore += r.likelihood;
+        if (r.category === 'Promoter') cy.promoters++;
+        else if (r.category === 'Passive') cy.passives++;
+        else cy.detractors++;
       });
 
       lyRecords.forEach((r, idx) => {
-        const weekIndex = parseInt(r.id.slice(-2), 10) % 5 || idx % 5;
-        const week = weeks[weekIndex].ly;
-        week.count++;
-        week.sumScore += r.likelihood;
-        if (r.category === 'Promoter') week.promoters++;
-        else if (r.category === 'Passive') week.passives++;
-        else week.detractors++;
+        const dStr = r.responseDate || r.creationDate;
+        const wNum = getWeekNumFromDateStr(dStr);
+        let weekObj = weeks.find(w => w.weekNum === wNum);
+        if (!weekObj) {
+          weekObj = weeks[idx % 5];
+        }
+        const ly = weekObj.ly;
+        ly.count++;
+        ly.sumScore += r.likelihood;
+        if (r.category === 'Promoter') ly.promoters++;
+        else if (r.category === 'Passive') ly.passives++;
+        else ly.detractors++;
       });
 
       return weeks.map(w => {
