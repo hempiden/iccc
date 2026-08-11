@@ -595,27 +595,6 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* One-click Export to SharePoint Master Excel */}
-          <button
-            onClick={() => exportMasterExcelWorkbook(records, currentUser)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-extrabold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-all cursor-pointer shrink-0 shadow-2xs"
-            title="Export complete 4-sheet database to SharePoint/Local Excel"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="hidden sm:inline">Export SharePoint Excel</span>
-            <span className="sm:hidden">Export</span>
-          </button>
-
-          {/* Reset button to clear uploaded data and restore original sample records */}
-          <button
-            onClick={handleResetToSample}
-            disabled={loadingDb}
-            className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-slate-50 border border-slate-200 rounded-lg transition-all cursor-pointer shrink-0 disabled:opacity-55"
-            title="Reset Database to Default Samples"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-
           {/* Superadmin Command Center button */}
           {currentUser.role === 'superadmin' && (
             <button
@@ -708,57 +687,6 @@ export default function App() {
         } print:overflow-visible print:h-auto`}>
           
           <div className="p-6 md:p-8 flex flex-col gap-6 max-w-6xl w-full mx-auto print:p-0">
-            {/* Mobile Tab Navigation for Superadmin */}
-            {!selectedRecordId && currentUser?.role === 'superadmin' && (
-              <div className="sm:hidden flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('dashboard');
-                    setSelectedRecordId(null);
-                  }}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeTab === 'dashboard'
-                      ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <Activity className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Dashboard</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('presentation');
-                    setSelectedRecordId(null);
-                  }}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeTab === 'presentation'
-                      ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <Presentation className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Presentation</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('upload');
-                    setSelectedRecordId(null);
-                  }}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeTab === 'upload'
-                      ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Upload</span>
-                </button>
-              </div>
-            )}
-
             {selectedRecord ? (
               /* Presentation slide detail view */
               <CustomerDetail 
@@ -863,29 +791,8 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              /* Welcome block & Executive KPI overview portfolio & Power BI Mirror integrated */
+              /* Unified Interactive Power BI Mirror Component */
               <div className="space-y-6 animate-fade-in print:hidden">
-                <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-6 md:p-8 border border-slate-800 shadow-md relative overflow-hidden">
-                  <div className="absolute right-0 bottom-0 translate-x-12 translate-y-12 opacity-5 pointer-events-none select-none">
-                    <Truck className="w-80 h-80 text-white opacity-5" />
-                  </div>
-                  
-                  <div className="relative z-10 max-w-2xl space-y-3">
-                    <span className="text-xs font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2.5 py-1 rounded-md border border-amber-400/20">
-                      Unified Portal
-                    </span>
-                    <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
-                      DHL iCCC Voice & Slide Intelligence Workspace
-                    </h2>
-                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-medium">
-                      Power BI Weekly charts and the executive-ready slide compilation suite integrated in one cohesive dashboard. Instantly review AI-summarized feedback, case status logs, and action details without horizontal scroll.
-                    </p>
-                  </div>
-                </div>
-
-                <ExecutiveOverview records={filteredByTimelineAndChannel} allRecords={records} />
-
-                {/* Unified Interactive Power BI Mirror Component */}
                 <PowerBiMirror 
                   records={filteredByTimelineAndChannel} 
                   onSelectRecord={(r) => setSelectedRecordId(r.id)} 
