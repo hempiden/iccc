@@ -80,8 +80,16 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
     }
   }, [resendCooldown]);
   
-  // Sandbox test bypass mode - default to true since company firewall restricts OTP / firebase blocking
-  const [isSandboxMode, setIsSandboxMode] = useState(true);
+  // Sandbox test bypass mode - reads setting configured by Superadmin
+  const [isSandboxMode, setIsSandboxMode] = useState(() => {
+    const stored = localStorage.getItem('dhl_sandbox_otp_enabled');
+    return stored !== null ? stored === 'true' : true;
+  });
+
+  const handleToggleSandbox = (newVal: boolean) => {
+    setIsSandboxMode(newVal);
+    localStorage.setItem('dhl_sandbox_otp_enabled', String(newVal));
+  };
 
   const confirmationResultRef = useRef<ConfirmationResult | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
@@ -411,7 +419,7 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
               <button
                 type="button"
                 onClick={() => {
-                  setIsSandboxMode(!isSandboxMode);
+                  handleToggleSandbox(!isSandboxMode);
                   setStep('phone');
                   setPhoneNumber('+855');
                   setFullName('');

@@ -3,7 +3,7 @@ export interface TimelineEvent {
   action: string;
   deadline?: string;
   pic?: string;
-  status?: 'Completed' | 'In Progress' | 'New';
+  status?: 'Completed' | 'In Progress' | 'New' | 'Closed';
 }
 
 export interface VoCComment {
@@ -24,7 +24,7 @@ export interface ActionOwner {
   facility?: string; // Assigned Facility (e.g. PNHGTW, PNHASC, PNHSVC or 'All')
   phoneNumber?: string;
   phoneNumbers?: string[]; // Multiple phone numbers associated to this person
-  status?: 'approved' | 'pending'; // Approval status for user signups
+  status?: 'approved' | 'pending' | 'rejected'; // Approval status for user signups
   email?: string; // Outlook / Communication email
 }
 
@@ -43,6 +43,9 @@ export interface VoCRecord {
   status: 'New' | 'In Progress' | 'Completed'; // Case Status derived or parsed
   interaction?: string; // Interaction ID (e.g., PNHGTW)
   followUpComments?: string; // Additional comments column
+  deadline?: string;
+  transaction?: string;
+  alertType?: string;
   // Additional BA / Management fields from full spreadsheet export:
   journeyName?: string;
   momentOfTruthName?: string;

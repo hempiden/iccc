@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  FileSpreadsheet, MessageSquare, ShieldAlert, Award, Sparkles, 
+  FileSpreadsheet, MessageSquare, ShieldAlert, Shield, Award, Sparkles, 
   RefreshCw, RotateCcw, Truck, HelpCircle, User, Users, Activity, TrendingUp, Calendar, LogOut,
   Presentation, Bell, Mail
 } from 'lucide-react';
@@ -14,10 +14,12 @@ import CompactSidebarList from './components/CompactSidebarList';
 import PowerBiMirror from './components/PowerBiMirror';
 import PhoneAuthLogin from './components/PhoneAuthLogin';
 import ColleagueManager from './components/ColleagueManager';
+import SuperadminPanel from './components/SuperadminPanel';
 import UserProfileModal from './components/UserProfileModal';
 import NotificationCenter, { CommentNotification } from './components/NotificationCenter';
 import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber, clearVoCRecords, deleteVoCRecords } from './utils/firebaseSync';
 import { healRecordTimeline } from './utils/parser';
+import { exportMasterExcelWorkbook } from './utils/excelDatabase';
 
 // Helper to sanitize database loaded date fields that might contain Excel serial formats (e.g. "45980")
 const sanitizeExcelDateString = (val: string | undefined): string | undefined => {
@@ -128,6 +130,7 @@ export default function App() {
 
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [showColleagueManager, setShowColleagueManager] = useState(false);
+  const [showSuperadminPanel, setShowSuperadminPanel] = useState(false);
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'upload'>('dashboard');
 
@@ -586,6 +589,17 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* One-click Export to SharePoint Master Excel */}
+          <button
+            onClick={() => exportMasterExcelWorkbook(records, currentUser)}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-extrabold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-all cursor-pointer shrink-0 shadow-2xs"
+            title="Export complete 4-sheet database to SharePoint/Local Excel"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">Export SharePoint Excel</span>
+            <span className="sm:hidden">Export</span>
+          </button>
+
           {/* Reset button to clear uploaded data and restore original sample records */}
           <button
             onClick={handleResetToSample}
@@ -596,15 +610,15 @@ export default function App() {
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
 
-          {/* Manage Colleagues button for superadmin */}
+          {/* Superadmin Command Center button */}
           {currentUser.role === 'superadmin' && (
             <button
-              onClick={() => setShowColleagueManager(true)}
-              className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-all cursor-pointer shrink-0"
-              title="Manage Colleagues"
+              onClick={() => setShowSuperadminPanel(true)}
+              className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-black text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-all cursor-pointer shrink-0 shadow-2xs"
+              title="Superadmin Command Center: OTP Sandbox, SharePoint Config & User Approvals"
             >
-              <Users className="w-3.5 h-3.5 text-slate-500" />
-              <span>Colleagues</span>
+              <Shield className="w-3.5 h-3.5 text-slate-950" />
+              <span>Superadmin Panel</span>
             </button>
           )}
 
@@ -882,6 +896,13 @@ export default function App() {
         </main>
 
       </div>
+      {showSuperadminPanel && (
+        <SuperadminPanel 
+          onClose={() => setShowSuperadminPanel(false)} 
+          records={records} 
+          currentUser={currentUser} 
+        />
+      )}
       {showColleagueManager && (
         <ColleagueManager onClose={() => setShowColleagueManager(false)} />
       )}
