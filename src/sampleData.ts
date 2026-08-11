@@ -154,7 +154,7 @@ export const sampleRecords: VoCRecord[] = sampleRecordsRaw.map(r => {
   if (r.id === '263437429') {
     timeline.forEach(ev => {
       ev.pic = 'Rothana Art';
-      ev.deadline = '30 Apr';
+      ev.deadline = '23 Apr';
       ev.status = 'Completed';
     });
   } else if (r.id === '246896936') {

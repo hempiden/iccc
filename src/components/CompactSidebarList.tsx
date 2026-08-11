@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Filter, Award, Sparkles, ShieldAlert, CheckCircle2, Clock, HelpCircle, RefreshCw, AlertCircle, Calendar } from 'lucide-react';
 import { VoCRecord } from '../types';
-import { getSurveyUrl } from '../utils/parser';
+import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix } from '../utils/parser';
 
 interface CompactSidebarListProps {
   records: VoCRecord[];
@@ -292,18 +292,31 @@ export default function CompactSidebarList({
                 }`}
               >
                 <div className="min-w-0 pr-2">
-                  <div className="font-semibold text-sm text-slate-800 tracking-tight flex items-center gap-2">
-                    <span className="font-mono">
-                      <a
-                        href={getSurveyUrl(record.surveyId || record.id)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 hover:underline transition-colors font-bold"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {record.surveyId || record.id}
-                      </a>
-                    </span>
+                  <div className="font-semibold text-sm text-slate-800 tracking-tight flex items-center gap-2 flex-wrap">
+                    {(() => {
+                      const cleanId = getCleanSurveyId(record.surveyId || record.id);
+                      const suffix = getSurveyIdSuffix(record.surveyId) || getSurveyIdSuffix(record.id);
+                      return (
+                        <>
+                          <span className="font-mono">
+                            <a
+                              href={getSurveyUrl(cleanId)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 hover:underline transition-colors font-bold"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {cleanId}
+                            </a>
+                          </span>
+                          {suffix && (
+                            <span className="text-[10px] font-sans font-extrabold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 uppercase">
+                              {suffix}
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                     <span className={`text-[11px] font-bold ${scoreColor}`}>

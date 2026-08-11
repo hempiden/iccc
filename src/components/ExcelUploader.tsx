@@ -273,8 +273,17 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
           const responseFeedbackChannelVal = findValueByHeader(row, ['Response Feedback Channel', 'ResponseFeedbackChannel', 'Feedback Channel', 'Channel', 'Response Feedback']);
 
           // Treat missing survey ID as a skip, or generate one
-          const surveyId = surveyIdVal ? String(surveyIdVal).trim() : `UPLOAD-${idx + 1}`;
+          const rawSurveyId = surveyIdVal ? String(surveyIdVal).trim() : `UPLOAD-${idx + 1}`;
           
+          // Separate clean Survey ID from any concatenated suffix (e.g. 290628401_Pickup -> 290628401 and Pickup)
+          let cleanSurveyId = rawSurveyId;
+          let extractedSuffix = '';
+          if (rawSurveyId.includes('_')) {
+            const parts = rawSurveyId.split('_');
+            cleanSurveyId = parts[0];
+            extractedSuffix = parts.slice(1).join('_');
+          }
+
           // Parse Likelihood NPS score (default to 5 if empty or invalid)
           let likelihood = 5;
           if (likelihoodVal !== undefined) {
@@ -304,11 +313,11 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
 
           // BA Categorization fallbacks
           const transactionName = transactionNameVal ? String(transactionNameVal).trim() : 'Delivery by Courier';
-          const topic = topicVal ? String(topicVal).trim() : classifyTopic(comment, transactionName);
+          const topic = topicVal ? String(topicVal).trim() : (extractedSuffix || classifyTopic(comment, transactionName));
           
           // Generate a truly unique database ID in case of multiple rows for the same survey ID (split by theme)
           const cleanTopic = topic ? topic.replace(/[^a-zA-Z0-9]/g, '_') : 'General';
-          const id = `${surveyId}_${cleanTopic}`;
+          const id = `${cleanSurveyId}_${cleanTopic}`;
           
           let sentiment: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' | 'NO_OPINION' = 'NO_OPINION';
           if (sentimentVal) {
@@ -322,7 +331,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
 
           parsedRecords.push({
             id,
-            surveyId,
+            surveyId: cleanSurveyId,
             likelihood,
             category: getNPSCategory(likelihood),
             comment,

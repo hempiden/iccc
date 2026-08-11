@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Filter, ShieldAlert, Award, Sparkles, ArrowRight, UserCheck, CheckCircle, Clock } from 'lucide-react';
 import { VoCRecord, DashboardFilters } from '../types';
-import { getSurveyUrl } from '../utils/parser';
+import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix } from '../utils/parser';
 
 interface SurveyListProps {
   records: VoCRecord[];
@@ -222,15 +222,28 @@ export default function SurveyList({ records, onSelectRecord, selectedRecordId }
                   >
                     {/* Survey ID */}
                     <td className="px-6 py-4 font-bold text-slate-900 font-mono">
-                      <a
-                        href={getSurveyUrl(record.surveyId || record.id)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {record.surveyId || record.id}
-                      </a>
+                      {(() => {
+                        const cleanId = getCleanSurveyId(record.surveyId || record.id);
+                        const suffix = getSurveyIdSuffix(record.surveyId) || getSurveyIdSuffix(record.id);
+                        return (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <a
+                              href={getSurveyUrl(cleanId)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {cleanId}
+                            </a>
+                            {suffix && (
+                              <span className="text-[10px] font-sans font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 uppercase">
+                                {suffix}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Score */}

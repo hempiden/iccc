@@ -6,7 +6,7 @@ import {
   Presentation, Trash2
 } from 'lucide-react';
 import { VoCRecord, TimelineEvent } from '../types';
-import { getSurveyUrl } from '../utils/parser';
+import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix, formatTargetDeadline } from '../utils/parser';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface PowerBiMirrorProps {
@@ -1074,7 +1074,18 @@ export default function PowerBiMirror({
                         <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-[10px] text-slate-500 font-semibold">
                           <div>
                             <span className="text-slate-400 block uppercase text-[8px]">Survey ID</span>
-                            <span className="text-slate-800 font-mono font-extrabold bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">#{r.id}</span>
+                            {(() => {
+                              const cleanCardId = getCleanSurveyId(r.surveyId || r.id);
+                              const cardSuffix = getSurveyIdSuffix(r.surveyId) || getSurveyIdSuffix(r.id);
+                              return (
+                                <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                                  <span className="text-slate-800 font-mono font-extrabold bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">#{cleanCardId}</span>
+                                  {cardSuffix && (
+                                    <span className="text-blue-700 font-bold bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded text-[9px] uppercase">{cardSuffix}</span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                           <div>
                             <span className="text-slate-400 block uppercase text-[8px]">NPS Score</span>
@@ -1115,7 +1126,9 @@ export default function PowerBiMirror({
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-slate-400 uppercase text-[8px]">Deadline:</span>
-                            <span className="text-slate-800 bg-slate-100 px-2 py-0.5 rounded font-mono font-bold">30 Apr</span>
+                            <span className="text-slate-800 bg-slate-100 px-2 py-0.5 rounded font-mono font-bold">
+                              {formatTargetDeadline(r.creationDate || r.responseDate || r.timeline?.[0]?.timestamp, r.deadline)}
+                            </span>
                           </div>
                           <span className="text-amber-600 group-hover:text-amber-700 text-xs font-black uppercase tracking-wider flex items-center gap-1 ml-auto">
                             View Full Slide details 
@@ -1377,19 +1390,31 @@ export default function PowerBiMirror({
                         {/* 2. SURVEY DETAILS & PROFILE */}
                         <td className="px-4 py-3.5 align-top border-r border-slate-100">
                           <div className="flex flex-col gap-2">
-                            {/* Line 1: ID */}
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-extrabold font-mono text-[10px] text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                                <a
-                                  href={getSurveyUrl(r.id)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                                >
-                                  #{r.id}
-                                </a>
-                              </span>
-                            </div>
+                            {/* Line 1: ID & Suffix */}
+                            {(() => {
+                              const cleanSurveyId = getCleanSurveyId(r.surveyId || r.id);
+                              const surveySuffix = getSurveyIdSuffix(r.surveyId) || getSurveyIdSuffix(r.id);
+                              return (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-extrabold font-mono text-[10px] text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                    <a
+                                      href={getSurveyUrl(cleanSurveyId)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                                      title={`Open Medallia Survey #${cleanSurveyId}`}
+                                    >
+                                      #{cleanSurveyId}
+                                    </a>
+                                  </span>
+                                  {surveySuffix && (
+                                    <span className="font-extrabold text-[9px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 uppercase tracking-wide">
+                                      {surveySuffix}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
 
                             {/* Line 2: Customer Name & Facility */}
                             <div>

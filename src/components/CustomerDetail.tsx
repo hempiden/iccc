@@ -7,7 +7,7 @@ import {
   MessageSquare, Mail, Share2, ExternalLink, Check, FileText
 } from 'lucide-react';
 import { VoCRecord, ActionOwner, TimelineEvent, VoCComment } from '../types';
-import { getSurveyUrl, healRecordTimeline } from '../utils/parser';
+import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix, healRecordTimeline, formatTargetDeadline } from '../utils/parser';
 import { fetchColleagues } from '../utils/firebaseSync';
 import MetricCards from './MetricCards';
 import Timeline from './Timeline';
@@ -150,7 +150,7 @@ export default function CustomerDetail({
   // Synchronize parameter form editing states with loaded record strictly when record ID changes
   useEffect(() => {
     const healed = healRecordTimeline(record);
-    setEditStatus(healed.status);
+    setEditStatus(healed.status || 'New');
     setEditOwner(healed.owner || '');
     setEditCustomSummary(healed.customSummary || '');
     setEditActionSummary(healed.actionSummary || '');
@@ -159,8 +159,9 @@ export default function CustomerDetail({
     setShowOriginalFeedback(true);
     setShowOriginalActions(false);
 
-    // Infer a default deadline from timeline if exists, else blank
-    const inferredDeadline = healed.timeline[0]?.deadline || '30 Apr';
+    // Compute default target deadline from record dates
+    const recordDate = record.creationDate || record.responseDate || healed.timeline[0]?.timestamp;
+    const inferredDeadline = formatTargetDeadline(recordDate, record.deadline || healed.timeline[0]?.deadline);
     setEditDeadline(inferredDeadline);
 
     // Sync Outlook dispatch details
@@ -380,8 +381,8 @@ export default function CustomerDetail({
       timeline: editTimeline.map(t => ({
         ...t,
         pic: editOwner || t.pic || 'Rothana Art',
-        deadline: editDeadline || t.deadline || '30 Apr',
-        status: editStatus === 'Closed' ? 'Completed' : (t.status || 'In Progress')
+        deadline: editDeadline || t.deadline || formatTargetDeadline(record.creationDate || record.responseDate),
+        status: editStatus === 'Closed' ? 'Completed' : (t.status || editStatus || 'New')
       })),
       comments: editComments
     };
@@ -843,16 +844,29 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                         <span className="font-mono text-slate-400">No AWB</span>
                       )}
                     </div>
-                    <div className="truncate" title={record.surveyId || record.id}>
+                    <div className="truncate flex items-center gap-1.5 flex-wrap" title={record.surveyId || record.id}>
                       <span className="text-slate-400">Survey ID:</span>{' '}
-                      <a
-                        href={getSurveyUrl(record.surveyId || record.id)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 hover:underline font-bold transition-colors"
-                      >
-                        {record.surveyId || record.id}
-                      </a>
+                      {(() => {
+                        const cleanId = getCleanSurveyId(record.surveyId || record.id);
+                        const suffix = getSurveyIdSuffix(record.surveyId) || getSurveyIdSuffix(record.id);
+                        return (
+                          <>
+                            <a
+                              href={getSurveyUrl(cleanId)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 hover:underline font-bold transition-colors font-mono"
+                            >
+                              {cleanId}
+                            </a>
+                            {suffix && (
+                              <span className="text-[10px] font-sans font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 uppercase">
+                                {suffix}
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                     <div className="truncate text-slate-700" title={record.customerName}>
                       ({record.customerName || 'Anonymous'})
@@ -927,7 +941,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                 {/* 3. Deadline Cell */}
                 <div className="col-span-1 p-3 border-r border-slate-200 flex items-center justify-center text-center bg-slate-50/20">
                   <span className="text-xs font-extrabold text-slate-800 bg-slate-100 px-2 py-1 rounded border border-slate-200/50">
-                    {editDeadline || '30 Apr'}
+                    {editDeadline || formatTargetDeadline(record.creationDate || record.responseDate || editTimeline[0]?.timestamp)}
                   </span>
                 </div>
 
@@ -1310,7 +1324,7 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                       type="text"
                       value={editDeadline}
                       onChange={(e) => setEditDeadline(e.target.value)}
-                      placeholder="e.g. 30 Apr"
+                      placeholder="e.g. 15 Jun"
                       disabled={!hasEditPermission}
                       className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden disabled:opacity-60 disabled:cursor-not-allowed"
                     />

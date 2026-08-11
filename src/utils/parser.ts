@@ -102,22 +102,64 @@ export function healRecordTimeline(record: VoCRecord): VoCRecord {
 
 /**
  * Infers Case Status based on timeline content and log descriptions.
+ * Defaults to 'New' unless explicitly marked closed/completed or in progress.
  */
 export function inferStatus(timeline: TimelineEvent[], rawText: string): 'New' | 'In Progress' | 'Completed' {
-  if (timeline.length === 0) return 'New';
+  if (!rawText) return 'New';
   
   const lowerText = rawText.toLowerCase();
   
   // Check if closed alert keywords are in the recent logs
-  if (lowerText.includes('alert closed') || lowerText.includes('case closed') || lowerText.includes('status set to closed') || lowerText.includes('status set to completed') || lowerText.includes('completed')) {
+  if (
+    lowerText.includes('alert closed') ||
+    lowerText.includes('case closed') ||
+    lowerText.includes('status set to closed') ||
+    lowerText.includes('status set to completed') ||
+    lowerText.includes('case completed')
+  ) {
     return 'Completed';
   }
   
-  if (lowerText.includes('pending') || lowerText.includes('wait for customer') || lowerText.includes('assigned') || lowerText.includes('edited') || lowerText.includes('in progress') || timeline.length > 1) {
+  if (
+    lowerText.includes('status set to in progress') ||
+    lowerText.includes('case in progress') ||
+    lowerText.includes('status: in progress')
+  ) {
     return 'In Progress';
   }
   
+  // Default to New
   return 'New';
+}
+
+/**
+ * Formats or computes target deadline based on record response/creation date or explicit deadline.
+ */
+export function formatTargetDeadline(dateStr?: string, explicitDeadline?: string): string {
+  if (explicitDeadline && explicitDeadline !== '30 Apr' && explicitDeadline !== 'N/A' && explicitDeadline.trim() !== '') {
+    return explicitDeadline;
+  }
+  if (!dateStr || dateStr === 'N/A') return 'N/A';
+  
+  try {
+    const cleaned = dateStr.replace(/\[|\]/g, '').trim();
+    // Match date YYYY-MM-DD or MM/DD/YYYY
+    const d = new Date(cleaned.replace(/-/g, '/'));
+    if (isNaN(d.getTime())) {
+      const parts = cleaned.match(/(\d{1,2})\s+([A-Za-z]{3})/);
+      if (parts) {
+        return `${parts[1]} ${parts[2]}`;
+      }
+      return 'N/A';
+    }
+    // Calculate 2-day target SLA deadline
+    const targetDate = new Date(d.getTime() + 2 * 24 * 60 * 60 * 1000);
+    const day = String(targetDate.getDate()).padStart(2, '0');
+    const month = targetDate.toLocaleString('en-US', { month: 'short' });
+    return `${day} ${month}`;
+  } catch {
+    return 'N/A';
+  }
 }
 
 /**
@@ -222,12 +264,39 @@ export function analyzeSentiment(comment: string, score: number): 'POSITIVE' | '
 }
 
 /**
+ * Extracts the clean numerical/alphanumeric Survey ID without concatenated topic suffixes (e.g., "290628401_Pickup" -> "290628401")
+ */
+export function getCleanSurveyId(id?: string): string {
+  if (!id) return '';
+  let clean = String(id).trim().replace(/^["']|["']$/g, '');
+  if (clean.includes('_')) {
+    clean = clean.split('_')[0];
+  }
+  if (clean.length === 11 && clean.startsWith('22')) {
+    clean = clean.substring(2);
+  }
+  return clean;
+}
+
+/**
+ * Extracts suffix tag if concatenated with survey ID (e.g. "290628401_Pickup" -> "Pickup")
+ */
+export function getSurveyIdSuffix(id?: string): string | undefined {
+  if (!id) return undefined;
+  const str = String(id).trim();
+  if (!str.includes('_')) return undefined;
+  const parts = str.split('_');
+  if (parts.length > 1 && parts[1]) {
+    return parts.slice(1).join('_');
+  }
+  return undefined;
+}
+
+/**
  * Generates the Medallia URL for a given Survey ID, handling 11-digit IDs with leading '22'
+ * and stripping any concatenated topic suffix (e.g. '_Pickup') to prevent broken URLs.
  */
 export function getSurveyUrl(id: string): string {
-  let cleanId = id.trim().replace(/^["']|["']$/g, '');
-  if (cleanId.length === 11 && cleanId.startsWith('22')) {
-    cleanId = cleanId.substring(2);
-  }
+  const cleanId = getCleanSurveyId(id);
   return `https://dhl.medallia.eu/sso/dhl/applications/ex_WEB-9/pages/435?roleId=556&v.id=%22${encodeURIComponent(cleanId)}%22`;
 }
