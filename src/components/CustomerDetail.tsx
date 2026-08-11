@@ -7,7 +7,7 @@ import {
   MessageSquare, Mail, Share2, ExternalLink, Check, FileText
 } from 'lucide-react';
 import { VoCRecord, ActionOwner, TimelineEvent, VoCComment } from '../types';
-import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix, healRecordTimeline, formatTargetDeadline } from '../utils/parser';
+import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix, healRecordTimeline, formatTargetDeadline, getFollowUpTag } from '../utils/parser';
 import { fetchColleagues } from '../utils/firebaseSync';
 import MetricCards from './MetricCards';
 import Timeline from './Timeline';
@@ -828,7 +828,27 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                   </div>
 
                   {/* Core AWB & Survey metadata at the bottom */}
-                  <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] space-y-1.5 font-sans font-semibold text-slate-500">
+                  <div className="mt-4 pt-3 border-t border-slate-100 text-[10px] space-y-2 font-sans font-semibold text-slate-500">
+                    {/* Follow-up Status Tag Pill */}
+                    <div>
+                      {(() => {
+                        const tag = getFollowUpTag(record);
+                        const isDetractor = tag.includes('Detractor') || tag.includes('Critical');
+                        const isPassive = tag.includes('Passive');
+                        return (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${
+                            isDetractor
+                              ? 'bg-rose-50 text-rose-700 border-rose-200/80 shadow-2xs'
+                              : isPassive
+                              ? 'bg-amber-50 text-amber-800 border-amber-200/80'
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
+                          }`}>
+                            {tag}
+                          </span>
+                        );
+                      })()}
+                    </div>
+
                     <div>
                       <span className="text-slate-400">AWB:</span>{' '}
                       {record.awbNumber ? (
@@ -868,7 +888,17 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
                         );
                       })()}
                     </div>
-                    <div className="truncate text-slate-700" title={record.customerName}>
+
+                    {/* Category / Touchpoint Tag if available */}
+                    {(record.category || record.transaction) && (
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="font-extrabold text-[9px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 uppercase tracking-wide">
+                          {(record.transaction || record.category || '').replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="truncate text-slate-700 font-bold" title={record.customerName}>
                       ({record.customerName || 'Anonymous'})
                     </div>
                   </div>

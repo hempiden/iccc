@@ -163,6 +163,41 @@ export function formatTargetDeadline(dateStr?: string, explicitDeadline?: string
 }
 
 /**
+ * Resolves the follow-up status tag for a VoC record (e.g. "Detractor: No follow-up", "Detractor: Requested follow-up", etc.)
+ */
+export function getFollowUpTag(r: VoCRecord): string {
+  if (r.alertType) return r.alertType;
+  
+  if (r.actionDetailsRaw) {
+    if (r.actionDetailsRaw.includes('Detractor: Requested follow-up')) {
+      return 'Detractor: Requested follow-up';
+    }
+    if (r.actionDetailsRaw.includes('Detractor: No follow-up')) {
+      return 'Detractor: No follow-up';
+    }
+    if (r.actionDetailsRaw.includes('Passive follow-up required')) {
+      return 'Passive follow-up required';
+    }
+    if (r.actionDetailsRaw.includes('Critical detractor alert')) {
+      return 'Critical detractor alert';
+    }
+  }
+
+  if (r.category === 'Promoter' || (typeof r.likelihood === 'number' && r.likelihood >= 9)) {
+    return 'Promoter feedback';
+  }
+  if (r.category === 'Passive' || (typeof r.likelihood === 'number' && (r.likelihood === 7 || r.likelihood === 8))) {
+    return 'Passive follow-up';
+  }
+  
+  if (r.followUpComments && r.followUpComments.toLowerCase().includes('requested')) {
+    return 'Detractor: Requested follow-up';
+  }
+  
+  return 'Detractor: No follow-up';
+}
+
+/**
  * Maps standard NPS score (0-10) to category.
  */
 export function getNPSCategory(score: number): 'Promoter' | 'Passive' | 'Detractor' {
