@@ -791,8 +791,29 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              /* Unified Interactive Power BI Mirror Component */
+              /* Welcome block & Executive KPI overview portfolio & Power BI Mirror integrated */
               <div className="space-y-6 animate-fade-in print:hidden">
+                <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-6 md:p-8 border border-slate-800 shadow-md relative overflow-hidden">
+                  <div className="absolute right-0 bottom-0 translate-x-12 translate-y-12 opacity-5 pointer-events-none select-none">
+                    <Truck className="w-80 h-80 text-white opacity-5" />
+                  </div>
+                  
+                  <div className="relative z-10 max-w-2xl space-y-3">
+                    <span className="text-xs font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2.5 py-1 rounded-md border border-amber-400/20">
+                      Unified Portal
+                    </span>
+                    <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
+                      DHL iCCC Voice & Slide Intelligence Workspace
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-medium">
+                      Power BI Weekly charts and the executive-ready slide compilation suite integrated in one cohesive dashboard. Instantly review AI-summarized feedback, case status logs, and action details without horizontal scroll.
+                    </p>
+                  </div>
+                </div>
+
+                <ExecutiveOverview records={filteredByTimelineAndChannel} allRecords={records} />
+
+                {/* Unified Interactive Power BI Mirror Component */}
                 <PowerBiMirror 
                   records={filteredByTimelineAndChannel} 
                   onSelectRecord={(r) => setSelectedRecordId(r.id)} 

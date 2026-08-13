@@ -749,6 +749,103 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
         </span>
       </div>
 
+      {/* Executive Period Comparisons Scorecard: YTD & MTD */}
+      <div className="bg-gradient-to-br from-slate-50 to-slate-100/50 p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-200/50 pb-2">
+          <div className="flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5 text-amber-500" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+              Period Comparisons
+            </h3>
+          </div>
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+            Jan - {ytdMtdStats.currentMonthName}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: YTD Survey Volume */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">YTD Survey Volume</span>
+              <span className="text-2xl font-black text-slate-800 tracking-tight tabular-nums mt-1 block">
+                {ytdMtdStats.ytdCount}
+              </span>
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year YTD</span>
+              <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                ytdMtdStats.ytdCountDiff >= 0 
+                  ? 'bg-emerald-50 text-emerald-600' 
+                  : 'bg-rose-50 text-rose-600'
+              }`}>
+                {ytdMtdStats.ytdCountDiff >= 0 ? '+' : ''}{ytdMtdStats.ytdCountDiff}%
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: MTD Survey Volume */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">MTD Survey Volume</span>
+              <span className="text-2xl font-black text-slate-800 tracking-tight tabular-nums mt-1 block">
+                {ytdMtdStats.mtdCount}
+              </span>
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year MTD</span>
+              <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                ytdMtdStats.mtdCountDiff >= 0 
+                  ? 'bg-emerald-50 text-emerald-600' 
+                  : 'bg-rose-50 text-rose-600'
+              }`}>
+                {ytdMtdStats.mtdCountDiff >= 0 ? '+' : ''}{ytdMtdStats.mtdCountDiff}%
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: YTD NPS Score */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">YTD NPS Score</span>
+              <span className="text-2xl font-black text-slate-800 tracking-tight mt-1 block animate-fade-in">
+                {ytdMtdStats.ytdNps > 0 ? `+${ytdMtdStats.ytdNps}` : ytdMtdStats.ytdNps}
+              </span>
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year YTD</span>
+              <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                ytdMtdStats.ytdNpsDiff >= 0 
+                  ? 'bg-emerald-50 text-emerald-600' 
+                  : 'bg-rose-50 text-rose-600'
+              }`}>
+                {ytdMtdStats.ytdNpsDiff >= 0 ? '+' : ''}{ytdMtdStats.ytdNpsDiff} pts
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: MTD NPS Score */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">MTD NPS Score</span>
+              <span className="text-2xl font-black text-slate-800 tracking-tight mt-1 block">
+                {ytdMtdStats.mtdNps > 0 ? `+${ytdMtdStats.mtdNps}` : ytdMtdStats.mtdNps}
+              </span>
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year MTD</span>
+              <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                ytdMtdStats.mtdNpsDiff >= 0 
+                  ? 'bg-emerald-50 text-emerald-600' 
+                  : 'bg-rose-50 text-rose-600'
+              }`}>
+                {ytdMtdStats.mtdNpsDiff >= 0 ? '+' : ''}{ytdMtdStats.mtdNpsDiff} pts
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
 
 
       <div className="space-y-6">
