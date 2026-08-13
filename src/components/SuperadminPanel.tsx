@@ -3,7 +3,8 @@ import {
   Shield, KeyRound, FileSpreadsheet, Users, CheckCircle2, XCircle, 
   RefreshCw, Sliders, Globe, Plus, Phone, Save, X, Building2, 
   AlertTriangle, Check, ExternalLink, Database, Lock, Smartphone, UserCheck,
-  Webhook, Copy, Send, Zap, Code, ChevronDown, ChevronUp, Download, Upload
+  Webhook, Copy, Send, Zap, Code, ChevronDown, ChevronUp, Download, Upload,
+  Search, Eye, Trash2, Filter, FileText, List, MessageSquare, Calendar, User
 } from 'lucide-react';
 import { ActionOwner, VoCRecord } from '../types';
 import { fetchColleagues, saveColleague } from '../utils/firebaseSync';
@@ -21,6 +22,8 @@ interface SuperadminPanelProps {
   onClose: () => void;
   records: VoCRecord[];
   currentUser: ActionOwner | null;
+  initialTab?: 'otp' | 'sharepoint' | 'users' | 'database';
+  onDeleteRecords?: (ids: string[]) => void;
 }
 
 export interface SharePointConfig {
@@ -33,8 +36,14 @@ export interface SharePointConfig {
   lastSyncTimestamp?: string;
 }
 
-export default function SuperadminPanel({ onClose, records, currentUser }: SuperadminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'otp' | 'sharepoint' | 'users'>('otp');
+export default function SuperadminPanel({ onClose, records, currentUser, initialTab = 'otp', onDeleteRecords }: SuperadminPanelProps) {
+  const [activeTab, setActiveTab] = useState<'otp' | 'sharepoint' | 'users' | 'database'>(initialTab);
+
+  // --- DATABASE INSPECTOR STATE ---
+  const [dbSearchQuery, setDbSearchQuery] = useState('');
+  const [dbChannelFilter, setDbChannelFilter] = useState('All');
+  const [dbCategoryFilter, setDbCategoryFilter] = useState('All');
+  const [selectedRecordForModal, setSelectedRecordForModal] = useState<VoCRecord | null>(null);
 
   // --- 1. OTP SANDBOX SETTINGS STATE ---
   const [isSandboxMode, setIsSandboxMode] = useState<boolean>(() => {
@@ -376,12 +385,27 @@ export default function SuperadminPanel({ onClose, records, currentUser }: Super
             }`}
           >
             <Users className="w-4 h-4 text-blue-600" />
-            <span>User Approvals & Directory</span>
+            <span>User Directory</span>
             {pendingUsers.length > 0 && (
               <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full animate-pulse">
                 {pendingUsers.length}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('database')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'database'
+                ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+            }`}
+          >
+            <Database className="w-4 h-4 text-purple-600" />
+            <span>Database Records & Files</span>
+            <span className="bg-purple-100 text-purple-800 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full">
+              {records.length} Active
+            </span>
           </button>
         </div>
 
@@ -1156,9 +1180,271 @@ export default function SuperadminPanel({ onClose, records, currentUser }: Super
             </div>
           )}
 
+          {/* TAB 4: DATABASE RECORDS & FILES INSPECTOR */}
+          {activeTab === 'database' && (
+            <div className="space-y-6">
+              {/* Summary Header Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Active Records</span>
+                  <span className="text-2xl font-black text-purple-700 block">{records.length} Records</span>
+                  <span className="text-[10px] text-slate-500 font-medium">Loaded in Live Firestore Database</span>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Channels Represented</span>
+                  <span className="text-2xl font-black text-slate-800 block">
+                    {Array.from(new Set(records.map(r => r.interaction || r.responseFeedbackChannel || 'PNHGTW'))).length} Channels
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">PNHGTW, PNHASC, PNHSVC, etc.</span>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Promoters (9-10)</span>
+                  <span className="text-2xl font-black text-emerald-600 block">
+                    {records.filter(r => r.category === 'Promoter' || r.likelihood >= 9).length}
+                  </span>
+                  <span className="text-[10px] text-emerald-600 font-bold">Positive Feedback</span>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Detractors (0-6)</span>
+                  <span className="text-2xl font-black text-rose-600 block">
+                    {records.filter(r => r.category === 'Detractor' || r.likelihood <= 6).length}
+                  </span>
+                  <span className="text-[10px] text-rose-600 font-bold">Requires Action Follow-up</span>
+                </div>
+              </div>
+
+              {/* Search & Filters Controls */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+                  <div className="relative flex-1 w-full">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search by Survey ID, Customer Name, Feedback, or Owner..."
+                      value={dbSearchQuery}
+                      onChange={(e) => setDbSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                    <select
+                      value={dbChannelFilter}
+                      onChange={(e) => setDbChannelFilter(e.target.value)}
+                      className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white cursor-pointer"
+                    >
+                      <option value="All">All Channels</option>
+                      {Array.from(new Set(records.map(r => r.interaction || 'PNHGTW'))).map(ch => (
+                        <option key={ch} value={ch}>{ch}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={dbCategoryFilter}
+                      onChange={(e) => setDbCategoryFilter(e.target.value)}
+                      className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white cursor-pointer"
+                    >
+                      <option value="All">All NPS Categories</option>
+                      <option value="Promoter">Promoters (9-10)</option>
+                      <option value="Passive">Passives (7-8)</option>
+                      <option value="Detractor">Detractors (0-6)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Table of Database Records */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4 text-purple-600" />
+                    <h3 className="font-extrabold text-slate-900 text-sm">
+                      Active Database Survey Records ({records.filter(r => {
+                        const q = dbSearchQuery.toLowerCase();
+                        const matchesQuery = !q || (r.surveyId?.toLowerCase().includes(q) || r.comment?.toLowerCase().includes(q) || r.customerName?.toLowerCase().includes(q) || r.owner?.toLowerCase().includes(q) || r.interaction?.toLowerCase().includes(q));
+                        const matchesChan = dbChannelFilter === 'All' || (r.interaction || 'PNHGTW') === dbChannelFilter;
+                        const matchesCat = dbCategoryFilter === 'All' || r.category === dbCategoryFilter;
+                        return matchesQuery && matchesChan && matchesCat;
+                      }).length} of {records.length})
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100/80 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                      <tr>
+                        <th className="py-3 px-4">Survey ID / Code</th>
+                        <th className="py-3 px-4">Channel</th>
+                        <th className="py-3 px-4">NPS Rating</th>
+                        <th className="py-3 px-4">Customer / Account</th>
+                        <th className="py-3 px-4">Customer Feedback</th>
+                        <th className="py-3 px-4">Action Owner</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4 text-right">Inspect</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                      {records.filter(r => {
+                        const q = dbSearchQuery.toLowerCase();
+                        const matchesQuery = !q || (r.surveyId?.toLowerCase().includes(q) || r.comment?.toLowerCase().includes(q) || r.customerName?.toLowerCase().includes(q) || r.owner?.toLowerCase().includes(q) || r.interaction?.toLowerCase().includes(q));
+                        const matchesChan = dbChannelFilter === 'All' || (r.interaction || 'PNHGTW') === dbChannelFilter;
+                        const matchesCat = dbCategoryFilter === 'All' || r.category === dbCategoryFilter;
+                        return matchesQuery && matchesChan && matchesCat;
+                      }).map((rec) => (
+                        <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                            {rec.surveyId || rec.id.slice(0, 8)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="bg-slate-100 text-slate-800 font-extrabold px-2 py-0.5 rounded text-[10px]">
+                              {rec.interaction || 'PNHGTW'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 font-bold text-[11px] px-2 py-0.5 rounded-full ${
+                              rec.likelihood >= 9 ? 'bg-emerald-100 text-emerald-800' :
+                              rec.likelihood >= 7 ? 'bg-amber-100 text-amber-800' :
+                              'bg-rose-100 text-rose-800'
+                            }`}>
+                              Score {rec.likelihood}/10 ({rec.category})
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-slate-800 max-w-[140px] truncate">
+                            {rec.customerName || rec.accountName || 'DHL Customer'}
+                          </td>
+                          <td className="py-3 px-4 text-slate-600 max-w-[280px] truncate" title={rec.comment}>
+                            {rec.comment || 'No comment text provided'}
+                          </td>
+                          <td className="py-3 px-4 font-medium text-slate-800 whitespace-nowrap">
+                            {rec.owner || 'Unassigned'}
+                          </td>
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                              rec.status === 'Completed' ? 'bg-emerald-100 text-emerald-800' :
+                              rec.status === 'In Progress' ? 'bg-sky-100 text-sky-800' :
+                              'bg-amber-100 text-amber-800'
+                            }`}>
+                              {rec.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRecordForModal(rec)}
+                                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold rounded-md transition-colors flex items-center gap-1 cursor-pointer text-[11px]"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Inspect</span>
+                              </button>
+                              {onDeleteRecords && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (window.confirm(`Delete survey record ${rec.surveyId || rec.id}?`)) {
+                                      onDeleteRecords([rec.id]);
+                                    }
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                  title="Delete Record"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
 
       </div>
+
+      {/* RECORD DETAILS INSPECTION POPUP MODAL */}
+      {selectedRecordForModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-bold text-purple-600 uppercase tracking-widest bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                  Survey Database Record Inspector
+                </span>
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <span>Survey ID: {selectedRecordForModal.surveyId || selectedRecordForModal.id}</span>
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedRecordForModal(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Channel</span>
+                <span className="text-xs font-black text-slate-800">{selectedRecordForModal.interaction || 'PNHGTW'}</span>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">NPS Score</span>
+                <span className="text-xs font-black text-slate-800">{selectedRecordForModal.likelihood} / 10 ({selectedRecordForModal.category})</span>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Status</span>
+                <span className="text-xs font-black text-slate-800">{selectedRecordForModal.status}</span>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Customer</span>
+                <span className="text-xs font-black text-slate-800">{selectedRecordForModal.customerName || 'N/A'}</span>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Action Owner</span>
+                <span className="text-xs font-black text-slate-800">{selectedRecordForModal.owner || 'Unassigned'}</span>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Response Date</span>
+                <span className="text-xs font-black text-slate-800">{selectedRecordForModal.responseDate || 'N/A'}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs font-bold text-slate-700 block">Customer Feedback Comment:</span>
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 leading-relaxed font-medium whitespace-pre-wrap">
+                {selectedRecordForModal.comment || 'No comment provided.'}
+              </div>
+            </div>
+
+            {selectedRecordForModal.rootCause && (
+              <div className="space-y-1.5">
+                <span className="text-xs font-bold text-slate-700 block">Root Cause & Category:</span>
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium">
+                  <strong>{selectedRecordForModal.rootCauseCategory || 'Category'}:</strong> {selectedRecordForModal.rootCause}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setSelectedRecordForModal(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

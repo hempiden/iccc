@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   FileSpreadsheet, MessageSquare, ShieldAlert, Shield, Award, Sparkles, 
   RefreshCw, RotateCcw, Truck, HelpCircle, User, Users, Activity, TrendingUp, Calendar, LogOut,
-  Presentation, Bell, Mail
+  Presentation, Bell, Mail, Database
 } from 'lucide-react';
 import { VoCRecord, ActionOwner } from './types';
 import { sampleRecords } from './sampleData';
@@ -132,6 +132,7 @@ export default function App() {
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [showColleagueManager, setShowColleagueManager] = useState(false);
   const [showSuperadminPanel, setShowSuperadminPanel] = useState(false);
+  const [superadminTab, setSuperadminTab] = useState<'otp' | 'sharepoint' | 'users' | 'database'>('otp');
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'upload'>('dashboard');
 
@@ -598,9 +599,12 @@ export default function App() {
           {/* Superadmin Command Center button */}
           {currentUser.role === 'superadmin' && (
             <button
-              onClick={() => setShowSuperadminPanel(true)}
+              onClick={() => {
+                setSuperadminTab('otp');
+                setShowSuperadminPanel(true);
+              }}
               className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-black text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-all cursor-pointer shrink-0 shadow-2xs"
-              title="Superadmin Command Center: OTP Sandbox, SharePoint Config & User Approvals"
+              title="Superadmin Command Center: OTP Sandbox, SharePoint Config, Database Inspector & User Approvals"
             >
               <Shield className="w-3.5 h-3.5 text-slate-950" />
               <span>Superadmin Panel</span>
@@ -770,10 +774,26 @@ export default function App() {
 
                   {/* Card 2: Database Summary Metrics */}
                   <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
-                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                      <Activity className="w-4 h-4 text-emerald-500" />
-                      Live Database Status
-                    </h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-emerald-500" />
+                        Live Database Status ({records.length} Records)
+                      </h3>
+                      {currentUser?.role === 'superadmin' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSuperadminTab('database');
+                            setShowSuperadminPanel(true);
+                          }}
+                          className="px-3 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer border border-purple-200"
+                        >
+                          <Database className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Inspect All {records.length} Records</span>
+                        </button>
+                      )}
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-center">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Surveys</span>
@@ -784,7 +804,35 @@ export default function App() {
                         <span className="text-2xl font-black text-slate-800 block mt-1">{uniqueChannels.length || 3}</span>
                       </div>
                     </div>
-                    <p className="text-xs text-slate-500 leading-relaxed pt-2">
+
+                    {/* Quick Breakdown of the 7 Database Records */}
+                    <div className="pt-2 border-t border-slate-100 space-y-2">
+                      <span className="text-xs font-extrabold text-slate-700 block">
+                        Active Database Items List ({records.length} records):
+                      </span>
+                      <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                        {records.map((r) => (
+                          <div key={r.id} className="p-2 bg-slate-50 border border-slate-200/80 rounded-lg text-xs flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-mono font-bold text-slate-900 bg-slate-200/80 px-1.5 py-0.5 rounded text-[10px] shrink-0">
+                                {r.surveyId || r.id.slice(0, 8)}
+                              </span>
+                              <span className="font-bold text-slate-800 shrink-0">[{r.interaction || 'PNHGTW'}]</span>
+                              <span className="text-slate-600 truncate">{r.comment || 'Survey feedback record'}</span>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                              r.likelihood >= 9 ? 'bg-emerald-100 text-emerald-800' :
+                              r.likelihood >= 7 ? 'bg-amber-100 text-amber-800' :
+                              'bg-rose-100 text-rose-800'
+                            }`}>
+                              Score {r.likelihood} ({r.category})
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-500 leading-relaxed pt-1">
                       Need to reset the system database? You can instantly wipe custom uploads and restore the default DHL VoC sample set using the <strong className="text-slate-700">Reset Button (↻)</strong> in the top navigation bar.
                     </p>
                   </div>
@@ -835,6 +883,8 @@ export default function App() {
           onClose={() => setShowSuperadminPanel(false)} 
           records={records} 
           currentUser={currentUser} 
+          initialTab={superadminTab}
+          onDeleteRecords={handleDeleteRecords}
         />
       )}
       {showColleagueManager && (
