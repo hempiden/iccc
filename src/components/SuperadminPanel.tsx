@@ -3,7 +3,7 @@ import {
   Shield, KeyRound, FileSpreadsheet, Users, CheckCircle2, XCircle, 
   RefreshCw, Sliders, Globe, Plus, Phone, Save, X, Building2, 
   AlertTriangle, Check, ExternalLink, Database, Lock, Smartphone, UserCheck,
-  Webhook, Copy, Send, Zap, Code, ChevronDown, ChevronUp
+  Webhook, Copy, Send, Zap, Code, ChevronDown, ChevronUp, Download, Upload
 } from 'lucide-react';
 import { ActionOwner, VoCRecord } from '../types';
 import { fetchColleagues, saveColleague } from '../utils/firebaseSync';
@@ -495,16 +495,64 @@ export default function SuperadminPanel({ onClose, records, currentUser }: Super
                   <div className="space-y-1">
                     <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
                       <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                      SharePoint & OneDrive Master File Storage
+                      SharePoint & OneDrive Master File Storage (Direct Sync)
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Configure direct connection to your organization's SharePoint Excel document library.
+                      Export, sync, and manage master <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-slate-800">Voice Data.xlsx</code> directly on DHL SharePoint document library.
                     </p>
                   </div>
                   <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2.5 py-1 rounded-full flex items-center gap-1 border border-emerald-200">
                     <Database className="w-3 h-3 text-emerald-600" />
                     SharePoint Active
                   </span>
+                </div>
+
+                {/* OPTION 2 DLP WORKAROUND EXPLANATION BOX */}
+                <div className="p-4 bg-gradient-to-br from-emerald-50 via-slate-50 to-emerald-50/50 border border-emerald-200 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-emerald-900 uppercase tracking-wider flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      Option 2: Direct SharePoint File Upload & Business DLP Folder Sync
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSyncAndExportNow}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download Master Voice Data.xlsx</span>
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                    This option completely avoids Power Automate DLP policy blocks by writing directly to your master <strong>Voice Data.xlsx</strong> or using SharePoint Folder Triggers:
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                    <div className="p-3 bg-white border border-emerald-100 rounded-lg space-y-1.5">
+                      <span className="text-[11px] font-bold text-slate-900 flex items-center gap-1.5">
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                        Step A: Generate & Save Master Excel
+                      </span>
+                      <p className="text-[11px] text-slate-600 leading-normal">
+                        Click <strong>"Download Master Voice Data.xlsx"</strong> above to get the complete 4-sheet workbook formatted with all VoC records, follow-ups, timeline logs, and audit trails.
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-white border border-emerald-100 rounded-lg space-y-1.5">
+                      <span className="text-[11px] font-bold text-slate-900 flex items-center gap-1.5">
+                        <Upload className="w-3.5 h-3.5 text-sky-600" />
+                        Step B: Drop into DHL SharePoint Folder
+                      </span>
+                      <p className="text-[11px] text-slate-600 leading-normal">
+                        Upload or overwrite the file in your target location:
+                        <br />
+                        <code className="text-[10px] font-mono text-emerald-800 font-bold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200 block mt-1 overflow-x-auto">
+                          https://dpdhl.sharepoint.com/teams/NetOpsPD/Shared Documents/General/30. Voice (ICCC)/Voice Data.xlsx
+                        </code>
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 <form onSubmit={handleSaveSpConfig} className="space-y-4">
@@ -805,6 +853,22 @@ export default function SuperadminPanel({ onClose, records, currentUser }: Super
                           Save the Flow, then copy the generated <strong>HTTP POST URL</strong> and paste it into the input field above!
                         </li>
                       </ol>
+
+                      {/* DLP POLICY TROUBLESHOOTING BOX */}
+                      <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                        <span className="text-[11px] font-extrabold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          Fixing "Data Loss Prevention (DLP) Policy" Conflicts in Power Automate
+                        </span>
+                        <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                          If DP DHL IT security blocks combining the <strong>HTTP Request Trigger</strong> (Non-business group) with <strong>Excel Online (Business)</strong>:
+                        </p>
+                        <ul className="list-disc list-inside text-[11px] text-amber-900 space-y-1 font-medium pl-1">
+                          <li><strong>Option A (Direct File Sync):</strong> Use the <strong>SharePoint Graph Integration</strong> tab in Superadmin Panel to directly upload/sync <code className="bg-amber-100 px-1 py-0.5 rounded">Voice Data.xlsx</code> via Microsoft 365 OAuth without needing Power Automate.</li>
+                          <li><strong>Option B (SharePoint Folder Flow):</strong> Change the Power Automate trigger to <strong>"When a file is created or modified in a folder (SharePoint / OneDrive for Business)"</strong> so both trigger and action stay strictly inside the <strong>Business DLP group</strong>.</li>
+                          <li><strong>Option C (DLP Exemption):</strong> Request your IT Power Platform Admin to assign the HTTP connector to the Business DLP Policy group for your environment.</li>
+                        </ul>
+                      </div>
 
                       {/* JSON SCHEMA BOX */}
                       <div className="pt-2">
