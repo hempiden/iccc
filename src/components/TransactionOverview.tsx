@@ -222,68 +222,74 @@ export default function TransactionOverview({
           </div>
 
           {/* Bar Chart Container */}
-          <div className="relative flex-1 min-h-[300px] flex flex-col justify-end pt-6 pb-2">
+          <div className="relative flex-1 min-h-[320px] flex flex-col justify-end pt-6 pb-2">
             
-            {/* Horizontal Grid lines (0, 20, 40, 60, 80, 100) */}
-            <div className="absolute inset-x-8 top-6 bottom-8 flex flex-col justify-between pointer-events-none">
-              {[100, 80, 60, 40, 20, 0].map((val) => (
-                <div key={val} className="w-full flex items-center gap-2">
-                  <span className="text-[9px] font-bold text-slate-400 w-5 text-right tabular-nums select-none">
-                    {val}
-                  </span>
-                  <div className="flex-1 border-b border-slate-100" />
-                </div>
-              ))}
-            </div>
+            {/* Y-Axis Label & Grid Lines */}
+            <div className="relative w-full h-[220px]">
+              
+              {/* Rotated Y-Axis Title on Left Margin */}
+              <div className="absolute -left-3 top-1/2 -translate-y-1/2 -rotate-90 text-[9px] font-black text-slate-400 tracking-wider uppercase select-none pointer-events-none origin-center whitespace-nowrap">
+                NPS, and Average
+              </div>
 
-            {/* Y-Axis Title on Far Left */}
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 -rotate-90 text-[10px] font-bold text-slate-400 tracking-wider uppercase select-none pointer-events-none">
-              NPS, and Average
-            </div>
-
-            {/* Interactive Bars */}
-            <div className="relative z-10 flex items-end justify-around gap-1.5 sm:gap-2 px-8 h-[220px]">
-              {transactionData.map((t, idx) => {
-                const isSelected = selectedTx === t.name;
-                const isHovered = hoveredTx === t.name;
-                const isDimmed = (selectedTx && !isSelected) || (hoveredTx && !isHovered && !selectedTx);
-                const scoreValue = t.avgScore; // Value out of 100
-                const barHeightPercent = Math.max(8, Math.min(100, scoreValue));
-
-                return (
-                  <div
-                    key={t.name}
-                    className={`flex-1 flex flex-col items-center justify-end h-full group cursor-pointer transition-all duration-200 ${
-                      isDimmed ? 'opacity-30 scale-95' : 'opacity-100 scale-100'
-                    }`}
-                    onMouseEnter={() => setHoveredTx(t.name)}
-                    onMouseLeave={() => setHoveredTx(null)}
-                    onClick={() => handleSelectTx(t.name)}
-                  >
-                    {/* Value Badge above bar (e.g. 33 for Delivery Change) */}
-                    <span className={`text-[10px] font-extrabold mb-1 tabular-nums transition-opacity ${
-                      isSelected || isHovered || t.name.includes('Delivery Change') ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100 text-slate-600'
-                    }`}>
-                      {scoreValue}
+              {/* Horizontal Grid lines and Y-axis Numbers */}
+              <div className="absolute inset-0 pl-12 pr-2 flex flex-col justify-between pointer-events-none">
+                {[100, 80, 60, 40, 20, 0].map((val) => (
+                  <div key={val} className="w-full flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 w-6 text-right tabular-nums select-none shrink-0 -ml-8">
+                      {val}
                     </span>
-
-                    {/* Bar Pillar */}
-                    <div
-                      style={{ 
-                        height: `${barHeightPercent}%`,
-                        backgroundColor: t.color
-                      }}
-                      className={`w-full max-w-[42px] rounded-t-xs transition-all duration-300 shadow-2xs hover:brightness-110 ${
-                        isSelected ? 'ring-2 ring-slate-900 ring-offset-2' : ''
-                      }`}
-                    />
+                    <div className="flex-1 border-b border-slate-100" />
                   </div>
-                );
-              })}
+                ))}
+              </div>
+
+              {/* Interactive Bars - Generous Left Padding to completely avoid Y-axis overlap */}
+              <div className="relative z-10 flex items-end justify-around gap-1.5 sm:gap-2 pl-12 pr-2 h-full">
+                {transactionData.map((t) => {
+                  const isSelected = selectedTx === t.name;
+                  const isHovered = hoveredTx === t.name;
+                  const isDimmed = (selectedTx && !isSelected) || (hoveredTx && !isHovered && !selectedTx);
+                  const scoreValue = t.avgScore; // Value out of 100
+                  const barHeightPercent = Math.max(8, Math.min(100, scoreValue));
+
+                  return (
+                    <div
+                      key={t.name}
+                      className={`flex-1 flex flex-col items-center justify-end h-full group cursor-pointer transition-all duration-200 ${
+                        isDimmed ? 'opacity-30 scale-95' : 'opacity-100 scale-100'
+                      }`}
+                      onMouseEnter={() => setHoveredTx(t.name)}
+                      onMouseLeave={() => setHoveredTx(null)}
+                      onClick={() => handleSelectTx(t.name)}
+                    >
+                      {/* Value Number above EVERY bar */}
+                      <span className={`text-[11px] font-black mb-1.5 tabular-nums transition-all ${
+                        isSelected || isHovered 
+                          ? 'text-slate-900 scale-110 font-black' 
+                          : 'text-slate-700'
+                      }`}>
+                        {scoreValue}
+                      </span>
+
+                      {/* Bar Pillar */}
+                      <div
+                        style={{ 
+                          height: `${barHeightPercent}%`,
+                          backgroundColor: t.color
+                        }}
+                        className={`w-full max-w-[40px] rounded-t-sm transition-all duration-300 shadow-2xs hover:brightness-110 ${
+                          isSelected ? 'ring-2 ring-slate-900 ring-offset-2' : ''
+                        }`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* X-Axis Footer Label */}
-            <div className="text-center pt-3 pb-1 border-t border-slate-100 mt-2">
+            <div className="text-center pt-3 pb-1 border-t border-slate-100 mt-2 pl-12 pr-2">
               <span className="text-[11px] font-bold text-slate-700 block">Likelihood to Recommend</span>
               <span className="text-[9px] font-extrabold text-slate-400 tracking-wider uppercase block">Metric</span>
             </div>
