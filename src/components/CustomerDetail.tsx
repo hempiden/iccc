@@ -4,11 +4,12 @@ import {
   Printer, Camera, Maximize2, Minimize2, Palette, Type, Clipboard, Layers,
   Calendar, LogIn, LogOut, Plus, Trash2, Edit3, Send, Users, ShieldCheck, 
   HelpCircle, AlertCircle, Info, RefreshCw, Layout, Table, CheckSquare, Save, Eye, EyeOff, Clock,
-  MessageSquare, Mail, Share2, ExternalLink, Check, FileText
+  MessageSquare, Mail, Share2, ExternalLink, Check, FileText, Presentation, Download
 } from 'lucide-react';
 import { VoCRecord, ActionOwner, TimelineEvent, VoCComment } from '../types';
 import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix, healRecordTimeline, formatTargetDeadline, getFollowUpTag } from '../utils/parser';
 import { fetchColleagues } from '../utils/firebaseSync';
+import { exportActionMatrixSlideToPowerPoint } from '../utils/pptxExport';
 import MetricCards from './MetricCards';
 import Timeline from './Timeline';
 
@@ -109,6 +110,7 @@ export default function CustomerDetail({
   const [editComments, setEditComments] = useState<VoCComment[]>([]);
   const [commentText, setCommentText] = useState('');
   const [isSavedNotify, setIsSavedNotify] = useState(false);
+  const [isExportingSlide, setIsExportingSlide] = useState(false);
 
   // Colleague dropdown integration for Superadmins & HoDs
   const [colleagues, setColleagues] = useState<ActionOwner[]>([]);
@@ -616,6 +618,30 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Action: Export single Action Matrix PowerPoint slide (.pptx)
+  const handleExportPowerPoint = async () => {
+    setIsExportingSlide(true);
+    try {
+      const currentRecordWithEdits: VoCRecord = {
+        ...record,
+        status: editStatus,
+        deadline: editDeadline || record.deadline,
+        owner: editOwner || record.owner,
+        customSummary: editCustomSummary || record.customSummary,
+        actionSummary: editActionSummary || record.actionSummary,
+        followUpComments: editFollowUpComments || record.followUpComments,
+        timeline: editTimeline.length > 0 ? editTimeline : record.timeline,
+        comments: editComments.length > 0 ? editComments : record.comments
+      };
+      await exportActionMatrixSlideToPowerPoint(currentRecordWithEdits, currentUser);
+    } catch (err) {
+      console.error('Failed to export PowerPoint slide:', err);
+      alert('Could not generate PowerPoint slide. Please try again.');
+    } finally {
+      setIsExportingSlide(false);
+    }
+  };
+
   return (
     <div className={`w-full ${isFullscreen ? 'max-w-full' : 'max-w-6xl'} mx-auto animate-fade-in`}>
       {/* 1. Header Toolbar (Hidden during printing) */}
@@ -629,6 +655,17 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
         </button>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* PowerPoint Export Button */}
+          <button
+            onClick={handleExportPowerPoint}
+            disabled={isExportingSlide}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-amber-950 bg-amber-400 hover:bg-amber-500 border border-amber-500 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
+            title="Export this page as a DHL PowerPoint Slide (.pptx)"
+          >
+            <Presentation className="w-4 h-4 text-red-700" />
+            <span>{isExportingSlide ? 'Exporting Slide...' : 'Export PowerPoint Slide'}</span>
+          </button>
+
           <button
             onClick={() => setShowShareModal(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl shadow-xs transition-colors cursor-pointer"
@@ -655,6 +692,17 @@ ${editTimeline.map((t, idx) => `[${idx + 1}] ${t.timestamp} - ${t.action} (PIC: 
           </div>
           
           <div className="flex items-center gap-3">
+            {/* Quick Export Slide Button on Header */}
+            <button
+              onClick={handleExportPowerPoint}
+              disabled={isExportingSlide}
+              className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-slate-900 bg-white/95 hover:bg-white rounded-lg border border-white/20 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+              title="Download PowerPoint presentation (.pptx) of this slide"
+            >
+              <Presentation className="w-3.5 h-3.5 text-amber-600" />
+              <span>{isExportingSlide ? 'Exporting...' : 'Export PPT'}</span>
+            </button>
+
             {/* Real Traffic light block */}
             <div className="flex items-center gap-1.5 bg-slate-900/40 px-2.5 py-1 rounded-full border border-white/10" title="Case Status Traffic Lights">
               <div className={`w-3 h-3 rounded-full ${editStatus === 'New' ? 'bg-red-500 shadow-[0_0_8px_#ef4444]' : 'bg-red-950/40'}`}></div>

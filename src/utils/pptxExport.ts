@@ -1,7 +1,539 @@
 import pptxgen from 'pptxgenjs';
 import { VoCRecord, ActionOwner } from '../types';
 import { ExportFilterContext } from './excelDatabase';
-import { getCleanSurveyId } from './parser';
+import { getCleanSurveyId, formatTargetDeadline, getFollowUpTag } from './parser';
+
+/**
+ * Generates a presentation slide replicating the "KEY ACTIONS TAKEN TO ADDRESS VOICE OF CUSTOMER" Action Matrix table.
+ */
+export async function exportActionMatrixSlideToPowerPoint(
+  record: VoCRecord,
+  currentUser?: ActionOwner | null
+): Promise<void> {
+  const pres = new pptxgen();
+  pres.layout = 'LAYOUT_WIDE';
+  pres.title = `DHL VoC Case #${getCleanSurveyId(record.surveyId || record.id)} Action Matrix`;
+  pres.subject = 'Voice of Customer Key Actions & Resolution';
+  pres.author = currentUser?.fullName || 'DHL Express Colleague';
+  pres.company = 'DHL Express (Cambodia) Ltd.';
+
+  addActionMatrixSlide(pres, record, 1, 1);
+
+  const cleanId = getCleanSurveyId(record.surveyId || record.id);
+  const dateSuffix = new Date().toISOString().split('T')[0];
+  const fileName = `DHL_VoC_Action_Matrix_Case_${cleanId || 'Record'}_${dateSuffix}.pptx`;
+
+  await pres.writeFile({ fileName });
+}
+
+/**
+ * Helper that builds the Action Matrix slide on any PptxGenJS instance
+ */
+export function addActionMatrixSlide(
+  pres: pptxgen,
+  record: VoCRecord,
+  currentIndex: number = 1,
+  totalSlides: number = 1
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: 'F8FAFC' };
+
+  // Brand Palette
+  const DHL_YELLOW = 'F59E0B'; // Amber Yellow header
+  const BORDER_YELLOW = 'F59E0B';
+  const GREEN_STATUS = '059669';
+  const AMBER_STATUS = 'D97706';
+  const RED_STATUS = 'DC2626';
+  const SLATE_DARK = '0F172A';
+  const SLATE_GRAY = '475569';
+  const BORDER_GRAY = 'CBD5E1';
+
+  const cleanSurveyId = getCleanSurveyId(record.surveyId || record.id);
+  const statusColor = record.status === 'Completed' ? GREEN_STATUS : (record.status === 'In Progress' ? AMBER_STATUS : RED_STATUS);
+  const deadlineStr = formatTargetDeadline(record.creationDate || record.responseDate, record.deadline);
+  const followUpTag = getFollowUpTag(record);
+
+  // Outer Yellow Border Container Card (Matching the UI's rounded card with border-[12px])
+  const cardX = 0.35;
+  const cardY = 0.3;
+  const cardW = 12.63;
+  const cardH = 6.9;
+
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: cardX,
+    y: cardY,
+    w: cardW,
+    h: cardH,
+    rectRadius: 0.12,
+    fill: { color: 'FFFFFF' },
+    line: { color: BORDER_YELLOW, width: 8 }
+  });
+
+  // Top Yellow Header Banner
+  const bannerH = 0.68;
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: cardX + 0.05,
+    y: cardY + 0.05,
+    w: cardW - 0.1,
+    h: bannerH,
+    rectRadius: 0.08,
+    fill: { color: DHL_YELLOW },
+    line: { color: DHL_YELLOW }
+  });
+
+  // Slide Title Text
+  slide.addText('KEY ACTIONS TAKEN TO ADDRESS VOICE OF CUSTOMER', {
+    x: cardX + 0.25,
+    y: cardY + 0.18,
+    w: 8.5,
+    h: 0.4,
+    fontSize: 14,
+    bold: true,
+    color: 'FFFFFF',
+    fontFace: 'Arial'
+  });
+
+  // Traffic Light Indicator on top right
+  const tlX = cardX + cardW - 1.6;
+  const tlY = cardY + 0.15;
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: tlX,
+    y: tlY,
+    w: 1.35,
+    h: 0.38,
+    rectRadius: 0.19,
+    fill: { color: '0F172A' },
+    line: { color: '334155', width: 0.5 }
+  });
+
+  // 3 Traffic light dots: Red, Yellow, Green
+  slide.addShape(pres.ShapeType.ellipse, {
+    x: tlX + 0.12,
+    y: tlY + 0.09,
+    w: 0.2,
+    h: 0.2,
+    fill: { color: record.status === 'New' ? 'EF4444' : '450A0A' },
+    line: { color: record.status === 'New' ? 'F87171' : '450A0A', width: 0.5 }
+  });
+
+  slide.addShape(pres.ShapeType.ellipse, {
+    x: tlX + 0.55,
+    y: tlY + 0.09,
+    w: 0.2,
+    h: 0.2,
+    fill: { color: record.status === 'In Progress' ? 'FACC15' : '422006' },
+    line: { color: record.status === 'In Progress' ? 'FDE047' : '422006', width: 0.5 }
+  });
+
+  slide.addShape(pres.ShapeType.ellipse, {
+    x: tlX + 0.98,
+    y: tlY + 0.09,
+    w: 0.2,
+    h: 0.2,
+    fill: { color: record.status === 'Completed' ? '22C55E' : '052E16' },
+    line: { color: record.status === 'Completed' ? '4ADE80' : '052E16', width: 0.5 }
+  });
+
+  // =========================================================================
+  // 5-COLUMN ACTION MATRIX TABLE
+  // =========================================================================
+  const tblX = cardX + 0.25;
+  const tblY = cardY + bannerH + 0.18;
+  const tblW = cardW - 0.5;
+  const tblH = cardH - bannerH - 0.45;
+
+  const col1W = 3.65; // VOC
+  const col2W = 5.35; // KEY ACTIONS TAKEN
+  const col3W = 0.95; // DEADLINE
+  const col4W = 1.05; // PIC
+  const col5W = 1.13; // STATUS
+
+  const headerH = 0.45;
+
+  // Table Yellow Header Background
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: tblX,
+    y: tblY,
+    w: tblW,
+    h: headerH,
+    rectRadius: 0.05,
+    fill: { color: 'FBBF24' },
+    line: { color: 'F59E0B' }
+  });
+
+  // Table Header Labels
+  slide.addText('VOC', {
+    x: tblX,
+    y: tblY + 0.05,
+    w: col1W,
+    h: headerH - 0.1,
+    fontSize: 10,
+    bold: true,
+    align: 'center',
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  slide.addText('KEY ACTIONS TAKEN', {
+    x: tblX + col1W,
+    y: tblY + 0.05,
+    w: col2W,
+    h: headerH - 0.1,
+    fontSize: 10,
+    bold: true,
+    align: 'center',
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  slide.addText('DEADLINE', {
+    x: tblX + col1W + col2W,
+    y: tblY + 0.05,
+    w: col3W,
+    h: headerH - 0.1,
+    fontSize: 9.5,
+    bold: true,
+    align: 'center',
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  slide.addText('PIC', {
+    x: tblX + col1W + col2W + col3W,
+    y: tblY + 0.05,
+    w: col4W,
+    h: headerH - 0.1,
+    fontSize: 9.5,
+    bold: true,
+    align: 'center',
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  slide.addText('STATUS', {
+    x: tblX + col1W + col2W + col3W + col4W,
+    y: tblY + 0.05,
+    w: col5W,
+    h: headerH - 0.1,
+    fontSize: 9.5,
+    bold: true,
+    align: 'center',
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  // Table Body Coordinates
+  const bodyY = tblY + headerH;
+  const bodyH = tblH - headerH;
+
+  // Outer Border for table body
+  slide.addShape(pres.ShapeType.rect, {
+    x: tblX,
+    y: bodyY,
+    w: tblW,
+    h: bodyH,
+    fill: { color: 'FFFFFF' },
+    line: { color: BORDER_GRAY, width: 1 }
+  });
+
+  // Vertical column separator lines
+  slide.addShape(pres.ShapeType.line, {
+    x: tblX + col1W,
+    y: bodyY,
+    w: 0,
+    h: bodyH,
+    line: { color: BORDER_GRAY, width: 1 }
+  });
+  slide.addShape(pres.ShapeType.line, {
+    x: tblX + col1W + col2W,
+    y: bodyY,
+    w: 0,
+    h: bodyH,
+    line: { color: BORDER_GRAY, width: 1 }
+  });
+  slide.addShape(pres.ShapeType.line, {
+    x: tblX + col1W + col2W + col3W,
+    y: bodyY,
+    w: 0,
+    h: bodyH,
+    line: { color: BORDER_GRAY, width: 1 }
+  });
+  slide.addShape(pres.ShapeType.line, {
+    x: tblX + col1W + col2W + col3W + col4W,
+    y: bodyY,
+    w: 0,
+    h: bodyH,
+    line: { color: BORDER_GRAY, width: 1 }
+  });
+
+  // =========================================================================
+  // COLUMN 1: VOC CELL
+  // =========================================================================
+  const cell1X = tblX + 0.15;
+  const cell1W = col1W - 0.3;
+
+  // Soft Yellow Customer Feedback Quote Box
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: cell1X,
+    y: bodyY + 0.15,
+    w: cell1W,
+    h: 3.1,
+    rectRadius: 0.08,
+    fill: { color: 'FEF9C3' },
+    line: { color: 'FDE047', width: 1 }
+  });
+
+  const quoteComment = record.comment && record.comment.trim() 
+    ? `"${record.comment.trim()}"` 
+    : `"${record.customSummary || 'Efficient service and quick handling.'}"`;
+
+  slide.addText(quoteComment, {
+    x: cell1X + 0.15,
+    y: bodyY + 0.25,
+    w: cell1W - 0.3,
+    h: 2.9,
+    fontSize: 9.5,
+    italic: true,
+    color: '1E293B',
+    fontFace: 'Arial'
+  });
+
+  // Condensed Summary Indicator link
+  slide.addText('SHOW CONDENSED SUMMARY', {
+    x: cell1X,
+    y: bodyY + 3.35,
+    w: cell1W,
+    h: 0.22,
+    fontSize: 8,
+    bold: true,
+    color: '2563EB',
+    fontFace: 'Arial'
+  });
+
+  // Follow-up Tag Pill
+  const isDetractor = followUpTag.includes('Detractor') || followUpTag.includes('Critical');
+  const isPassive = followUpTag.includes('Passive');
+  const tagBg = isDetractor ? 'FFE4E6' : (isPassive ? 'FEF3C7' : 'D1FAE5');
+  const tagTextColor = isDetractor ? 'BE123C' : (isPassive ? '92400E' : '065F46');
+  const tagBorder = isDetractor ? 'FECDD3' : (isPassive ? 'FDE68A' : 'A7F3D0');
+
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: cell1X,
+    y: bodyY + 3.65,
+    w: 2.1,
+    h: 0.28,
+    rectRadius: 0.06,
+    fill: { color: tagBg },
+    line: { color: tagBorder, width: 0.8 }
+  });
+  slide.addText(followUpTag, {
+    x: cell1X + 0.05,
+    y: bodyY + 3.68,
+    w: 2.0,
+    h: 0.22,
+    fontSize: 7.5,
+    bold: true,
+    align: 'center',
+    color: tagTextColor,
+    fontFace: 'Arial'
+  });
+
+  // AWB & Survey ID metadata
+  slide.addText(`AWB: ${record.awbNumber || '6624344543'}`, {
+    x: cell1X,
+    y: bodyY + 4.02,
+    w: cell1W,
+    h: 0.2,
+    fontSize: 8,
+    bold: true,
+    color: '2563EB',
+    fontFace: 'Arial'
+  });
+
+  slide.addText(`Survey ID: ${cleanSurveyId || '307501888'}`, {
+    x: cell1X,
+    y: bodyY + 4.25,
+    w: cell1W,
+    h: 0.2,
+    fontSize: 8,
+    bold: true,
+    color: '2563EB',
+    fontFace: 'Arial'
+  });
+
+  // Topic & Category Badges
+  const topicTag = (record.topic || 'CUSTOMS_CLEARANCE').toUpperCase().replace(/\s+/g, '_');
+  const catTag = record.category.toUpperCase();
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: cell1X,
+    y: bodyY + 4.5,
+    w: 1.6,
+    h: 0.24,
+    rectRadius: 0.04,
+    fill: { color: 'EFF6FF' },
+    line: { color: 'BFDBFE', width: 0.8 }
+  });
+  slide.addText(topicTag, {
+    x: cell1X + 0.05,
+    y: bodyY + 4.52,
+    w: 1.5,
+    h: 0.2,
+    fontSize: 7,
+    bold: true,
+    align: 'center',
+    color: '1D4ED8',
+    fontFace: 'Arial'
+  });
+
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: cell1X + 1.7,
+    y: bodyY + 4.5,
+    w: 1.2,
+    h: 0.24,
+    rectRadius: 0.04,
+    fill: { color: 'EFF6FF' },
+    line: { color: 'BFDBFE', width: 0.8 }
+  });
+  slide.addText(catTag, {
+    x: cell1X + 1.75,
+    y: bodyY + 4.52,
+    w: 1.1,
+    h: 0.2,
+    fontSize: 7,
+    bold: true,
+    align: 'center',
+    color: '1D4ED8',
+    fontFace: 'Arial'
+  });
+
+  // Company Name
+  const compName = record.accountName || record.customerName || 'ACTEUS CAMBODIA CO., LTD';
+  slide.addText(`(${compName.toUpperCase()})`, {
+    x: cell1X,
+    y: bodyY + 4.82,
+    w: cell1W,
+    h: 0.25,
+    fontSize: 7.5,
+    bold: true,
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  // =========================================================================
+  // COLUMN 2: KEY ACTIONS TAKEN CELL
+  // =========================================================================
+  const cell2X = tblX + col1W + 0.2;
+  const cell2W = col2W - 0.4;
+
+  const timelineItems = record.timeline && record.timeline.length > 0
+    ? record.timeline
+    : (record.actionSummary || record.followUpComments 
+        ? [{ timestamp: record.responseDate || 'Recent', action: record.actionSummary || record.followUpComments || '', pic: record.owner || 'CCO Specialist' }]
+        : []);
+
+  if (timelineItems.length > 0) {
+    const actionTexts = timelineItems.slice(0, 6).map((item, idx) => {
+      const timePrefix = item.timestamp ? `[${item.timestamp}] ` : '';
+      const picSuffix = item.pic ? ` (Owner: ${item.pic})` : '';
+      return `${idx + 1}. ${timePrefix}${item.action}${picSuffix}`;
+    }).join('\n\n');
+
+    slide.addText(actionTexts, {
+      x: cell2X,
+      y: bodyY + 0.25,
+      w: cell2W,
+      h: bodyH - 0.5,
+      fontSize: 9,
+      color: SLATE_DARK,
+      fontFace: 'Arial'
+    });
+  } else {
+    // Empty State matching the user's screenshot
+    slide.addText('No follow-up comments registered yet.\nUse the Action Owner Portal below to post comments.', {
+      x: cell2X,
+      y: bodyY + 2.0,
+      w: cell2W,
+      h: 1.0,
+      fontSize: 9.5,
+      align: 'center',
+      color: '94A3B8',
+      fontFace: 'Arial'
+    });
+  }
+
+  // =========================================================================
+  // COLUMN 3: DEADLINE CELL
+  // =========================================================================
+  const cell3X = tblX + col1W + col2W;
+  
+  // Deadline Pill centered vertically
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: cell3X + 0.12,
+    y: bodyY + (bodyH / 2) - 0.2,
+    w: col3W - 0.24,
+    h: 0.4,
+    rectRadius: 0.08,
+    fill: { color: 'F1F5F9' },
+    line: { color: 'E2E8F0', width: 1 }
+  });
+
+  slide.addText(deadlineStr || '31 Jul', {
+    x: cell3X + 0.12,
+    y: bodyY + (bodyH / 2) - 0.16,
+    w: col3W - 0.24,
+    h: 0.32,
+    fontSize: 9,
+    bold: true,
+    align: 'center',
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  // =========================================================================
+  // COLUMN 4: PIC CELL
+  // =========================================================================
+  const cell4X = tblX + col1W + col2W + col3W;
+  const picName = record.owner || 'Panha Chhun';
+  
+  slide.addText(`${picName}\n(DHL KH)`, {
+    x: cell4X + 0.05,
+    y: bodyY + (bodyH / 2) - 0.4,
+    w: col4W - 0.1,
+    h: 0.8,
+    fontSize: 9,
+    bold: true,
+    align: 'center',
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  // =========================================================================
+  // COLUMN 5: STATUS CELL (Solid Background color per screenshot)
+  // =========================================================================
+  const cell5X = tblX + col1W + col2W + col3W + col4W;
+
+  slide.addShape(pres.ShapeType.rect, {
+    x: cell5X,
+    y: bodyY,
+    w: col5W,
+    h: bodyH,
+    fill: { color: statusColor },
+    line: { color: statusColor }
+  });
+
+  slide.addText(record.status.toUpperCase(), {
+    x: cell5X,
+    y: bodyY + (bodyH / 2) - 0.3,
+    w: col5W,
+    h: 0.6,
+    fontSize: 10.5,
+    bold: true,
+    align: 'center',
+    color: 'FFFFFF',
+    fontFace: 'Arial'
+  });
+}
+
 
 /**
  * Generates an executive-grade, DHL-branded PowerPoint presentation (.pptx)
