@@ -20,6 +20,9 @@ interface CompactSidebarListProps {
   channelFilter: string;
   setChannelFilter: (channel: string) => void;
   uniqueChannels: string[];
+  transactionFilter?: string;
+  setTransactionFilter?: (tx: string) => void;
+  uniqueTransactions?: string[];
   categoryFilter: 'All' | 'Promoter' | 'Passive' | 'Detractor';
   setCategoryFilter: (category: 'All' | 'Promoter' | 'Passive' | 'Detractor') => void;
   currentUser?: ActionOwner | null;
@@ -40,6 +43,9 @@ export default function CompactSidebarList({
   channelFilter,
   setChannelFilter,
   uniqueChannels,
+  transactionFilter = 'All',
+  setTransactionFilter,
+  uniqueTransactions = [],
   categoryFilter,
   setCategoryFilter,
   currentUser
@@ -65,13 +71,18 @@ export default function CompactSidebarList({
         record.id.toLowerCase().includes(query) ||
         (record.surveyId && record.surveyId.toLowerCase().includes(query)) ||
         record.comment.toLowerCase().includes(query) ||
-        record.owner.toLowerCase().includes(query);
+        record.owner.toLowerCase().includes(query) ||
+        (record.transactionName && record.transactionName.toLowerCase().includes(query)) ||
+        (record.transaction && record.transaction.toLowerCase().includes(query));
 
       const matchesCategory = categoryFilter === 'All' || record.category === categoryFilter;
+      const matchesTransaction = transactionFilter === 'All' || 
+        record.transactionName === transactionFilter || 
+        record.transaction === transactionFilter;
 
-      return matchesSearch && matchesCategory;
+      return matchesSearch && matchesCategory && matchesTransaction;
     });
-  }, [records, searchQuery, categoryFilter]);
+  }, [records, searchQuery, categoryFilter, transactionFilter]);
 
   const [isExporting, setIsExporting] = useState(false);
 
@@ -80,6 +91,7 @@ export default function CompactSidebarList({
       category: categoryFilter,
       status: statusFilter,
       channel: channelFilter,
+      transaction: transactionFilter !== 'All' ? transactionFilter : undefined,
       dateRange: `${formatDateShort(sliderStart)} - ${formatDateShort(sliderEnd)}`,
       searchQuery: searchQuery || undefined,
       selectedCount: filteredRecords.length
@@ -211,6 +223,34 @@ export default function CompactSidebarList({
           </select>
         </div>
 
+        {/* Transaction Name filter */}
+        <div className="space-y-1">
+          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-wider flex items-center justify-between">
+            <span>Transaction Name</span>
+            {transactionFilter !== 'All' && setTransactionFilter && (
+              <button
+                type="button"
+                onClick={() => setTransactionFilter('All')}
+                className="text-[9px] text-amber-600 font-bold hover:underline normal-case"
+              >
+                Clear
+              </button>
+            )}
+          </label>
+          <select
+            value={transactionFilter}
+            onChange={(e) => setTransactionFilter && setTransactionFilter(e.target.value)}
+            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer transition-all truncate"
+          >
+            <option value="All">All Transactions ({uniqueTransactions.length || 10})</option>
+            {uniqueTransactions.map((tx) => (
+              <option key={tx} value={tx}>
+                {tx}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Timeline Slider Section */}
         <div className="space-y-2.5 pt-1.5 border-t border-slate-200" id="voc-timeline-slider-card">
           <div className="flex items-center justify-between">
@@ -326,59 +366,68 @@ export default function CompactSidebarList({
             const isSelected = selectedId === record.id;
             const scoreColor = getScoreColor(record.likelihood);
             
+            const cleanId = getCleanSurveyId(record.surveyId || record.id);
+            const rawSuffix = getSurveyIdSuffix(record.surveyId) || getSurveyIdSuffix(record.id);
+            const rawTopic = rawSuffix || 
+              (record.topic && record.topic !== 'General' && record.topic !== 'Brand' ? record.topic : undefined) ||
+              record.momentOfTruthName || 
+              record.transactionName || 
+              record.transaction || 
+              record.topic || 
+              'DELIVERY';
+            
+            const topicChip = rawTopic ? rawTopic.trim().toUpperCase().replace(/[\s/-]+/g, '_') : 'DELIVERY';
+
+            // Tag for alert / first call
+            const alertPill = record.alertType 
+              ? (record.alertType.includes(':') ? record.alertType.split(':')[0] : record.alertType)
+              : (record.actionDetailsRaw && record.actionDetailsRaw.toLowerCase().includes('first call') ? 'FIRST CALL' : (record.responseFeedbackChannel || 'FIRST CALL'));
+
             return (
               <div
                 key={`${record.id}-${index}`}
                 onClick={() => onSelect(record.id)}
-                className={`p-4 flex items-center justify-between cursor-pointer transition-all border-l-4 ${
+                className={`p-3.5 flex items-center justify-between cursor-pointer transition-all border-l-4 ${
                   isSelected 
-                    ? 'bg-blue-50/50 border-blue-600' 
+                    ? 'bg-blue-50/60 border-blue-600' 
                     : 'border-transparent hover:bg-slate-50'
                 }`}
               >
-                <div className="min-w-0 pr-2">
-                  <div className="font-semibold text-sm text-slate-800 tracking-tight flex items-center gap-2 flex-wrap">
-                    {(() => {
-                      const cleanId = getCleanSurveyId(record.surveyId || record.id);
-                      const suffix = getSurveyIdSuffix(record.surveyId) || getSurveyIdSuffix(record.id);
-                      return (
-                        <>
-                          <span className="font-mono">
-                            <a
-                              href={getSurveyUrl(cleanId)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-800 hover:underline transition-colors font-bold"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {cleanId}
-                            </a>
-                          </span>
-                          {suffix && (
-                            <span className="text-[10px] font-sans font-extrabold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 uppercase">
-                              {suffix}
-                            </span>
-                          )}
-                        </>
-                      );
-                    })()}
+                <div className="min-w-0 pr-2 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono">
+                      <a
+                        href={getSurveyUrl(cleanId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 hover:underline transition-colors font-bold text-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {cleanId}
+                      </a>
+                    </span>
+                    {topicChip && (
+                      <span className="text-[10px] font-sans font-extrabold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/80 uppercase tracking-tight">
+                        {topicChip}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                     <span className={`text-[11px] font-bold ${scoreColor}`}>
                       Score: {formattedScore(record.likelihood)}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-medium truncate max-w-[100px]">
-                      • {record.owner}
+                    <span className="text-[10px] text-slate-400 font-medium truncate max-w-[110px]">
+                      • {record.owner && record.owner.trim() !== '' ? record.owner : '(blank)'}
                     </span>
-                    {record.responseFeedbackChannel && (
-                      <span className="text-[8px] font-extrabold bg-slate-100 text-slate-500 px-1 py-0.5 rounded uppercase tracking-wide">
-                        {record.responseFeedbackChannel}
+                    {alertPill && (
+                      <span className="text-[8px] font-extrabold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase tracking-wide">
+                        {alertPill}
                       </span>
                     )}
                   </div>
                 </div>
 
-                <div className="shrink-0">
+                <div className="shrink-0 pl-1">
                   {isSelected ? (
                     <span className="text-[9px] bg-blue-600 text-white px-2 py-1 rounded-md font-extrabold uppercase tracking-wider shadow-xs">
                       Viewing

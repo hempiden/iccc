@@ -26,6 +26,7 @@ export interface ExportFilterContext {
   category?: string;
   status?: string;
   channel?: string;
+  transaction?: string;
   dateRange?: string;
   searchQuery?: string;
   weekFilter?: string;
@@ -168,6 +169,7 @@ export function exportFilteredExcelWorkbook(
     'Applied NPS Category Filter': filterContext?.category || 'All',
     'Applied Case Status Filter': filterContext?.status || 'All',
     'Applied Feedback Channel Filter': filterContext?.channel || 'All Channels',
+    'Applied Transaction Name Filter': filterContext?.transaction || 'All Transactions',
     'Applied Timeline Window': filterContext?.dateRange || 'All Time',
     'Applied Text Search': filterContext?.searchQuery || '(None)',
     'Export Timestamp': new Date().toLocaleString('en-GB', { timeZoneName: 'short' }),

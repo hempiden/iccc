@@ -14,9 +14,17 @@ interface ExecutiveOverviewProps {
   records: VoCRecord[];
   allRecords?: VoCRecord[];
   currentUser?: ActionOwner | null;
+  onSelectTransactionFilter?: (transactionName: string | null) => void;
+  selectedTransactionFilter?: string | null;
 }
 
-export default function ExecutiveOverview({ records, allRecords, currentUser }: ExecutiveOverviewProps) {
+export default function ExecutiveOverview({ 
+  records, 
+  allRecords, 
+  currentUser,
+  onSelectTransactionFilter,
+  selectedTransactionFilter
+}: ExecutiveOverviewProps) {
   const [activeSession, setActiveSession] = useState<'all' | 'transactions' | 'scorecard'>('all');
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [selectedSentimentFilter, setSelectedSentimentFilter] = useState<'ALL' | 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL'>('ALL');
@@ -1329,6 +1337,8 @@ export default function ExecutiveOverview({ records, allRecords, currentUser }: 
         <TransactionOverview
           records={records}
           allRecords={allRecords}
+          onSelectTransactionFilter={onSelectTransactionFilter}
+          selectedTransactionFilter={selectedTransactionFilter}
         />
       )}
 

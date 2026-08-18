@@ -262,6 +262,7 @@ export default function App() {
   const [sliderEnd, setSliderEnd] = useState<number>(safeMax);
   const [statusFilter, setStatusFilter] = useState<'All' | 'New' | 'In Progress' | 'Completed'>('All');
   const [channelFilter, setChannelFilter] = useState<string>('All');
+  const [transactionFilter, setTransactionFilter] = useState<string>('All');
   const [presentationMode, setPresentationMode] = useState<boolean>(false);
   const [categoryFilter, setCategoryFilter] = useState<'All' | 'Promoter' | 'Passive' | 'Detractor'>('All');
 
@@ -282,18 +283,48 @@ export default function App() {
     return Array.from(channels).sort();
   }, [records]);
 
-  // Dynamic Timeline & Channel Filtering (No Status Filtering) - used for Charts
+  // Extract unique Transaction Names dynamically
+  const uniqueTransactions = React.useMemo(() => {
+    const txSet = new Set<string>();
+    records.forEach(r => {
+      const name = r.transactionName || r.transaction;
+      if (name && name.trim()) {
+        txSet.add(name.trim());
+      }
+    });
+    if (txSet.size === 0) {
+      // Default DHL Standard Transaction Names
+      [
+        'Pickup by Courier',
+        'Pickup Exception',
+        'Drop-off at Service Point',
+        'Self-Collection at Service Point',
+        'Delivery by Courier',
+        'Delivery Exception',
+        'Delivery Notification',
+        'Delivery Change by Employee',
+        'Duties and Taxes Payment to Employee',
+        'Delivery Management via Self-Service'
+      ].forEach(t => txSet.add(t));
+    }
+    return Array.from(txSet).sort();
+  }, [records]);
+
+  // Dynamic Timeline, Channel & Transaction Filtering (No Status Filtering) - used for Charts
   const filteredByTimelineAndChannel = React.useMemo(() => {
     return records.filter(r => {
       const t = getRecordTime(r);
       const inTimeline = t === 0 || (t >= sliderStart && t <= sliderEnd);
       const matchesChannel = channelFilter === 'All' || r.responseFeedbackChannel === channelFilter;
+      const matchesTx = transactionFilter === 'All' || 
+        r.transactionName === transactionFilter || 
+        r.transaction === transactionFilter;
       
-      return inTimeline && matchesChannel;
+      return inTimeline && matchesChannel && matchesTx;
     });
-  }, [records, sliderStart, sliderEnd, channelFilter]);
+  }, [records, sliderStart, sliderEnd, channelFilter, transactionFilter]);
 
-  // Dynamic Timeline & Status & Channel Filtering - used for Lists, Sidebars and Tables
+  // Dynamic Timeline & Status & Channel & Transaction Filtering - used for Lists, Sidebars and Tables
   const filteredByTimeline = React.useMemo(() => {
     return filteredByTimelineAndChannel.filter(r => {
       const matchesStatus = statusFilter === 'All' || 
@@ -741,6 +772,9 @@ export default function App() {
             channelFilter={channelFilter}
             setChannelFilter={setChannelFilter}
             uniqueChannels={uniqueChannels}
+            transactionFilter={transactionFilter}
+            setTransactionFilter={setTransactionFilter}
+            uniqueTransactions={uniqueTransactions}
             categoryFilter={categoryFilter}
             setCategoryFilter={setCategoryFilter}
             currentUser={currentUser}
@@ -923,7 +957,13 @@ export default function App() {
                   </div>
                 </div>
 
-                <ExecutiveOverview records={filteredByTimelineAndChannel} allRecords={records} currentUser={currentUser} />
+                <ExecutiveOverview 
+                  records={filteredByTimelineAndChannel} 
+                  allRecords={records} 
+                  currentUser={currentUser} 
+                  selectedTransactionFilter={transactionFilter !== 'All' ? transactionFilter : null}
+                  onSelectTransactionFilter={(tx) => setTransactionFilter(tx || 'All')}
+                />
 
                 {/* Unified Interactive Power BI Mirror Component */}
                 <PowerBiMirror 

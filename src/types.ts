@@ -75,6 +75,7 @@ export interface DashboardFilters {
   statusFilter: 'All' | 'New' | 'In Progress' | 'Completed';
   ownerFilter: string;
   channelFilter: string;
+  transactionFilter?: string;
 }
 
 export type SentimentType = 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' | 'NO_OPINION' | 'MIXED_OPINION' | 'STRONGLY_POSITIVE';

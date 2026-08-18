@@ -663,51 +663,80 @@ function addICCCExecutiveSlide(
   });
 
   // =========================================================================
-  // TOP SECTION: MINI BARS (LEFT) & METRIC CARDS (RIGHT) (y: 1.05 to y: 2.30)
+  // TOP SECTION: MINI BARS (LEFT) & METRIC CARDS (RIGHT) (y: 1.02 to y: 2.30)
   // =========================================================================
+
+  const formatTopicLabel = (name: string): string => {
+    if (name.includes('Duties/Taxes/Fees') || name.includes('Duties & Taxes')) return 'Duties & Taxes';
+    if (name.includes('Likelihood to Recommend')) return 'Likelihood to\nRecommend';
+    if (name.includes('Knowledge and Competence') || name.includes('Knowledge')) return 'Knowledge &\nCompetence';
+    if (name.includes('Overall Relationship')) return 'Overall\nRelationship';
+    if (name.includes('Overall Satisfaction')) return 'Overall\nSatisfaction';
+    if (name.includes('Process')) return 'Clearance\nProcess';
+    if (name.includes('Payment')) return 'Payment';
+    if (name.includes('Courier')) return 'Courier';
+    if (name.includes('Timeliness')) return 'Timeliness';
+    return name.replace(/^.*-\s*/, '');
+  };
 
   // Mini Chart Left: Top Topics Impact (Green)
   slide.addShape(pres.ShapeType.roundRect, {
     x: 0.6,
-    y: 1.05,
-    w: 3.9,
-    h: 1.22,
+    y: 1.02,
+    w: 3.95,
+    h: 1.26,
     rectRadius: 0.04,
     fill: { color: 'F8FAFC' },
     line: { color: BORDER_LIGHT, width: 0.8 }
   });
   slide.addText('Top Topics Impact', {
     x: 0.7,
-    y: 1.10,
+    y: 1.07,
     w: 3.7,
     h: 0.18,
-    fontSize: 8,
+    fontSize: 8.5,
     bold: true,
     color: GREEN_PROMOTER,
     fontFace: 'Arial'
   });
 
   topTopics.slice(0, 4).forEach((t, idx) => {
-    const bx = 0.72 + idx * 0.92;
-    const bh = Math.min(0.55, Math.max(0.20, (t.impactScore / 8) * 0.55));
+    const bx = 0.72 + idx * 0.94;
+    const bh = Math.min(0.46, Math.max(0.18, (t.impactScore / 7.5) * 0.46));
+    const baseY = 1.84;
+
+    // Number Label ABOVE the bar
+    slide.addText(`+${t.impactScore.toFixed(1)}`, {
+      x: bx - 0.08,
+      y: baseY - bh - 0.20,
+      w: 0.92,
+      h: 0.20,
+      fontSize: 8.5,
+      bold: true,
+      color: GREEN_PROMOTER,
+      align: 'center',
+      fontFace: 'Arial'
+    });
+
     // Bar
     slide.addShape(pres.ShapeType.rect, {
       x: bx,
-      y: 1.82 - bh,
-      w: 0.72,
+      y: baseY - bh,
+      w: 0.76,
       h: bh,
       fill: { color: '22C55E' },
       line: { color: '16A34A', width: 0.5 }
     });
-    // Label
-    const displayLabel = t.subTopic || t.name.replace(/.*-\s*/, '');
+
+    // Sub-topic Name Label
+    const displayLabel = formatTopicLabel(t.subTopic || t.name);
     slide.addText(displayLabel, {
       x: bx - 0.08,
-      y: 1.84,
-      w: 0.88,
+      y: baseY + 0.03,
+      w: 0.92,
       h: 0.38,
       fontSize: 6.5,
-      color: SLATE_GRAY,
+      color: SLATE_DARK,
       align: 'center',
       fontFace: 'Arial'
     });
@@ -715,46 +744,62 @@ function addICCCExecutiveSlide(
 
   // Mini Chart Center-Left: Bottom Topics Impact (Red)
   slide.addShape(pres.ShapeType.roundRect, {
-    x: 4.65,
-    y: 1.05,
-    w: 3.9,
-    h: 1.22,
+    x: 4.68,
+    y: 1.02,
+    w: 3.95,
+    h: 1.26,
     rectRadius: 0.04,
     fill: { color: 'F8FAFC' },
     line: { color: BORDER_LIGHT, width: 0.8 }
   });
   slide.addText('Bottom Topics Impact', {
-    x: 4.75,
-    y: 1.10,
+    x: 4.78,
+    y: 1.07,
     w: 3.7,
     h: 0.18,
-    fontSize: 8,
+    fontSize: 8.5,
     bold: true,
     color: RED_DETRACTOR,
     fontFace: 'Arial'
   });
 
   bottomTopics.slice(0, 4).forEach((t, idx) => {
-    const bx = 4.77 + idx * 0.92;
-    const bh = Math.min(0.55, Math.max(0.20, (Math.abs(t.impactScore) / 6) * 0.55));
+    const bx = 4.80 + idx * 0.94;
+    const bh = Math.min(0.46, Math.max(0.18, (Math.abs(t.impactScore) / 5.5) * 0.46));
+    const baseY = 1.84;
+
+    // Number Label ABOVE the bar
+    slide.addText(`${t.impactScore.toFixed(1)}`, {
+      x: bx - 0.08,
+      y: baseY - bh - 0.20,
+      w: 0.92,
+      h: 0.20,
+      fontSize: 8.5,
+      bold: true,
+      color: RED_DETRACTOR,
+      align: 'center',
+      fontFace: 'Arial'
+    });
+
     // Bar
     slide.addShape(pres.ShapeType.rect, {
       x: bx,
-      y: 1.32,
-      w: 0.72,
+      y: baseY - bh,
+      w: 0.76,
       h: bh,
       fill: { color: 'EF4444' },
       line: { color: 'DC2626', width: 0.5 }
     });
-    // Label
-    const displayLabel = t.subTopic || t.name.replace(/.*-\s*/, '');
+
+    // Sub-topic Name Label
+    const displayLabel = formatTopicLabel(t.subTopic || t.name);
     slide.addText(displayLabel, {
       x: bx - 0.08,
-      y: 1.34 + bh,
-      w: 0.88,
+      y: baseY + 0.03,
+      w: 0.92,
       h: 0.38,
       fontSize: 6.5,
-      color: SLATE_GRAY,
+      color: SLATE_DARK,
       align: 'center',
       fontFace: 'Arial'
     });
@@ -764,9 +809,9 @@ function addICCCExecutiveSlide(
   const metricBoxX = 8.75;
   slide.addShape(pres.ShapeType.roundRect, {
     x: metricBoxX,
-    y: 1.05,
+    y: 1.02,
     w: 3.98,
-    h: 1.22,
+    h: 1.26,
     rectRadius: 0.04,
     fill: { color: 'F8FAFC' },
     line: { color: BORDER_LIGHT, width: 0.8 }

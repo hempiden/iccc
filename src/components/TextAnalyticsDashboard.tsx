@@ -28,7 +28,11 @@ import {
   Info,
   X,
   LayoutGrid,
-  MessageSquare
+  MessageSquare,
+  Eye,
+  Quote,
+  ArrowUpRight,
+  Check
 } from 'lucide-react';
 import {
   TopicSentimentRecord,
@@ -116,6 +120,133 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
   const [pasteCSVText, setPasteCSVText] = useState('');
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Case Detail Hint & Modal State
+  const [selectedHighlightDetail, setSelectedHighlightDetail] = useState<{
+    topic: string;
+    aspect: string;
+    summary: string;
+    type: 'top' | 'bottom';
+  } | null>(null);
+  const [caseModalSearch, setCaseModalSearch] = useState('');
+  const [caseModalSentiment, setCaseModalSentiment] = useState<'ALL' | 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL'>('ALL');
+  const [copiedSurveyId, setCopiedSurveyId] = useState<string | null>(null);
+
+  // Helper to extract matching cases for any (topic, aspect)
+  const getMatchingCasesForAspect = (topic: string, aspect: string, summary?: string) => {
+    const normTopic = topic.toLowerCase();
+    const normAspect = aspect.toLowerCase();
+
+    return records.filter(r => {
+      const parent = (r.parentTopic || '').toLowerCase();
+      const sub = (r.subTopic || '').toLowerCase();
+      const theme = (r.topicTheme || '').toLowerCase();
+      const phrase = (r.phrase || '').toLowerCase();
+      const comment = (r.comment || '').toLowerCase();
+
+      // 1. Check if topic matches
+      const topicMatches =
+        parent.includes(normTopic) ||
+        normTopic.includes(parent) ||
+        theme.includes(normTopic) ||
+        normTopic.split(/[\s/]+/).some(w => w.length > 2 && (parent.includes(w) || theme.includes(w)));
+
+      if (!topicMatches) return false;
+
+      // 2. Filter by aspect keywords if specified
+      if (normAspect.includes('overall') || normAspect.includes('satisfaction')) {
+        return (
+          theme.includes('satisfaction') ||
+          phrase.includes('satisfaction') ||
+          phrase.includes('service') ||
+          phrase.includes('quality') ||
+          phrase.includes('good') ||
+          comment.includes('service') ||
+          comment.includes('quality')
+        );
+      }
+      if (normAspect.includes('recommend')) {
+        return (
+          theme.includes('recommend') ||
+          phrase.includes('recommend') ||
+          comment.includes('recommend') ||
+          r.mainScore >= 9
+        );
+      }
+      if (normAspect.includes('polite') || normAspect.includes('help')) {
+        return (
+          phrase.includes('polite') ||
+          phrase.includes('help') ||
+          phrase.includes('care') ||
+          phrase.includes('support') ||
+          phrase.includes('friendly') ||
+          phrase.includes('nice') ||
+          comment.includes('telegram') ||
+          comment.includes('call') ||
+          comment.includes('helpful') ||
+          sub.includes('knowledge') ||
+          parent.includes('people')
+        );
+      }
+      if (normAspect.includes('timeliness') || normAspect.includes('speed') || normAspect.includes('time')) {
+        return (
+          phrase.includes('time') ||
+          phrase.includes('speed') ||
+          phrase.includes('fast') ||
+          phrase.includes('delay') ||
+          phrase.includes('transit') ||
+          comment.includes('fast') ||
+          comment.includes('time') ||
+          sub.includes('timeliness')
+        );
+      }
+      if (normAspect.includes('duty') || normAspect.includes('tax') || normAspect.includes('fee')) {
+        return (
+          theme.includes('duties') ||
+          theme.includes('taxes') ||
+          theme.includes('fees') ||
+          phrase.includes('tax') ||
+          phrase.includes('duty') ||
+          phrase.includes('fee') ||
+          phrase.includes('paperwork') ||
+          comment.includes('tax') ||
+          comment.includes('duty') ||
+          comment.includes('fee')
+        );
+      }
+      if (normAspect.includes('process') || normAspect.includes('clearance')) {
+        return (
+          theme.includes('process') ||
+          theme.includes('clearance') ||
+          phrase.includes('process') ||
+          phrase.includes('clearance') ||
+          comment.includes('clearance') ||
+          comment.includes('process') ||
+          comment.includes('delay')
+        );
+      }
+      if (normAspect.includes('instruction') || normAspect.includes('modification')) {
+        return (
+          theme.includes('instruction') ||
+          theme.includes('delivery') ||
+          phrase.includes('instruction') ||
+          phrase.includes('trouble') ||
+          comment.includes('delivery') ||
+          comment.includes('fill')
+        );
+      }
+
+      // Default: match topic records
+      return true;
+    });
+  };
+
+  // Handler to copy Survey ID
+  const handleCopySurveyId = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedSurveyId(id);
+    setTimeout(() => setCopiedSurveyId(null), 2000);
+  };
 
   // Compute aggregated topic analytics
   const analytics = useMemo(() => {
@@ -1110,23 +1241,34 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                 {/* Left Mini Charts */}
                 <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Top Topics Chart */}
-                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-2xs">
                     <div className="text-xs font-bold text-emerald-800 mb-2 flex items-center justify-between">
-                      <span>Top Topics Driver</span>
-                      <span className="text-[10px] text-emerald-600 bg-emerald-100 px-1.5 rounded">+Impact</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        Top Topics Impact
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">+Impact Driver</span>
                     </div>
-                    <div className="h-28 flex items-end gap-2 pt-2 border-b border-slate-300 pb-1">
-                      {analytics.topSubTopics.slice(0, 5).map(t => {
-                        const h = Math.min(100, Math.max(20, (t.impactScore / 7) * 100));
+                    <div className="grid grid-cols-4 gap-2 pt-2 pb-1 border-b border-slate-200">
+                      {analytics.topSubTopics.slice(0, 4).map(t => {
+                        const hPct = Math.min(100, Math.max(25, (t.impactScore / 7.0) * 100));
+                        const label = t.subTopic || t.name.replace(/^.*-\s*/, '');
                         return (
-                          <div key={t.name} className="flex-1 flex flex-col items-center gap-1 group relative">
-                            <span className="text-[9px] font-bold text-emerald-700">+{t.impactScore.toFixed(1)}</span>
-                            <div
-                              style={{ height: `${h}%` }}
-                              className="w-full bg-emerald-500 rounded-t group-hover:bg-emerald-600 transition"
-                            />
-                            <span className="text-[8px] text-slate-500 font-medium truncate w-full text-center">
-                              {t.subTopic || t.name}
+                          <div key={t.name} className="flex flex-col items-center group">
+                            {/* Score Number above bar */}
+                            <span className="text-[10px] font-extrabold text-emerald-700 mb-1">
+                              +{t.impactScore.toFixed(1)}
+                            </span>
+                            {/* Bar container */}
+                            <div className="h-16 w-full flex items-end justify-center px-1">
+                              <div
+                                style={{ height: `${hPct}%` }}
+                                className="w-full bg-emerald-500 rounded-t-sm group-hover:bg-emerald-600 transition-all duration-300 shadow-2xs"
+                              />
+                            </div>
+                            {/* Topic Name */}
+                            <span className="text-[9px] text-slate-600 font-medium text-center line-clamp-2 leading-tight mt-1.5 h-6 flex items-center justify-center" title={t.name}>
+                              {label}
                             </span>
                           </div>
                         );
@@ -1135,23 +1277,34 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   </div>
 
                   {/* Bottom Topics Chart */}
-                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-2xs">
                     <div className="text-xs font-bold text-red-800 mb-2 flex items-center justify-between">
-                      <span>Bottom Topics Friction</span>
-                      <span className="text-[10px] text-red-600 bg-red-100 px-1.5 rounded">-Impact</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                        Bottom Topics Impact
+                      </span>
+                      <span className="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full border border-red-200">-Impact Friction</span>
                     </div>
-                    <div className="h-28 flex items-start gap-2 pt-2 border-t border-slate-300 mt-6">
-                      {analytics.bottomSubTopics.slice(0, 5).map(t => {
-                        const h = Math.min(100, Math.max(20, (Math.abs(t.impactScore) / 5) * 100));
+                    <div className="grid grid-cols-4 gap-2 pt-2 pb-1 border-b border-slate-200">
+                      {analytics.bottomSubTopics.slice(0, 4).map(t => {
+                        const hPct = Math.min(100, Math.max(25, (Math.abs(t.impactScore) / 5.0) * 100));
+                        const label = t.subTopic || t.name.replace(/^.*-\s*/, '');
                         return (
-                          <div key={t.name} className="flex-1 flex flex-col items-center gap-1 group relative">
-                            <div
-                              style={{ height: `${h}%` }}
-                              className="w-full bg-red-500 rounded-b group-hover:bg-red-600 transition"
-                            />
-                            <span className="text-[9px] font-bold text-red-700">{t.impactScore.toFixed(1)}</span>
-                            <span className="text-[8px] text-slate-500 font-medium truncate w-full text-center">
-                              {t.subTopic || t.name}
+                          <div key={t.name} className="flex flex-col items-center group">
+                            {/* Score Number above bar */}
+                            <span className="text-[10px] font-extrabold text-red-700 mb-1">
+                              {t.impactScore.toFixed(1)}
+                            </span>
+                            {/* Bar container */}
+                            <div className="h-16 w-full flex items-end justify-center px-1">
+                              <div
+                                style={{ height: `${hPct}%` }}
+                                className="w-full bg-red-500 rounded-t-sm group-hover:bg-red-600 transition-all duration-300 shadow-2xs"
+                              />
+                            </div>
+                            {/* Topic Name */}
+                            <span className="text-[9px] text-slate-600 font-medium text-center line-clamp-2 leading-tight mt-1.5 h-6 flex items-center justify-center" title={t.name}>
+                              {label}
                             </span>
                           </div>
                         );
@@ -1194,29 +1347,91 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   <div className="divide-y divide-slate-100 bg-white">
                     {highlights.top3.map((item, idx) => (
                       <div key={item.topic} className="grid grid-cols-12 px-3 py-3 text-xs gap-2">
-                        <div className="col-span-3 font-bold text-slate-900">
+                        <div className="col-span-3 font-bold text-slate-900 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
                           {item.topic}
                         </div>
-                        <div className="col-span-9 space-y-1.5 text-slate-700 text-[11px] leading-relaxed">
-                          {item.subTopicHighlights.map((sh, sIdx) => (
-                            <div key={sIdx}>
-                              <strong className="text-slate-900 font-semibold">{sh.aspect}: </strong>
-                              {isEditingHighlights ? (
-                                <textarea
-                                  value={sh.summary}
-                                  onChange={e => {
-                                    const updated = { ...highlights };
-                                    updated.top3[idx].subTopicHighlights[sIdx].summary = e.target.value;
-                                    saveHighlights(updated);
-                                  }}
-                                  className="w-full text-xs p-1.5 rounded border border-slate-300 mt-1 font-sans"
-                                  rows={2}
-                                />
-                              ) : (
-                                <span>{sh.summary}</span>
-                              )}
-                            </div>
-                          ))}
+                        <div className="col-span-9 space-y-2 text-slate-700 text-[11px] leading-relaxed">
+                          {item.subTopicHighlights.map((sh, sIdx) => {
+                            const matchingCases = getMatchingCasesForAspect(item.topic, sh.aspect, sh.summary);
+                            return (
+                              <div key={sIdx}>
+                                {isEditingHighlights ? (
+                                  <div>
+                                    <strong className="text-slate-900 font-semibold">{sh.aspect}: </strong>
+                                    <textarea
+                                      value={sh.summary}
+                                      onChange={e => {
+                                        const updated = { ...highlights };
+                                        updated.top3[idx].subTopicHighlights[sIdx].summary = e.target.value;
+                                        saveHighlights(updated);
+                                      }}
+                                      className="w-full text-xs p-1.5 rounded border border-slate-300 mt-1 font-sans"
+                                      rows={2}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="relative group/phrase inline-block w-full">
+                                    <div
+                                      onClick={() => setSelectedHighlightDetail({
+                                        topic: item.topic,
+                                        aspect: sh.aspect,
+                                        summary: sh.summary,
+                                        type: 'top'
+                                      })}
+                                      className="p-1.5 -m-1.5 rounded-lg hover:bg-emerald-50/80 border border-transparent hover:border-emerald-200 transition-all duration-150 cursor-pointer flex items-start justify-between gap-2"
+                                    >
+                                      <div>
+                                        <strong className="text-slate-900 font-semibold">{sh.aspect}: </strong>
+                                        <span className="text-slate-700">{sh.summary}</span>
+                                      </div>
+                                      <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/90 group-hover/phrase:bg-emerald-200 px-2 py-0.5 rounded-full border border-emerald-300/60 shadow-2xs transition">
+                                        <Eye className="w-3 h-3" />
+                                        {matchingCases.length > 0 ? `${matchingCases.length} cases` : 'View cases'}
+                                      </span>
+                                    </div>
+
+                                    {/* HOVER HINT POPUP */}
+                                    <div className="invisible group-hover/phrase:visible opacity-0 group-hover/phrase:opacity-100 transition-all duration-200 delay-75 absolute bottom-full left-4 mb-2 w-80 bg-slate-900/95 backdrop-blur-xs text-white rounded-xl p-3.5 shadow-2xl z-40 border border-slate-700/80 text-left pointer-events-none">
+                                      <div className="flex items-center justify-between border-b border-slate-700/80 pb-2 mb-2">
+                                        <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-400">
+                                          <Sparkles className="w-3.5 h-3.5" />
+                                          <span>{item.topic} &bull; {sh.aspect}</span>
+                                        </div>
+                                        <span className="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.5 rounded">
+                                          +Promoter Driver
+                                        </span>
+                                      </div>
+
+                                      <div className="text-[11px] text-slate-200 mb-2">
+                                        <span className="text-slate-400 font-semibold">Evidence: </span>
+                                        <strong className="text-emerald-400 font-bold">{matchingCases.length} customer feedback records</strong> match this driver topic in Cambodia.
+                                      </div>
+
+                                      {/* Sample verbatim preview in tooltip */}
+                                      {matchingCases.length > 0 && (
+                                        <div className="bg-slate-800/80 rounded-lg p-2 border border-slate-700 text-[10px] text-slate-300 italic mb-2.5 line-clamp-2">
+                                          "{matchingCases[0].comment || matchingCases[0].phrase}"
+                                          <span className="not-italic text-emerald-400 font-bold ml-1">
+                                            ({matchingCases[0].mainScore}/10 NPS)
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      <div className="flex items-center justify-between text-[10px] text-indigo-300 font-semibold pt-1 border-t border-slate-800">
+                                        <span className="flex items-center gap-1">
+                                          <Quote className="w-3 h-3 text-emerald-400" /> Click to inspect case details
+                                        </span>
+                                        <span className="text-emerald-400 font-bold flex items-center gap-0.5">
+                                          Open explorer &rarr;
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -1236,29 +1451,91 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   <div className="divide-y divide-slate-100 bg-white">
                     {highlights.bottom3.map((item, idx) => (
                       <div key={item.topic} className="grid grid-cols-12 px-3 py-3 text-xs gap-2">
-                        <div className="col-span-3 font-bold text-slate-900">
+                        <div className="col-span-3 font-bold text-slate-900 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
                           {item.topic}
                         </div>
-                        <div className="col-span-9 space-y-1.5 text-slate-700 text-[11px] leading-relaxed">
-                          {item.subTopicHighlights.map((sh, sIdx) => (
-                            <div key={sIdx}>
-                              <strong className="text-slate-900 font-semibold">{sh.aspect}: </strong>
-                              {isEditingHighlights ? (
-                                <textarea
-                                  value={sh.summary}
-                                  onChange={e => {
-                                    const updated = { ...highlights };
-                                    updated.bottom3[idx].subTopicHighlights[sIdx].summary = e.target.value;
-                                    saveHighlights(updated);
-                                  }}
-                                  className="w-full text-xs p-1.5 rounded border border-slate-300 mt-1 font-sans"
-                                  rows={2}
-                                />
-                              ) : (
-                                <span>{sh.summary}</span>
-                              )}
-                            </div>
-                          ))}
+                        <div className="col-span-9 space-y-2 text-slate-700 text-[11px] leading-relaxed">
+                          {item.subTopicHighlights.map((sh, sIdx) => {
+                            const matchingCases = getMatchingCasesForAspect(item.topic, sh.aspect, sh.summary);
+                            return (
+                              <div key={sIdx}>
+                                {isEditingHighlights ? (
+                                  <div>
+                                    <strong className="text-slate-900 font-semibold">{sh.aspect}: </strong>
+                                    <textarea
+                                      value={sh.summary}
+                                      onChange={e => {
+                                        const updated = { ...highlights };
+                                        updated.bottom3[idx].subTopicHighlights[sIdx].summary = e.target.value;
+                                        saveHighlights(updated);
+                                      }}
+                                      className="w-full text-xs p-1.5 rounded border border-slate-300 mt-1 font-sans"
+                                      rows={2}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="relative group/phrase inline-block w-full">
+                                    <div
+                                      onClick={() => setSelectedHighlightDetail({
+                                        topic: item.topic,
+                                        aspect: sh.aspect,
+                                        summary: sh.summary,
+                                        type: 'bottom'
+                                      })}
+                                      className="p-1.5 -m-1.5 rounded-lg hover:bg-red-50/80 border border-transparent hover:border-red-200 transition-all duration-150 cursor-pointer flex items-start justify-between gap-2"
+                                    >
+                                      <div>
+                                        <strong className="text-slate-900 font-semibold">{sh.aspect}: </strong>
+                                        <span className="text-slate-700">{sh.summary}</span>
+                                      </div>
+                                      <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100/90 group-hover/phrase:bg-red-200 px-2 py-0.5 rounded-full border border-red-300/60 shadow-2xs transition">
+                                        <Eye className="w-3 h-3" />
+                                        {matchingCases.length > 0 ? `${matchingCases.length} cases` : 'View cases'}
+                                      </span>
+                                    </div>
+
+                                    {/* HOVER HINT POPUP */}
+                                    <div className="invisible group-hover/phrase:visible opacity-0 group-hover/phrase:opacity-100 transition-all duration-200 delay-75 absolute bottom-full right-4 mb-2 w-80 bg-slate-900/95 backdrop-blur-xs text-white rounded-xl p-3.5 shadow-2xl z-40 border border-slate-700/80 text-left pointer-events-none">
+                                      <div className="flex items-center justify-between border-b border-slate-700/80 pb-2 mb-2">
+                                        <div className="flex items-center gap-1.5 font-bold text-xs text-red-400">
+                                          <AlertTriangle className="w-3.5 h-3.5" />
+                                          <span>{item.topic} &bull; {sh.aspect}</span>
+                                        </div>
+                                        <span className="text-[10px] font-extrabold bg-red-500/20 text-red-300 border border-red-500/40 px-1.5 py-0.5 rounded">
+                                          -Friction Area
+                                        </span>
+                                      </div>
+
+                                      <div className="text-[11px] text-slate-200 mb-2">
+                                        <span className="text-slate-400 font-semibold">Evidence: </span>
+                                        <strong className="text-red-400 font-bold">{matchingCases.length} customer feedback records</strong> cite friction on this topic.
+                                      </div>
+
+                                      {/* Sample verbatim preview in tooltip */}
+                                      {matchingCases.length > 0 && (
+                                        <div className="bg-slate-800/80 rounded-lg p-2 border border-slate-700 text-[10px] text-slate-300 italic mb-2.5 line-clamp-2">
+                                          "{matchingCases[0].comment || matchingCases[0].phrase}"
+                                          <span className="not-italic text-red-400 font-bold ml-1">
+                                            ({matchingCases[0].mainScore}/10 NPS)
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      <div className="flex items-center justify-between text-[10px] text-slate-300 font-semibold pt-1 border-t border-slate-800">
+                                        <span className="flex items-center gap-1">
+                                          <Quote className="w-3 h-3 text-red-400" /> Click to inspect case details
+                                        </span>
+                                        <span className="text-red-400 font-bold flex items-center gap-0.5">
+                                          Open explorer &rarr;
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -1514,6 +1791,274 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* CASE DETAIL & VERBATIM EXPLORER MODAL (WHEN USER CLICKS ON ANY HIGHLIGHT PHRASE) */}
+      {selectedHighlightDetail && (() => {
+        const { topic, aspect, summary, type } = selectedHighlightDetail;
+        const allMatchedCases = getMatchingCasesForAspect(topic, aspect, summary);
+
+        // Filter inside modal
+        const filteredModalCases = allMatchedCases.filter(c => {
+          if (caseModalSentiment !== 'ALL') {
+            if (caseModalSentiment === 'POSITIVE' && c.sentiment !== 'POSITIVE' && c.sentiment !== 'STRONGLY_POSITIVE') return false;
+            if (caseModalSentiment === 'NEGATIVE' && c.sentiment !== 'NEGATIVE') return false;
+            if (caseModalSentiment === 'NEUTRAL' && c.sentiment !== 'NEUTRAL' && c.sentiment !== 'NO_OPINION') return false;
+          }
+          if (caseModalSearch.trim()) {
+            const q = caseModalSearch.toLowerCase();
+            return (
+              c.surveyId.toLowerCase().includes(q) ||
+              c.comment.toLowerCase().includes(q) ||
+              c.phrase.toLowerCase().includes(q) ||
+              c.topicTheme.toLowerCase().includes(q)
+            );
+          }
+          return true;
+        });
+
+        const posCount = allMatchedCases.filter(c => c.sentiment === 'POSITIVE' || c.sentiment === 'STRONGLY_POSITIVE').length;
+        const negCount = allMatchedCases.filter(c => c.sentiment === 'NEGATIVE').length;
+        const avgScore = allMatchedCases.length > 0
+          ? (allMatchedCases.reduce((acc, c) => acc + c.mainScore, 0) / allMatchedCases.length).toFixed(1)
+          : 'N/A';
+
+        const isPositiveType = type === 'top';
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+              
+              {/* Modal Header */}
+              <div className={`px-6 py-4 border-b flex items-center justify-between ${
+                isPositiveType ? 'bg-emerald-50/70 border-emerald-200' : 'bg-red-50/70 border-red-200'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                    isPositiveType ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+                  }`}>
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                        isPositiveType
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : 'bg-red-100 text-red-800 border-red-300'
+                      }`}>
+                        {isPositiveType ? 'Top Driver Topic' : 'Friction Area Topic'}
+                      </span>
+                      <span className="text-xs font-bold text-slate-500">{topic}</span>
+                    </div>
+                    <h3 className="text-base font-black text-slate-900 mt-0.5 flex items-center gap-2">
+                      <span>{aspect}</span>
+                    </h3>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setSelectedHighlightDetail(null);
+                    setCaseModalSearch('');
+                    setCaseModalSentiment('ALL');
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Summary Banner & Stats */}
+              <div className="p-4 sm:p-6 bg-slate-50 border-b border-slate-200 space-y-4">
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Executive Summary Highlight
+                  </div>
+                  <p className="text-xs text-slate-800 font-medium leading-relaxed">
+                    {summary}
+                  </p>
+                </div>
+
+                {/* Metrics Row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Matched Cases</span>
+                    <div className="text-lg font-black text-slate-900 mt-0.5">
+                      {allMatchedCases.length} records
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Avg Rating Score</span>
+                    <div className="text-lg font-black text-slate-900 mt-0.5">
+                      {avgScore} <span className="text-xs font-normal text-slate-500">/ 10</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-emerald-600 uppercase">Positive Sentiment</span>
+                    <div className="text-lg font-black text-emerald-600 mt-0.5">
+                      {posCount} <span className="text-xs font-semibold text-slate-500">({allMatchedCases.length > 0 ? Math.round((posCount / allMatchedCases.length) * 100) : 0}%)</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-red-600 uppercase">Negative Sentiment</span>
+                    <div className="text-lg font-black text-red-600 mt-0.5">
+                      {negCount} <span className="text-xs font-semibold text-slate-500">({allMatchedCases.length > 0 ? Math.round((negCount / allMatchedCases.length) * 100) : 0}%)</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Search and Sentiment Filter Toolbar */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-1">
+                  <div className="relative w-full sm:w-80">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search comments, survey ID..."
+                      value={caseModalSearch}
+                      onChange={e => setCaseModalSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto">
+                    {(['ALL', 'POSITIVE', 'NEGATIVE', 'NEUTRAL'] as const).map(sent => (
+                      <button
+                        key={sent}
+                        onClick={() => setCaseModalSentiment(sent)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                          caseModalSentiment === sent
+                            ? 'bg-slate-900 text-white shadow-2xs'
+                            : 'bg-white text-slate-600 hover:bg-slate-200/70 border border-slate-200'
+                        }`}
+                      >
+                        {sent === 'ALL' ? 'All Cases' : sent}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Case Cards Verbatim List */}
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-3 max-h-[50vh] bg-slate-100/60">
+                {filteredModalCases.length > 0 ? (
+                  filteredModalCases.map(c => {
+                    const isPos = c.sentiment === 'POSITIVE' || c.sentiment === 'STRONGLY_POSITIVE';
+                    const isNeg = c.sentiment === 'NEGATIVE';
+
+                    return (
+                      <div
+                        key={c.id}
+                        className="p-4 rounded-xl border border-slate-200 bg-white shadow-2xs hover:shadow-sm transition space-y-2.5"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            {/* Survey ID with Copy */}
+                            <button
+                              onClick={() => handleCopySurveyId(c.surveyId)}
+                              title="Click to copy Survey ID"
+                              className="group inline-flex items-center gap-1 font-mono text-xs font-bold text-slate-700 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 px-2 py-0.5 rounded border border-slate-200 transition"
+                            >
+                              <span>{c.surveyId}</span>
+                              {copiedSurveyId === c.surveyId ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3 text-slate-400 group-hover:text-indigo-600" />
+                              )}
+                            </button>
+
+                            {/* Score Pill */}
+                            <span className={`text-xs font-black px-2 py-0.5 rounded ${
+                              c.mainScore >= 9
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : c.mainScore >= 7
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              Score: {c.mainScore}/10
+                            </span>
+
+                            {/* Sentiment Badge */}
+                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                              isPos
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : isNeg
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}>
+                              {c.sentiment}
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] text-slate-400 font-medium">
+                            {c.countryUnit || 'Cambodia (PNH)'}
+                          </div>
+                        </div>
+
+                        {/* Customer Full Comment */}
+                        <div className="text-xs text-slate-900 bg-slate-50/80 p-3 rounded-lg border border-slate-200/70 leading-relaxed font-medium">
+                          "{c.comment || c.phrase}"
+                        </div>
+
+                        {/* AI Phrase & Topic Meta */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px]">
+                          <div className="flex items-center gap-1.5 text-slate-500">
+                            <span className="font-semibold text-slate-700">Classified Phrase:</span>
+                            <span className={`px-2 py-0.5 rounded font-bold ${
+                              isPos ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200'
+                            }`}>
+                              "{c.phrase}"
+                            </span>
+                          </div>
+
+                          <div className="text-slate-500 font-semibold flex items-center gap-1">
+                            <span>Theme:</span>
+                            <span className="text-slate-800 font-bold">{c.topicTheme}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-10 bg-white rounded-xl border border-dashed border-slate-300">
+                    <p className="text-xs text-slate-500">
+                      No matching cases found for "{caseModalSearch}" under {caseModalSentiment} filter.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    setSelectedParentTopic(topic);
+                    setSelectedSentiment(isPositiveType ? 'POSITIVE' : 'NEGATIVE');
+                    setActiveTab('raw_feed');
+                    setSelectedHighlightDetail(null);
+                  }}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  View all in Raw Dataset Explorer
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSelectedHighlightDetail(null);
+                    setCaseModalSearch('');
+                    setCaseModalSentiment('ALL');
+                  }}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs"
+                >
+                  Done
                 </button>
               </div>
             </div>
