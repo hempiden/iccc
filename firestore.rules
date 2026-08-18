@@ -1,13 +1,20 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Enable seamless access for both Live OTP and Sandbox Mode users
-    match /voc_records/{recordId} {
-      allow read, write: if true;
-    }
-    
+    // 1. External Colleague Directory & User Profile accounts (used for Phone login, OTP, and RBAC)
     match /colleagues/{colleagueId} {
       allow read, write: if true;
     }
+    
+    // 2. External System & Login OTP configuration settings
+    match /system_settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    // 3. Customer VoC Survey data is stored strictly locally on the user's computer (localStorage)
+    match /voc_records/{recordId} {
+      allow read, write: if false;
+    }
   }
 }
+

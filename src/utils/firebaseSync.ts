@@ -1,9 +1,72 @@
 import { db } from './firebase';
-import { collection, getDocs, doc, setDoc, writeBatch, query, where, limit } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, setDoc, writeBatch, query, where, limit } from 'firebase/firestore';
 import { VoCRecord, ActionOwner } from '../types';
 
 const COLLECTION_NAME = 'voc_records';
 const COLLEAGUE_COLLECTION = 'colleagues';
+const SYSTEM_SETTINGS_COLLECTION = 'system_settings';
+const AUTH_SETTINGS_DOC = 'auth_settings';
+
+export interface SystemLoginSettings {
+  sandboxOtpEnabled: boolean;
+  allowedCountryCodes?: string[];
+  lastUpdatedBy?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Fetches the global login and OTP configuration settings from Firestore.
+ * Falls back to local storage cache if offline.
+ */
+export async function fetchSystemLoginSettings(): Promise<SystemLoginSettings> {
+  const localVal = localStorage.getItem('dhl_sandbox_otp_enabled');
+  const defaultFallback: SystemLoginSettings = {
+    sandboxOtpEnabled: localVal !== null ? localVal === 'true' : true,
+    updatedAt: new Date().toISOString()
+  };
+
+  try {
+    const docRef = doc(db, SYSTEM_SETTINGS_COLLECTION, AUTH_SETTINGS_DOC);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as SystemLoginSettings;
+      // Synchronize local cache
+      localStorage.setItem('dhl_sandbox_otp_enabled', String(data.sandboxOtpEnabled));
+      return data;
+    } else {
+      // Initialize external document
+      await setDoc(docRef, sanitizeForFirestore(defaultFallback));
+      return defaultFallback;
+    }
+  } catch (err) {
+    console.warn('Using local fallback for login settings:', err);
+    return defaultFallback;
+  }
+}
+
+/**
+ * Saves global login and OTP settings externally to Cloud Firestore.
+ */
+export async function saveSystemLoginSettings(settings: Partial<SystemLoginSettings>, updatedBy?: string): Promise<void> {
+  const currentLocal = localStorage.getItem('dhl_sandbox_otp_enabled');
+  const merged: SystemLoginSettings = {
+    sandboxOtpEnabled: settings.sandboxOtpEnabled !== undefined ? settings.sandboxOtpEnabled : (currentLocal !== null ? currentLocal === 'true' : true),
+    allowedCountryCodes: settings.allowedCountryCodes || ['+855', '+1'],
+    lastUpdatedBy: updatedBy || 'Superadmin',
+    updatedAt: new Date().toISOString()
+  };
+
+  // Immediate local cache update
+  localStorage.setItem('dhl_sandbox_otp_enabled', String(merged.sandboxOtpEnabled));
+
+  try {
+    const docRef = doc(db, SYSTEM_SETTINGS_COLLECTION, AUTH_SETTINGS_DOC);
+    await setDoc(docRef, sanitizeForFirestore(merged));
+  } catch (err) {
+    console.error('Error saving login settings to Firestore:', err);
+  }
+}
+
 
 /**
  * Strips all keys with undefined values from an object, recursively,

@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "Colleague": {
+      "title": "Colleague",
+      "description": "DHL Colleague and user account profile for authentication, OTP verification, and role-based access control.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the colleague profile."
+        },
+        "username": {
+          "type": "string",
+          "description": "System username."
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Colleague's full name."
+        },
+        "role": {
+          "type": "string",
+          "description": "Access role (Facility Agent, HoD, or superadmin)."
+        },
+        "department": {
+          "type": "string",
+          "description": "Assigned department (Operations, Quality Assurance, Management)."
+        },
+        "facility": {
+          "type": "string",
+          "description": "Assigned DHL facility (PNHGTW, PNHASC, PNHSVC, All)."
+        },
+        "phoneNumber": {
+          "type": "string",
+          "description": "Primary login phone number."
+        },
+        "phoneNumbers": {
+          "type": "array",
+          "description": "List of associated phone numbers for login."
+        },
+        "email": {
+          "type": "string",
+          "description": "Outlook communication email address."
+        },
+        "status": {
+          "type": "string",
+          "description": "Approval status (pending, approved, rejected)."
+        },
+        "avatarUrl": {
+          "type": "string",
+          "description": "Colleague profile avatar URL."
+        }
+      },
+      "required": ["id", "fullName", "role", "phoneNumber"]
+    },
+    "SystemSetting": {
+      "title": "SystemSetting",
+      "description": "Global system and authentication configuration settings.",
+      "type": "object",
+      "properties": {
+        "sandboxOtpEnabled": {
+          "type": "boolean",
+          "description": "Whether carrier-free sandbox OTP mode is enabled globally."
+        },
+        "lastUpdatedBy": {
+          "type": "string",
+          "description": "Name or username of user who last modified settings."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update."
+        }
+      },
+      "required": ["sandboxOtpEnabled"]
+    }
+  },
+  "firestore": {
+    "/colleagues/{colleagueId}": {
+      "schema": "Colleague",
+      "description": "Collection storing registered DHL colleague profiles, roles, and phone numbers for OTP login."
+    },
+    "/system_settings/{settingId}": {
+      "schema": "SystemSetting",
+      "description": "Collection storing external system configuration and login OTP mode settings."
+    }
+  }
+}

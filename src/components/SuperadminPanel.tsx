@@ -7,7 +7,7 @@ import {
   Search, Eye, Trash2, Filter, FileText, List, MessageSquare, Calendar, User
 } from 'lucide-react';
 import { ActionOwner, VoCRecord } from '../types';
-import { fetchColleagues, saveColleague } from '../utils/firebaseSync';
+import { fetchColleagues, saveColleague, fetchSystemLoginSettings, saveSystemLoginSettings } from '../utils/firebaseSync';
 import { exportMasterExcelWorkbook } from '../utils/excelDatabase';
 import { 
   getPowerAutomateConfig, 
@@ -97,9 +97,14 @@ export default function SuperadminPanel({ onClose, records, currentUser, initial
   const [newRole, setNewRole] = useState('Facility Agent');
   const [newFacility, setNewFacility] = useState('PNHGTW');
 
-  // Load colleagues on mount
+  // Load colleagues and cloud login settings on mount
   useEffect(() => {
     loadColleaguesList();
+    fetchSystemLoginSettings().then(settings => {
+      setIsSandboxMode(settings.sandboxOtpEnabled);
+    }).catch(err => {
+      console.warn('Could not fetch cloud login settings:', err);
+    });
   }, []);
 
   const loadColleaguesList = async () => {
@@ -116,13 +121,13 @@ export default function SuperadminPanel({ onClose, records, currentUser, initial
   };
 
   // --- HANDLERS FOR OTP SANDBOX ---
-  const handleToggleSandbox = (enabled: boolean) => {
+  const handleToggleSandbox = async (enabled: boolean) => {
     setIsSandboxMode(enabled);
-    localStorage.setItem('dhl_sandbox_otp_enabled', String(enabled));
+    await saveSystemLoginSettings({ sandboxOtpEnabled: enabled }, currentUser?.fullName || 'Superadmin');
     setOtpSaveMessage(
       enabled 
-        ? 'Sandbox Mode enabled! Login form will use simulated carrier-free OTP.' 
-        : 'Production SMS Mode enabled! Live Firebase SMS auth active.'
+        ? 'Sandbox Mode enabled & saved to Cloud Firestore! Login form will use simulated carrier-free OTP.' 
+        : 'Production SMS Mode enabled & saved to Cloud Firestore! Live Firebase SMS auth active.'
     );
     setTimeout(() => setOtpSaveMessage(null), 3000);
   };
@@ -486,9 +491,10 @@ export default function SuperadminPanel({ onClose, records, currentUser, initial
 
                 <div className="p-3.5 bg-slate-100 rounded-xl text-[11px] text-slate-600 border border-slate-200 flex items-start gap-2.5">
                   <Shield className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold text-slate-800 block mb-0.5">Note for Superadmins:</span>
-                    Changes take effect immediately for all subsequent login attempts. Current active user sessions remain authenticated.
+                  <div className="space-y-1">
+                    <span className="font-bold text-slate-800 block">External Authentication & Local Survey Storage:</span>
+                    <p>• <strong>User Logins & OTP Configuration:</strong> Stored externally in Cloud Firestore (synchronized across all computers so logins, colleague roles, and OTP access work everywhere).</p>
+                    <p>• <strong>Survey Data & Feedback Records:</strong> Saved strictly locally on this computer's browser storage (ensuring complete customer data sovereignty and privacy).</p>
                   </div>
                 </div>
               </div>

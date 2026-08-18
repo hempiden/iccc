@@ -12,7 +12,13 @@ import {
 } from 'firebase/auth';
 import { auth } from '../utils/firebase';
 import { ActionOwner } from '../types';
-import { resolveColleagueProfile, findColleagueByPhoneNumber, normalizePhoneNumber } from '../utils/firebaseSync';
+import { 
+  resolveColleagueProfile, 
+  findColleagueByPhoneNumber, 
+  normalizePhoneNumber,
+  fetchSystemLoginSettings,
+  saveSystemLoginSettings
+} from '../utils/firebaseSync';
 
 interface PhoneAuthLoginProps {
   onLoginSuccess: (user: ActionOwner, firebaseUser: FirebaseUser | null) => void;
@@ -80,15 +86,24 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
     }
   }, [resendCooldown]);
   
-  // Sandbox test bypass mode - reads setting configured by Superadmin
+  // Sandbox test bypass mode - reads setting configured externally by Superadmin
   const [isSandboxMode, setIsSandboxMode] = useState(() => {
     const stored = localStorage.getItem('dhl_sandbox_otp_enabled');
     return stored !== null ? stored === 'true' : true;
   });
 
-  const handleToggleSandbox = (newVal: boolean) => {
+  // Fetch global login settings from Firestore on mount
+  useEffect(() => {
+    fetchSystemLoginSettings().then(settings => {
+      setIsSandboxMode(settings.sandboxOtpEnabled);
+    }).catch(err => {
+      console.warn('Could not fetch cloud login settings on mount:', err);
+    });
+  }, []);
+
+  const handleToggleSandbox = async (newVal: boolean) => {
     setIsSandboxMode(newVal);
-    localStorage.setItem('dhl_sandbox_otp_enabled', String(newVal));
+    await saveSystemLoginSettings({ sandboxOtpEnabled: newVal });
   };
 
   const confirmationResultRef = useRef<ConfirmationResult | null>(null);
