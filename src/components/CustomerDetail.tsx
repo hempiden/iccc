@@ -29,8 +29,8 @@ const PRESET_ACTION_OWNERS: ActionOwner[] = [
   { id: '4', username: 'thida.sovann', fullName: 'Thida Sovann', role: 'Resolution Specialist', department: 'Escalations Team', avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=80&fit=crop&q=80' }
 ];
 
-const getFacilityEmail = (facility: string): string => {
-  const clean = facility.trim().toUpperCase();
+const getFacilityEmail = (facility?: string): string => {
+  const clean = (facility || '').trim().toUpperCase();
   if (clean.includes('PNH') || clean.includes('GTW')) return 'facility.pnh@dhl.com';
   if (clean.includes('REP')) return 'facility.rep@dhl.com';
   if (clean.includes('KOS')) return 'facility.kos@dhl.com';
@@ -38,17 +38,17 @@ const getFacilityEmail = (facility: string): string => {
   return 'facility.operations@dhl.com';
 };
 
-const getPicEmail = (picName: string, facility: string, loadedColleagues: ActionOwner[] = []): string => {
+const getPicEmail = (picName?: string, facility?: string, loadedColleagues: ActionOwner[] = []): string => {
   if (!picName || picName.trim() === '' || picName.toLowerCase() === 'unassigned') {
     return getFacilityEmail(facility);
   }
 
   // 1. Check in PRESET_ACTION_OWNERS
-  let colleague = PRESET_ACTION_OWNERS.find(c => c.fullName.toLowerCase() === picName.toLowerCase().trim());
+  let colleague = PRESET_ACTION_OWNERS.find(c => c.fullName.toLowerCase() === (picName || '').toLowerCase().trim());
   
   // 2. Check in loadedColleagues
   if (!colleague && loadedColleagues) {
-    colleague = loadedColleagues.find(c => c.fullName.toLowerCase() === picName.toLowerCase().trim());
+    colleague = loadedColleagues.find(c => c.fullName.toLowerCase() === (picName || '').toLowerCase().trim());
   }
 
   let picEmail = '';
@@ -56,7 +56,7 @@ const getPicEmail = (picName: string, facility: string, loadedColleagues: Action
     picEmail = `${colleague.username}@dhl.com`;
   } else {
     // Generate a default email alias from the custom name (e.g., "Rothana Art" -> "rothana.art@dhl.com")
-    const cleanName = picName.toLowerCase().trim().replace(/[^a-z0-9\s.-]/g, '').replace(/\s+/g, '.');
+    const cleanName = (picName || '').toLowerCase().trim().replace(/[^a-z0-9\s.-]/g, '').replace(/\s+/g, '.');
     picEmail = cleanName ? `${cleanName}@dhl.com` : '';
   }
 

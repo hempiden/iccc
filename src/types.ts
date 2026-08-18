@@ -76,3 +76,57 @@ export interface DashboardFilters {
   ownerFilter: string;
   channelFilter: string;
 }
+
+export type SentimentType = 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' | 'NO_OPINION' | 'MIXED_OPINION' | 'STRONGLY_POSITIVE';
+
+export interface TopicSentimentRecord {
+  id: string;
+  surveyId: string;
+  commentField: string;
+  comment: string;
+  phrase: string;
+  topicTheme: string;
+  parentTopic: string;
+  subTopic: string;
+  sentiment: SentimentType;
+  mainScore: number;
+  countryUnit: string;
+  responseDate?: string;
+}
+
+export interface TopicAnalyticsItem {
+  name: string; // Full topic or parent topic name
+  parentTopic?: string;
+  subTopic?: string;
+  isSubTopic?: boolean;
+  volume: number;
+  volumeChange?: string;
+  percentOfResponses: number;
+  positiveCount: number;
+  negativeCount: number;
+  neutralCount: number;
+  mixedCount: number;
+  percentPositive: number;
+  percentNegative: number;
+  percentNeutral: number;
+  percentMixed: number;
+  impactScore: number;
+  subTopics?: TopicAnalyticsItem[];
+  samplePhrases?: {
+    id: string;
+    surveyId: string;
+    phrase: string;
+    comment: string;
+    sentiment: SentimentType;
+    score: number;
+  }[];
+}
+
+export interface TopicHighlightSummary {
+  topic: string;
+  subTopicHighlights: {
+    aspect: string; // e.g. "Overall Satisfaction", "Politeness", "Helpfulness", "Timeliness"
+    summary: string; // concise AI synthesis of customer feedback
+  }[];
+}
+

@@ -373,8 +373,8 @@ export function addActionMatrixSlide(
   });
 
   // Topic & Category Badges
-  const topicTag = (record.topic || 'CUSTOMS_CLEARANCE').toUpperCase().replace(/\s+/g, '_');
-  const catTag = record.category.toUpperCase();
+  const topicTag = String(record?.topic || 'CUSTOMS_CLEARANCE').toUpperCase().replace(/\s+/g, '_');
+  const catTag = String(record?.category || 'General').toUpperCase();
   slide.addShape(pres.ShapeType.roundRect, {
     x: cell1X,
     y: bodyY + 4.5,
@@ -418,8 +418,8 @@ export function addActionMatrixSlide(
   });
 
   // Company Name
-  const compName = record.accountName || record.customerName || 'ACTEUS CAMBODIA CO., LTD';
-  slide.addText(`(${compName.toUpperCase()})`, {
+  const compName = record?.accountName || record?.customerName || 'ACTEUS CAMBODIA CO., LTD';
+  slide.addText(`(${String(compName).toUpperCase()})`, {
     x: cell1X,
     y: bodyY + 4.82,
     w: cell1W,
@@ -532,7 +532,7 @@ export function addActionMatrixSlide(
     line: { color: statusColor }
   });
 
-  slide.addText(record.status.toUpperCase(), {
+  slide.addText(String(record?.status || 'PENDING').toUpperCase(), {
     x: cell5X,
     y: bodyY + (bodyH / 2) - 0.3,
     w: col5W,
@@ -1300,7 +1300,7 @@ export async function exportVoCToPowerPoint(
       fill: { color: 'FFFFFF' },
       line: { color: scoreColor, width: 1.5 }
     });
-    slide.addText(`Score: ${record.likelihood}/10\n${record.category.toUpperCase()}`, {
+    slide.addText(`Score: ${record.likelihood}/10\n${String(record.category || 'General').toUpperCase()}`, {
       x: 8.8,
       y: 0.17,
       w: 1.9,
@@ -1321,7 +1321,7 @@ export async function exportVoCToPowerPoint(
       fill: { color: 'FFFFFF' },
       line: { color: statusColor, width: 1.5 }
     });
-    slide.addText(`Status:\n${record.status.toUpperCase()}`, {
+    slide.addText(`Status:\n${String(record.status || 'PENDING').toUpperCase()}`, {
       x: 10.85,
       y: 0.17,
       w: 2.05,

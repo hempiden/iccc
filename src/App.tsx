@@ -17,6 +17,7 @@ import ColleagueManager from './components/ColleagueManager';
 import SuperadminPanel from './components/SuperadminPanel';
 import UserProfileModal from './components/UserProfileModal';
 import NotificationCenter, { CommentNotification } from './components/NotificationCenter';
+import { TextAnalyticsDashboard } from './components/TextAnalyticsDashboard';
 import { saveVoCRecord, batchSaveVoCRecords, appendVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber, clearVoCRecords, deleteVoCRecords } from './utils/firebaseSync';
 import { healRecordTimeline } from './utils/parser';
 import { exportMasterExcelWorkbook } from './utils/excelDatabase';
@@ -134,7 +135,7 @@ export default function App() {
   const [showSuperadminPanel, setShowSuperadminPanel] = useState(false);
   const [superadminTab, setSuperadminTab] = useState<'otp' | 'sharepoint' | 'users' | 'database'>('otp');
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'upload'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'analytics' | 'upload'>('dashboard');
 
   // Notifications states and handlers
   const [readNotifications, setReadNotifications] = useState<string[]>(() => {
@@ -516,6 +517,16 @@ export default function App() {
               )}
             </button>
 
+            <button
+              onClick={() => {
+                setActiveTab('analytics');
+              }}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-wider py-3 rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
+            >
+              <Presentation className="w-4 h-4 text-amber-300" />
+              <span>Open AI Text Analytics & PPTX Generator</span>
+            </button>
+
             {records.length > 0 && (
               <button
                 type="button"
@@ -546,6 +557,18 @@ export default function App() {
     );
   }
 
+  // If activeTab is 'analytics', render dedicated full-screen TextAnalyticsDashboard
+  if (activeTab === 'analytics') {
+    return (
+      <TextAnalyticsDashboard 
+        onBackToVoC={() => {
+          setActiveTab('dashboard');
+          setSelectedRecordId(null);
+        }} 
+      />
+    );
+  }
+
   const formatDateShort = (timestamp: number) => {
     const d = new Date(timestamp);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -570,23 +593,39 @@ export default function App() {
             </div>
           </div>
 
-          {/* Navigation Tabs for Superadmin */}
-          {currentUser?.role === 'superadmin' && (
-            <div className="hidden sm:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-              <button
-                onClick={() => {
-                  setActiveTab('dashboard');
-                  setSelectedRecordId(null);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === 'dashboard'
-                    ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Activity className="w-3.5 h-3.5 text-amber-500" />
-                <span>Dashboard</span>
-              </button>
+          {/* Navigation Tabs */}
+          <div className="hidden sm:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button
+              onClick={() => {
+                setActiveTab('dashboard');
+                setSelectedRecordId(null);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'dashboard'
+                  ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5 text-amber-500" />
+              <span>Case CRM</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('analytics');
+                setSelectedRecordId(null);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'analytics'
+                  ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Presentation className="w-3.5 h-3.5 text-red-500" />
+              <span>AI Text Analytics</span>
+            </button>
+
+            {currentUser?.role === 'superadmin' && (
               <button
                 onClick={() => {
                   setActiveTab('upload');
@@ -601,8 +640,8 @@ export default function App() {
                 <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500" />
                 <span>Upload Center</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
