@@ -373,22 +373,22 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
         if (uploadMode === 'append') {
           setStatus({
             type: 'idle',
-            message: `Saving ${parsedRecords.length} appended records to Cloud Firestore...`
+            message: `Appending ${parsedRecords.length} records to local storage...`
           });
           await onAppendRecords(parsedRecords);
           setStatus({
             type: 'success',
-            message: `Successfully appended ${parsedRecords.length} customer records to the active database!`
+            message: `Successfully appended ${parsedRecords.length} customer records without losing existing data!`
           });
         } else {
           setStatus({
             type: 'idle',
-            message: `Saving ${parsedRecords.length} new records to Cloud Firestore (replacing existing)...`
+            message: `Replacing database with ${parsedRecords.length} new records...`
           });
           await onRecordsLoaded(parsedRecords);
           setStatus({
             type: 'success',
-            message: `Successfully overwrote the database with ${parsedRecords.length} new customer records!`
+            message: `Successfully replaced the database with ${parsedRecords.length} customer records!`
           });
         }
 

@@ -17,7 +17,7 @@ import ColleagueManager from './components/ColleagueManager';
 import SuperadminPanel from './components/SuperadminPanel';
 import UserProfileModal from './components/UserProfileModal';
 import NotificationCenter, { CommentNotification } from './components/NotificationCenter';
-import { saveVoCRecord, batchSaveVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber, clearVoCRecords, deleteVoCRecords } from './utils/firebaseSync';
+import { saveVoCRecord, batchSaveVoCRecords, appendVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber, clearVoCRecords, deleteVoCRecords } from './utils/firebaseSync';
 import { healRecordTimeline } from './utils/parser';
 import { exportMasterExcelWorkbook } from './utils/excelDatabase';
 import { syncRecordToPowerAutomate, syncBatchToPowerAutomate } from './utils/powerAutomateSync';
@@ -361,16 +361,14 @@ export default function App() {
 
   // Handler for appending files
   const handleAppendRecords = async (newRecords: VoCRecord[]) => {
-    const existingIds = new Set(records.map(r => r.id));
-    const uniqueNew = newRecords.filter(r => !existingIds.has(r.id));
-    const combined = [...records, ...uniqueNew];
-    setRecords(combined);
-
     try {
       setLoadingDb(true);
-      await batchSaveVoCRecords(uniqueNew);
-      // Automatically trigger Power Automate batch sync
-      syncBatchToPowerAutomate(uniqueNew, 'APPEND_UPLOAD');
+      // Append or merge new records with existing records in local persistence
+      const combined = await appendVoCRecords(newRecords);
+      // Update state with the full combined list
+      setRecords(combined);
+      // Automatically trigger Power Automate batch sync for the new rows
+      syncBatchToPowerAutomate(newRecords, 'APPEND_UPLOAD');
     } catch (e) {
       console.error('Failed to batch save appended records:', e);
       throw e;

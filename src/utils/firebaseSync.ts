@@ -165,7 +165,7 @@ export async function saveVoCRecord(record: VoCRecord): Promise<void> {
 }
 
 /**
- * Saves multiple survey records to local storage.
+ * Saves multiple survey records to local storage (replaces existing list).
  */
 export async function batchSaveVoCRecords(records: VoCRecord[]): Promise<void> {
   try {
@@ -174,6 +174,27 @@ export async function batchSaveVoCRecords(records: VoCRecord[]): Promise<void> {
     console.error('Error saving batch records to local storage:', error);
   }
 }
+
+/**
+ * Appends or merges new survey records with existing ones in local storage without losing prior data.
+ */
+export async function appendVoCRecords(newRecords: VoCRecord[]): Promise<VoCRecord[]> {
+  try {
+    const existing = await fetchVoCRecords();
+    const map = new Map<string, VoCRecord>();
+    // Index existing records
+    existing.forEach(r => map.set(r.id, r));
+    // Merge or append new records
+    newRecords.forEach(r => map.set(r.id, r));
+    const combined = Array.from(map.values());
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(combined));
+    return combined;
+  } catch (error) {
+    console.error('Error appending survey records to local storage:', error);
+    return newRecords;
+  }
+}
+
 
 /**
  * Deletes all VoC survey records from local storage.
