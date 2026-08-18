@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Award, Sparkles, ShieldAlert, CheckCircle2, Clock, HelpCircle, RefreshCw, AlertCircle, Calendar, Download, FileSpreadsheet, FileText, ChevronDown } from 'lucide-react';
+import { Search, Filter, Award, Sparkles, ShieldAlert, CheckCircle2, Clock, HelpCircle, RefreshCw, AlertCircle, Calendar, Download, FileSpreadsheet, FileText, Presentation, ChevronDown, Loader2 } from 'lucide-react';
 import { VoCRecord, ActionOwner } from '../types';
 import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix } from '../utils/parser';
 import { exportFilteredExcelWorkbook, exportFilteredCSV } from '../utils/excelDatabase';
+import { exportVoCToPowerPoint } from '../utils/pptxExport';
 
 interface CompactSidebarListProps {
   records: VoCRecord[];
@@ -72,7 +73,9 @@ export default function CompactSidebarList({
     });
   }, [records, searchQuery, categoryFilter]);
 
-  const handleExport = (format: 'xlsx' | 'csv') => {
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async (format: 'xlsx' | 'csv' | 'pptx') => {
     const filterContext = {
       category: categoryFilter,
       status: statusFilter,
@@ -82,12 +85,21 @@ export default function CompactSidebarList({
       selectedCount: filteredRecords.length
     };
 
-    if (format === 'xlsx') {
-      exportFilteredExcelWorkbook(filteredRecords, filterContext, currentUser);
-    } else {
-      exportFilteredCSV(filteredRecords, filterContext);
+    setIsExporting(true);
+    try {
+      if (format === 'xlsx') {
+        exportFilteredExcelWorkbook(filteredRecords, filterContext, currentUser);
+      } else if (format === 'csv') {
+        exportFilteredCSV(filteredRecords, filterContext);
+      } else if (format === 'pptx') {
+        await exportVoCToPowerPoint(filteredRecords, filterContext, currentUser);
+      }
+    } catch (err) {
+      console.error('Export failed:', err);
+    } finally {
+      setIsExporting(false);
+      setShowExportMenu(false);
     }
-    setShowExportMenu(false);
   };
 
   const getScoreColor = (score: number) => {
@@ -417,7 +429,23 @@ export default function CompactSidebarList({
               </div>
               <button
                 type="button"
+                onClick={() => handleExport('pptx')}
+                disabled={isExporting}
+                className="w-full px-3 py-1.5 hover:bg-amber-50/80 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2 transition-colors text-left cursor-pointer border-b border-slate-100 pb-2 mb-1"
+              >
+                <Presentation className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-[11px] text-amber-800 flex items-center gap-1">
+                    PowerPoint Presentation (.pptx)
+                    {isExporting && <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />}
+                  </div>
+                  <div className="text-[9px] text-slate-400 font-normal">Summary slide + 1 slide per case</div>
+                </div>
+              </button>
+              <button
+                type="button"
                 onClick={() => handleExport('xlsx')}
+                disabled={isExporting}
                 className="w-full px-3 py-1.5 hover:bg-amber-50/80 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2 transition-colors text-left cursor-pointer"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -429,6 +457,7 @@ export default function CompactSidebarList({
               <button
                 type="button"
                 onClick={() => handleExport('csv')}
+                disabled={isExporting}
                 className="w-full px-3 py-1.5 hover:bg-amber-50/80 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2 transition-colors text-left cursor-pointer"
               >
                 <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />

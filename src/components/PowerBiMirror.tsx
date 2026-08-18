@@ -8,6 +8,7 @@ import {
 import { VoCRecord, TimelineEvent, ActionOwner } from '../types';
 import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix, formatTargetDeadline } from '../utils/parser';
 import { exportFilteredExcelWorkbook, exportFilteredCSV } from '../utils/excelDatabase';
+import { exportVoCToPowerPoint } from '../utils/pptxExport';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface PowerBiMirrorProps {
@@ -636,7 +637,9 @@ export default function PowerBiMirror({
     }
   };
 
-  const handleExportFiltered = (format: 'xlsx' | 'csv', onlySelected: boolean = false) => {
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportFiltered = async (format: 'xlsx' | 'csv' | 'pptx', onlySelected: boolean = false) => {
     let targetRecords = filteredTableRecords;
     if (onlySelected && selectedSurveyIds.length > 0) {
       targetRecords = filteredTableRecords.filter(r => selectedSurveyIds.includes(r.id));
@@ -653,12 +656,21 @@ export default function PowerBiMirror({
       selectedCount: targetRecords.length
     };
 
-    if (format === 'xlsx') {
-      exportFilteredExcelWorkbook(targetRecords, filterContext, currentUser);
-    } else {
-      exportFilteredCSV(targetRecords, filterContext);
+    setIsExporting(true);
+    try {
+      if (format === 'xlsx') {
+        exportFilteredExcelWorkbook(targetRecords, filterContext, currentUser);
+      } else if (format === 'csv') {
+        exportFilteredCSV(targetRecords, filterContext);
+      } else if (format === 'pptx') {
+        await exportVoCToPowerPoint(targetRecords, filterContext, currentUser);
+      }
+    } catch (err) {
+      console.error('Export failed:', err);
+    } finally {
+      setIsExporting(false);
+      setShowExportMenu(false);
     }
-    setShowExportMenu(false);
   };
 
   // --- AI Summary Generator (Instant Client-side AI) ---
@@ -1277,7 +1289,20 @@ export default function PowerBiMirror({
                       </div>
                       <button
                         type="button"
+                        onClick={() => handleExportFiltered('pptx', true)}
+                        disabled={isExporting}
+                        className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
+                      >
+                        <Presentation className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <div>
+                          <div className="font-bold text-[11px] text-amber-800">Selected to PowerPoint (.pptx)</div>
+                          <div className="text-[9px] text-slate-400 font-normal">Summary slide + {selectedSurveyIds.length} case slides</div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleExportFiltered('xlsx', true)}
+                        disabled={isExporting}
                         className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
                       >
                         <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -1289,6 +1314,7 @@ export default function PowerBiMirror({
                       <button
                         type="button"
                         onClick={() => handleExportFiltered('csv', true)}
+                        disabled={isExporting}
                         className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
                       >
                         <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
@@ -1309,7 +1335,20 @@ export default function PowerBiMirror({
                     )}
                     <button
                       type="button"
+                      onClick={() => handleExportFiltered('pptx', false)}
+                      disabled={isExporting}
+                      className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
+                    >
+                      <Presentation className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <div>
+                        <div className="font-bold text-[11px] text-amber-800">PowerPoint Presentation (.pptx)</div>
+                        <div className="text-[9px] text-slate-400 font-normal">Scorecard summary + 1 slide per case</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleExportFiltered('xlsx', false)}
+                      disabled={isExporting}
                       className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
                     >
                       <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -1321,6 +1360,7 @@ export default function PowerBiMirror({
                     <button
                       type="button"
                       onClick={() => handleExportFiltered('csv', false)}
+                      disabled={isExporting}
                       className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
                     >
                       <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
