@@ -13,7 +13,9 @@ import {
   Meh,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   Sparkles,
+  BarChart2,
   BarChart3,
   Layers,
   Presentation,
@@ -21,7 +23,12 @@ import {
   Copy,
   SlidersHorizontal,
   ExternalLink,
-  Edit3
+  Edit3,
+  MoreVertical,
+  Info,
+  X,
+  LayoutGrid,
+  MessageSquare
 } from 'lucide-react';
 import {
   TopicSentimentRecord,
@@ -33,7 +40,8 @@ import {
   RAW_SAMPLE_CSV,
   parseCSV,
   aggregateTopicAnalytics,
-  getDefaultTopicHighlights
+  getDefaultTopicHighlights,
+  TOPIC_AI_SUMMARIES
 } from '../utils/textAnalyticsData';
 import { exportTextAnalyticsToPowerPoint } from '../utils/textAnalyticsPptx';
 import * as XLSX from 'xlsx';
@@ -67,6 +75,26 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     Delivery: true,
     'Customs Clearance': true
   });
+
+  // Top/Bottom View controls
+  const [isTopBottomExpanded, setIsTopBottomExpanded] = useState(true);
+  const [topBottomDisplayMode, setTopBottomDisplayMode] = useState<'table' | 'chart'>('table');
+  const [viewTopicSummaryModal, setViewTopicSummaryModal] = useState<string | null>(null);
+
+  // Pill Style Generator for Screenshot 1 Impact Score Bars
+  const getImpactPillStyle = (score: number): { bg: string; text: string } => {
+    if (score >= 6.0) return { bg: '#48BB78', text: '#0F172A' }; // Solid Green (+6.9)
+    if (score >= 3.0) return { bg: '#68D391', text: '#0F172A' }; // Green (+4.0)
+    if (score >= 2.0) return { bg: '#68D391', text: '#0F172A' }; // Green (+2.4)
+    if (score >= 1.5) return { bg: '#9AE6B4', text: '#0F172A' }; // Light Green (+1.8, +1.5)
+    if (score >= 1.0) return { bg: '#C6F6D5', text: '#0F172A' }; // Light Pastel Green (+1.3)
+    if (score >= 0.0) return { bg: '#E6FFFA', text: '#0F172A' }; // Very Light Mint (+0.8)
+
+    if (score <= -4.0) return { bg: '#E53E3E', text: '#0F172A' }; // Solid Coral Red (-4.7)
+    if (score <= -2.4) return { bg: '#F56565', text: '#0F172A' }; // Coral Red (-2.9, -2.7, -2.5)
+    if (score <= -1.5) return { bg: '#FEB2B2', text: '#0F172A' }; // Light Coral Red (-2.1, -1.6)
+    return { bg: '#FED7D7', text: '#0F172A' }; // Light Pastel Red (-1.3)
+  };
 
   // Custom highlights for ICCC+ Executive slide
   const [highlights, setHighlights] = useState<{
@@ -389,173 +417,274 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         {/* TAB 1: TOP & BOTTOM SUB-TOPICS (SCREENSHOT 1) */}
         {activeTab === 'top_bottom' && (
           <div className="space-y-6">
-            {/* Header Info Banner */}
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  Top and Bottom Sub-Topics
-                </h2>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1">
-                  <span>
-                    <strong>Time Period:</strong> 06/01/26 to 07/31/26
-                  </span>
-                  <span className="text-slate-300">•</span>
-                  <span>
-                    <strong>Reporting Date:</strong> Responsedate
-                  </span>
-                  <span className="text-slate-300">•</span>
-                  <span>
-                    <strong>Metric:</strong> Main Score incl. Social
-                  </span>
-                  <span className="text-slate-300">•</span>
-                  <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-semibold">
-                    {records.length} Analyzed Records
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleExportPPTX('top_bottom')}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 transition"
-                >
-                  <Presentation className="w-3.5 h-3.5 text-red-600" />
-                  Download Slide (.pptx)
-                </button>
-              </div>
-            </div>
-
-            {/* Dual Grid: Top Topics (Green) vs Bottom Topics (Red) */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* TOP TOPICS CARD */}
-              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-sm">
-                      +
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900">Top Topics</h3>
-                      <p className="text-xs text-emerald-600 font-semibold">
-                        Positive Impact Score (Higher driver of satisfaction)
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                    {analytics.topSubTopics.length} Topics
-                  </span>
-                </div>
-
-                {/* Bar Chart Visualization */}
-                <div className="space-y-4">
-                  {analytics.topSubTopics.slice(0, 10).map((item, idx) => {
-                    const maxImpact = Math.max(1, analytics.topSubTopics[0]?.impactScore || 8);
-                    const widthPct = Math.min(100, Math.max(8, (item.impactScore / maxImpact) * 100));
-
-                    return (
-                      <div
-                        key={item.name}
-                        onClick={() => {
-                          setSelectedSubTopic(item.name);
-                          setActiveTab('summary');
-                        }}
-                        className="group cursor-pointer hover:bg-emerald-50/50 p-2.5 rounded-xl transition border border-transparent hover:border-emerald-200"
+            {/* Medallia / DHL Style Top and Bottom Sub-Topics Card */}
+            <div className="bg-white rounded-xl shadow-xs border border-slate-200/90 overflow-hidden">
+              {/* Card Header matching Screenshot 1 */}
+              <div className="px-6 py-4 flex flex-wrap items-center justify-between border-b border-slate-100 gap-3">
+                <div className="flex items-start gap-2.5">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-1.5">
+                        Top and Bottom Sub-Topics
+                      </h2>
+                      <button
+                        onClick={() => setIsTopBottomExpanded(!isTopBottomExpanded)}
+                        className="text-slate-400 hover:text-slate-600 transition"
+                        title={isTopBottomExpanded ? "Collapse card" : "Expand card"}
                       >
-                        <div className="flex items-center justify-between text-xs mb-1.5">
-                          <span className="font-bold text-slate-800 group-hover:text-emerald-900 flex items-center gap-1.5">
-                            <span className="text-slate-400 font-mono text-[10px]">#{idx + 1}</span>
-                            {item.name}
+                        {isTopBottomExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-indigo-600" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-slate-400" />
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
+                      <span>Time Period: 06/01/26 to 07/31/26</span>
+                      <span className="text-slate-300">|</span>
+                      <span>Reporting Date: Responsedate</span>
+                      <span className="text-slate-300">|</span>
+                      <span>Question: Main Score incl. Social</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Right controls */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                    <button
+                      onClick={() => setTopBottomDisplayMode('chart')}
+                      title="Bar chart view"
+                      className={`p-1.5 rounded-md text-xs font-semibold transition ${
+                        topBottomDisplayMode === 'chart'
+                          ? 'bg-white text-indigo-700 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <BarChart2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setTopBottomDisplayMode('table')}
+                      title="Table matrix view"
+                      className={`p-1.5 rounded-md text-xs font-semibold transition ${
+                        topBottomDisplayMode === 'table'
+                          ? 'bg-white text-indigo-700 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => handleExportPPTX('top_bottom')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 transition shadow-2xs"
+                  >
+                    <Presentation className="w-3.5 h-3.5 text-red-600" />
+                    Export Slide (.pptx)
+                  </button>
+
+                  <button
+                    onClick={() => handleExportExcel()}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition"
+                    title="Export table to Excel"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Collapsible Content */}
+              {isTopBottomExpanded && (
+                <div>
+                  {topBottomDisplayMode === 'table' ? (
+                    /* Two Column Exact Matrix matching Screenshot 1 */
+                    <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200/80">
+                      {/* LEFT COLUMN: TOP TOPICS */}
+                      <div className="p-6 space-y-4">
+                        {/* Column Header */}
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-800 pb-2 border-b border-slate-100">
+                          <span className="w-1/2">Top Topics</span>
+                          <span className="w-1/4 text-center flex items-center justify-center gap-1 text-indigo-600 font-semibold">
+                            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                            Summary
                           </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-slate-500 font-medium">{item.volume} mentions</span>
-                            <span className="font-extrabold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded text-[11px]">
-                              +{item.impactScore.toFixed(1)}
-                            </span>
-                          </div>
+                          <span className="w-1/4 text-right flex items-center justify-end gap-1 text-slate-600">
+                            Impact Score
+                            <Info className="w-3 h-3 text-slate-400" />
+                          </span>
                         </div>
 
-                        {/* Bar */}
-                        <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden flex">
-                          <div
-                            style={{ width: `${widthPct}%` }}
-                            className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500"
-                          />
-                        </div>
+                        {/* Top Topics Rows (7 exact benchmark rows) */}
+                        <div className="space-y-3">
+                          {analytics.topSubTopics.slice(0, 7).map((item) => {
+                            const pillStyle = getImpactPillStyle(item.impactScore);
+                            return (
+                              <div
+                                key={item.name}
+                                className="flex items-center justify-between text-xs py-1 hover:bg-slate-50/80 rounded-lg px-1.5 transition group"
+                              >
+                                {/* Topic Name */}
+                                <div className="w-1/2 pr-2">
+                                  <button
+                                    onClick={() => {
+                                      setSelectedSubTopic(item.name);
+                                      setActiveTab('summary');
+                                    }}
+                                    className="text-left font-semibold text-indigo-600 hover:text-indigo-800 hover:underline truncate block w-full"
+                                    title={item.name}
+                                  >
+                                    {item.name}
+                                  </button>
+                                </div>
 
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
-                          <span>Positive Sentiment: {item.percentPositive}%</span>
-                          <span>Negative: {item.percentNegative}%</span>
+                                {/* Summary: View */}
+                                <div className="w-1/4 text-center">
+                                  <button
+                                    onClick={() => setViewTopicSummaryModal(item.name)}
+                                    className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline inline-flex items-center gap-0.5"
+                                  >
+                                    View
+                                  </button>
+                                </div>
+
+                                {/* Impact Score Pill */}
+                                <div className="w-1/4 flex justify-end">
+                                  <div
+                                    style={{ backgroundColor: pillStyle.bg, color: pillStyle.text }}
+                                    className="w-24 sm:w-28 py-1.5 px-3 rounded-lg text-right font-extrabold text-xs shadow-2xs transition-all flex items-center justify-end"
+                                  >
+                                    +{item.impactScore.toFixed(1)}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
 
-              {/* BOTTOM TOPICS CARD */}
-              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-red-100 text-red-700 flex items-center justify-center font-black text-sm">
-                      -
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900">Bottom Topics</h3>
-                      <p className="text-xs text-red-600 font-semibold">
-                        Negative Impact Score (Friction points causing detraction)
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold text-red-700 bg-red-50 px-2.5 py-1 rounded-full border border-red-200">
-                    {analytics.bottomSubTopics.length} Topics
-                  </span>
-                </div>
-
-                {/* Bar Chart Visualization */}
-                <div className="space-y-4">
-                  {analytics.bottomSubTopics.slice(0, 10).map((item, idx) => {
-                    const minImpact = Math.min(-1, analytics.bottomSubTopics[0]?.impactScore || -6);
-                    const widthPct = Math.min(100, Math.max(8, (Math.abs(item.impactScore) / Math.abs(minImpact)) * 100));
-
-                    return (
-                      <div
-                        key={item.name}
-                        onClick={() => {
-                          setSelectedSubTopic(item.name);
-                          setActiveTab('summary');
-                        }}
-                        className="group cursor-pointer hover:bg-red-50/50 p-2.5 rounded-xl transition border border-transparent hover:border-red-200"
-                      >
-                        <div className="flex items-center justify-between text-xs mb-1.5">
-                          <span className="font-bold text-slate-800 group-hover:text-red-900 flex items-center gap-1.5">
-                            <span className="text-slate-400 font-mono text-[10px]">#{idx + 1}</span>
-                            {item.name}
+                      {/* RIGHT COLUMN: BOTTOM TOPICS */}
+                      <div className="p-6 space-y-4">
+                        {/* Column Header */}
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-800 pb-2 border-b border-slate-100">
+                          <span className="w-1/2">Bottom Topics</span>
+                          <span className="w-1/4 text-center flex items-center justify-center gap-1 text-indigo-600 font-semibold">
+                            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                            Summary
                           </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-slate-500 font-medium">{item.volume} mentions</span>
-                            <span className="font-extrabold text-red-600 bg-red-100 px-2 py-0.5 rounded text-[11px]">
-                              {item.impactScore.toFixed(1)}
-                            </span>
-                          </div>
+                          <span className="w-1/4 text-right flex items-center justify-end gap-1 text-slate-600">
+                            Impact Score
+                            <Info className="w-3 h-3 text-slate-400" />
+                          </span>
                         </div>
 
-                        {/* Bar */}
-                        <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden flex">
-                          <div
-                            style={{ width: `${widthPct}%` }}
-                            className="bg-gradient-to-r from-red-500 to-rose-600 h-full rounded-full transition-all duration-500"
-                          />
-                        </div>
+                        {/* Bottom Topics Rows (7 exact benchmark rows) */}
+                        <div className="space-y-3">
+                          {analytics.bottomSubTopics.slice(0, 7).map((item) => {
+                            const pillStyle = getImpactPillStyle(item.impactScore);
+                            return (
+                              <div
+                                key={item.name}
+                                className="flex items-center justify-between text-xs py-1 hover:bg-slate-50/80 rounded-lg px-1.5 transition group"
+                              >
+                                {/* Topic Name */}
+                                <div className="w-1/2 pr-2">
+                                  <button
+                                    onClick={() => {
+                                      setSelectedSubTopic(item.name);
+                                      setActiveTab('summary');
+                                    }}
+                                    className="text-left font-semibold text-indigo-600 hover:text-indigo-800 hover:underline truncate block w-full"
+                                    title={item.name}
+                                  >
+                                    {item.name}
+                                  </button>
+                                </div>
 
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
-                          <span>Negative Sentiment: {item.percentNegative}%</span>
-                          <span>Positive: {item.percentPositive}%</span>
+                                {/* Summary: View */}
+                                <div className="w-1/4 text-center">
+                                  <button
+                                    onClick={() => setViewTopicSummaryModal(item.name)}
+                                    className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline inline-flex items-center gap-0.5"
+                                  >
+                                    View
+                                  </button>
+                                </div>
+
+                                {/* Impact Score Pill */}
+                                <div className="w-1/4 flex justify-end">
+                                  <div
+                                    style={{ backgroundColor: pillStyle.bg, color: pillStyle.text }}
+                                    className="w-24 sm:w-28 py-1.5 px-3 rounded-lg text-right font-extrabold text-xs shadow-2xs transition-all flex items-center justify-end"
+                                  >
+                                    {item.impactScore.toFixed(1)}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ) : (
+                    /* Bar Chart Visual Mode */
+                    <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Top Topics Chart */}
+                      <div className="space-y-4">
+                        <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Top Driver Sub-Topics</h4>
+                        <div className="space-y-3">
+                          {analytics.topSubTopics.slice(0, 7).map((item, idx) => {
+                            const widthPct = Math.min(100, Math.max(10, (item.impactScore / 7.0) * 100));
+                            return (
+                              <div key={item.name} className="space-y-1">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="font-semibold text-slate-800">{idx + 1}. {item.name}</span>
+                                  <span className="font-extrabold text-emerald-700">+{item.impactScore.toFixed(1)}</span>
+                                </div>
+                                <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                                  <div style={{ width: `${widthPct}%` }} className="bg-emerald-500 h-full rounded-full" />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Bottom Topics Chart */}
+                      <div className="space-y-4">
+                        <h4 className="text-xs font-bold text-red-800 uppercase tracking-wider">Bottom Detractor Sub-Topics</h4>
+                        <div className="space-y-3">
+                          {analytics.bottomSubTopics.slice(0, 7).map((item, idx) => {
+                            const widthPct = Math.min(100, Math.max(10, (Math.abs(item.impactScore) / 5.0) * 100));
+                            return (
+                              <div key={item.name} className="space-y-1">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="font-semibold text-slate-800">{idx + 1}. {item.name}</span>
+                                  <span className="font-extrabold text-red-700">{item.impactScore.toFixed(1)}</span>
+                                </div>
+                                <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                                  <div style={{ width: `${widthPct}%` }} className="bg-red-500 h-full rounded-full" />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Card Footer matching Screenshot 1 */}
+                  <div className="px-6 py-3 bg-slate-50/60 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                    <span className="flex items-center gap-1">
+                      Some content is generated by AI
+                      <Info className="w-3 h-3 text-slate-400" />
+                    </span>
+                    <span className="text-slate-400">
+                      Total Analyzed Responses: <strong>{records.length}</strong>
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -1234,6 +1363,163 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
           </div>
         )}
       </main>
+
+      {/* TOPIC AI SUMMARY MODAL (WHEN USER CLICKS "View" ON ANY SUB-TOPIC) */}
+      {viewTopicSummaryModal && (() => {
+        const topicName = viewTopicSummaryModal;
+        const topicItem =
+          analytics.topSubTopics.find(t => t.name === topicName) ||
+          analytics.bottomSubTopics.find(t => t.name === topicName) ||
+          analytics.subTopics.find(t => t.name === topicName);
+        const aiSummary =
+          TOPIC_AI_SUMMARIES[topicName] ||
+          `Topic analytics derived from ${topicItem?.volume || 0} customer survey mentions in Cambodia.`;
+        const topicPhrases = records.filter(r => r.topicTheme === topicName);
+        const pillStyle = topicItem ? getImpactPillStyle(topicItem.impactScore) : { bg: '#E2E8F0', text: '#0F172A' };
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
+              {/* Modal Header */}
+              <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                      {topicName}
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      AI Topic Summary & Driver Impact Deep Dive
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setViewTopicSummaryModal(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto space-y-5">
+                {/* Score & Volume Banner */}
+                <div className="flex flex-wrap items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-200/80 gap-3">
+                  <div>
+                    <span className="text-xs text-slate-500 font-medium">Impact Score</span>
+                    <div className="mt-1">
+                      <span
+                        style={{ backgroundColor: pillStyle.bg, color: pillStyle.text }}
+                        className="py-1 px-3.5 rounded-lg font-black text-sm shadow-xs inline-block"
+                      >
+                        {topicItem ? (topicItem.impactScore > 0 ? `+${topicItem.impactScore.toFixed(1)}` : topicItem.impactScore.toFixed(1)) : '0.0'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-right sm:text-left">
+                    <span className="text-xs text-slate-500 font-medium">Mentions Volume</span>
+                    <p className="text-sm font-bold text-slate-900 mt-1">
+                      {topicItem?.volume || topicPhrases.length} customer phrases
+                    </p>
+                  </div>
+
+                  <div>
+                    <span className="text-xs text-slate-500 font-medium">Sentiment Split</span>
+                    <div className="flex items-center gap-2 text-xs font-bold mt-1">
+                      <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                        +{topicItem?.percentPositive || 0}% Pos
+                      </span>
+                      <span className="text-red-700 bg-red-100 px-2 py-0.5 rounded">
+                        {topicItem?.percentNegative || 0}% Neg
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* AI Executive Summary */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    AI Key Driver Synthesis
+                  </h4>
+                  <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-100 text-xs text-slate-800 leading-relaxed font-medium">
+                    {aiSummary}
+                  </div>
+                </div>
+
+                {/* Verbatim Feedback Samples */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center justify-between">
+                    <span>Sample Customer Mentions ({topicPhrases.length})</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Real extracted survey data</span>
+                  </h4>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {topicPhrases.length > 0 ? (
+                      topicPhrases.slice(0, 6).map((ph, idx) => (
+                        <div
+                          key={idx}
+                          className="p-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition text-xs space-y-1"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-slate-900">
+                              "{ph.phrase}"
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                ph.sentiment === 'POSITIVE' || ph.sentiment === 'STRONGLY_POSITIVE'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : ph.sentiment === 'NEGATIVE'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {ph.sentiment}
+                            </span>
+                          </div>
+                          {ph.comment && ph.comment !== ph.phrase && (
+                            <p className="text-[11px] text-slate-500 italic">
+                              Full: "{ph.comment}"
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-slate-400 italic py-2">
+                        No direct verbatim samples found in current filtered set.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    setSelectedSubTopic(topicName);
+                    setActiveTab('summary');
+                    setViewTopicSummaryModal(null);
+                  }}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Jump to Detailed Breakdown View
+                </button>
+
+                <button
+                  onClick={() => setViewTopicSummaryModal(null)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition shadow-xs"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
