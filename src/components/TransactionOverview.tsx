@@ -166,18 +166,18 @@ export default function TransactionOverview({
       const stats = grouped[st.name];
       const hasActualRecords = stats && stats.total > 0;
       
-      // In Power BI VoC, Likelihood to Recommend metric by transaction represents % Promoters (0-100)
       const count = hasActualRecords ? stats.total : st.defaultCount;
       const promoters = hasActualRecords ? stats.promoters : Math.round(count * (st.defaultScore / 100));
       const detractors = hasActualRecords ? stats.detractors : 0;
       const passives = hasActualRecords ? stats.passives : Math.max(0, count - promoters - detractors);
       
-      const nps = count > 0 ? Math.round(((promoters - detractors) / count) * 100) : 0;
-      
-      // Calculation: % Promoters (matching Power BI's Likelihood to Recommend exact calculation)
-      const avgScore = hasActualRecords 
-        ? Math.round((stats.promoters / stats.total) * 100)
+      // True NPS Calculation: (% Promoters - % Detractors) = ((Promoters - Detractors) / Total) * 100
+      const nps = hasActualRecords
+        ? (count > 0 ? Math.round(((stats.promoters - stats.detractors) / count) * 100) : 0)
         : st.defaultScore;
+      
+      // avgScore displays the Net Promoter Score for this transaction
+      const avgScore = nps;
 
       return {
         name: st.name,
