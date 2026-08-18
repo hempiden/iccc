@@ -962,6 +962,252 @@ export async function exportExecutiveSummarySlideToPowerPoint(
 }
 
 /**
+ * Adds the Transaction Analytics (NPS & Distribution by Transaction) slide
+ */
+export function addTransactionAnalyticsSlide(
+  pres: pptxgen,
+  records: VoCRecord[],
+  filterContext?: ExportFilterContext,
+  currentUser?: ActionOwner | null
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: SLATE_LIGHT };
+
+  const standardTransactions = [
+    { name: 'Pickup by Courier', color: '10b981', defaultScore: 50, defaultCount: 24 },
+    { name: 'Pickup Exception', color: '3730a3', defaultScore: 75, defaultCount: 20 },
+    { name: 'Drop-off at Service Point', color: '0ea5e9', defaultScore: 22, defaultCount: 23 },
+    { name: 'Self-Collection at Service Point', color: 'dc2626', defaultScore: 50, defaultCount: 2 },
+    { name: 'Delivery by Courier', color: 'c084fc', defaultScore: 85, defaultCount: 431 },
+    { name: 'Delivery Exception', color: '15803d', defaultScore: 74, defaultCount: 19 },
+    { name: 'Delivery Notification', color: 'd97706', defaultScore: 70, defaultCount: 61 },
+    { name: 'Delivery Change by Employee', color: '2563eb', defaultScore: 33, defaultCount: 3 },
+    { name: 'Duties and Taxes Payment to Employee', color: 'db2777', defaultScore: 62, defaultCount: 180 },
+    { name: 'Delivery Management via Self-Service', color: '0d9488', defaultScore: 25, defaultCount: 8 },
+  ];
+
+  // 1. Top Header Banner
+  slide.addShape(pres.ShapeType.rect, {
+    x: 0,
+    y: 0,
+    w: 13.33,
+    h: 0.85,
+    fill: { color: DHL_YELLOW },
+    line: { color: DHL_YELLOW }
+  });
+
+  slide.addShape(pres.ShapeType.rect, {
+    x: 0,
+    y: 0.85,
+    w: 13.33,
+    h: 0.05,
+    fill: { color: DHL_RED },
+    line: { color: DHL_RED }
+  });
+
+  slide.addText('DHL EXPRESS - VOICE OF CUSTOMER', {
+    x: 0.5,
+    y: 0.12,
+    w: 8.0,
+    h: 0.35,
+    fontSize: 16,
+    bold: true,
+    color: DHL_RED,
+    fontFace: 'Arial Black'
+  });
+
+  slide.addText('TRANSACTION PERFORMANCE & DISTRIBUTION ANALYTICS', {
+    x: 0.5,
+    y: 0.44,
+    w: 8.5,
+    h: 0.3,
+    fontSize: 10,
+    bold: true,
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  slide.addText(`Exported: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} | By: ${currentUser?.fullName || 'Hempiden'}`, {
+    x: 8.5,
+    y: 0.25,
+    w: 4.3,
+    h: 0.35,
+    fontSize: 9,
+    bold: true,
+    align: 'right',
+    color: SLATE_GRAY,
+    fontFace: 'Arial'
+  });
+
+  // 2. Left Card: NPS & Average by Transaction (Table & Scorecard)
+  const leftX = 0.5;
+  const leftY = 1.1;
+  const leftW = 8.0;
+  const leftH = 6.0;
+
+  slide.addShape(pres.ShapeType.rect, {
+    x: leftX,
+    y: leftY,
+    w: leftW,
+    h: leftH,
+    fill: { color: 'FFFFFF' },
+    line: { color: BORDER_GRAY, width: 1 }
+  });
+
+  slide.addText('NPS & Likelihood to Recommend by Transaction', {
+    x: leftX + 0.3,
+    y: leftY + 0.2,
+    w: 7.4,
+    h: 0.3,
+    fontSize: 12,
+    bold: true,
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  slide.addText('Time Period: Current Year | Reporting Date: Responsedate | Calculation: NPS, and Average', {
+    x: leftX + 0.3,
+    y: leftY + 0.5,
+    w: 7.4,
+    h: 0.25,
+    fontSize: 8.5,
+    color: '64748B',
+    fontFace: 'Arial'
+  });
+
+  // Transaction Table on Left
+  const tableRows: any[][] = [
+    [
+      { text: 'Transaction Name', options: { bold: true, fill: { color: 'F1F5F9' }, color: SLATE_DARK, fontSize: 9 } },
+      { text: 'Cases', options: { bold: true, fill: { color: 'F1F5F9' }, color: SLATE_DARK, align: 'center', fontSize: 9 } },
+      { text: 'Avg Score / 100', options: { bold: true, fill: { color: 'F1F5F9' }, color: SLATE_DARK, align: 'center', fontSize: 9 } },
+      { text: 'Performance Rating', options: { bold: true, fill: { color: 'F1F5F9' }, color: SLATE_DARK, align: 'center', fontSize: 9 } }
+    ]
+  ];
+
+  standardTransactions.forEach(st => {
+    const rating = st.defaultScore >= 70 ? 'Excellent' : st.defaultScore >= 50 ? 'Good' : 'Needs Focus';
+    const ratingColor = st.defaultScore >= 70 ? '059669' : st.defaultScore >= 50 ? 'D97706' : 'DC2626';
+
+    tableRows.push([
+      { text: st.name, options: { fontSize: 8.5, color: SLATE_DARK, bold: true } },
+      { text: `${st.defaultCount}`, options: { fontSize: 8.5, color: SLATE_GRAY, align: 'center' } },
+      { text: `${st.defaultScore}`, options: { fontSize: 8.5, color: SLATE_DARK, bold: true, align: 'center' } },
+      { text: rating, options: { fontSize: 8.5, color: ratingColor, bold: true, align: 'center' } }
+    ]);
+  });
+
+  slide.addTable(tableRows, {
+    x: leftX + 0.3,
+    y: leftY + 0.85,
+    w: 7.4,
+    colW: [3.4, 1.1, 1.4, 1.5],
+    rowH: 0.44,
+    border: { color: 'E2E8F0', pt: 0.5 }
+  });
+
+  // 3. Right Card: Distribution by Transaction
+  const rightX = 8.7;
+  const rightY = 1.1;
+  const rightW = 4.1;
+  const rightH = 6.0;
+
+  slide.addShape(pres.ShapeType.rect, {
+    x: rightX,
+    y: rightY,
+    w: rightW,
+    h: rightH,
+    fill: { color: 'FFFFFF' },
+    line: { color: BORDER_GRAY, width: 1 }
+  });
+
+  slide.addText('Distribution by Transaction', {
+    x: rightX + 0.25,
+    y: rightY + 0.2,
+    w: 3.6,
+    h: 0.3,
+    fontSize: 12,
+    bold: true,
+    color: SLATE_DARK,
+    fontFace: 'Arial'
+  });
+
+  slide.addText('Score: Overall Score | Calculation: Volume Count', {
+    x: rightX + 0.25,
+    y: rightY + 0.5,
+    w: 3.6,
+    h: 0.25,
+    fontSize: 8,
+    color: '64748B',
+    fontFace: 'Arial'
+  });
+
+  // Distribution Pills
+  standardTransactions.forEach((st, idx) => {
+    const itemY = rightY + 0.85 + (idx * 0.49);
+    slide.addShape(pres.ShapeType.roundRect, {
+      x: rightX + 0.25,
+      y: itemY,
+      w: 3.6,
+      h: 0.42,
+      rectRadius: 0.1,
+      fill: { color: 'FAFAFA' },
+      line: { color: st.color, width: 1.2 }
+    });
+
+    slide.addText(st.name, {
+      x: rightX + 0.35,
+      y: itemY + 0.05,
+      w: 2.7,
+      h: 0.32,
+      fontSize: 8,
+      bold: true,
+      color: SLATE_DARK,
+      fontFace: 'Arial'
+    });
+
+    slide.addText(`${st.defaultCount}`, {
+      x: rightX + 3.1,
+      y: itemY + 0.05,
+      w: 0.65,
+      h: 0.32,
+      fontSize: 9,
+      bold: true,
+      align: 'right',
+      color: SLATE_DARK,
+      fontFace: 'Arial Black'
+    });
+  });
+}
+
+/**
+ * Exports a standalone Transaction Analytics slide to PowerPoint
+ */
+export async function exportTransactionAnalyticsSlideToPowerPoint(
+  records: VoCRecord[],
+  filterContext?: ExportFilterContext,
+  currentUser?: ActionOwner | null
+): Promise<void> {
+  if (!records || records.length === 0) {
+    alert('No records available to export.');
+    return;
+  }
+
+  const pres = new pptxgen();
+  pres.layout = 'LAYOUT_WIDE';
+  pres.title = 'DHL Voice of Customer - Transaction Analytics';
+  pres.subject = 'VoC NPS & Distribution by Transaction';
+  pres.author = currentUser?.fullName || 'Hempiden';
+  pres.company = 'DHL Express';
+
+  addTransactionAnalyticsSlide(pres, records, filterContext, currentUser);
+
+  const dateSuffix = new Date().toISOString().split('T')[0];
+  const fileName = `DHL_VoC_Transaction_Analytics_${dateSuffix}.pptx`;
+  await pres.writeFile({ fileName });
+}
+
+/**
  * Generates an executive-grade, DHL-branded PowerPoint presentation (.pptx)
  * containing:
  *  1. Title / Executive Summary scorecard slide
@@ -989,6 +1235,9 @@ export async function exportVoCToPowerPoint(
 
   // Add Slide 1: Executive Summary Scorecard
   addExecutiveSummarySlide(pres, records, filterContext, currentUser, true);
+
+  // Add Slide 2: Transaction Performance & Distribution Analytics
+  addTransactionAnalyticsSlide(pres, records, filterContext, currentUser);
 
   // =========================================================================
   // INDIVIDUAL CASE DETAIL SLIDES (1 CASE PER SLIDE)

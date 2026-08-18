@@ -3,10 +3,12 @@ import {
   Award, ShieldAlert, Sparkles, MessageSquare, CheckCircle2, 
   TrendingUp, Users, BarChart3, Layers, Calendar, HelpCircle, 
   TrendingDown, Star, ChevronRight, Inbox, HelpCircle as HelpIcon,
-  RefreshCw, AlertCircle, Presentation, Download, ChevronDown, Check
+  RefreshCw, AlertCircle, Presentation, Download, ChevronDown, Check,
+  PieChart, LayoutGrid
 } from 'lucide-react';
 import { VoCRecord, ActionOwner } from '../types';
-import { exportExecutiveSummarySlideToPowerPoint, exportVoCToPowerPoint } from '../utils/pptxExport';
+import { exportExecutiveSummarySlideToPowerPoint, exportVoCToPowerPoint, exportTransactionAnalyticsSlideToPowerPoint } from '../utils/pptxExport';
+import TransactionOverview from './TransactionOverview';
 
 interface ExecutiveOverviewProps {
   records: VoCRecord[];
@@ -15,7 +17,7 @@ interface ExecutiveOverviewProps {
 }
 
 export default function ExecutiveOverview({ records, allRecords, currentUser }: ExecutiveOverviewProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'topics'>('overview');
+  const [activeSession, setActiveSession] = useState<'all' | 'transactions' | 'scorecard'>('all');
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [selectedSentimentFilter, setSelectedSentimentFilter] = useState<'ALL' | 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL'>('ALL');
   const [trendInterval, setTrendInterval] = useState<'monthly' | 'weekly' | 'daily'>('weekly');
@@ -34,12 +36,14 @@ export default function ExecutiveOverview({ records, allRecords, currentUser }: 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleExportPPT = async (mode: 'summary' | 'full') => {
+  const handleExportPPT = async (mode: 'summary' | 'transactions' | 'full') => {
     if (records.length === 0) return;
     setIsExporting(true);
     try {
       if (mode === 'summary') {
         await exportExecutiveSummarySlideToPowerPoint(records, undefined, currentUser);
+      } else if (mode === 'transactions') {
+        await exportTransactionAnalyticsSlideToPowerPoint(records, undefined, currentUser);
       } else {
         await exportVoCToPowerPoint(records, undefined, currentUser);
       }
@@ -794,10 +798,50 @@ export default function ExecutiveOverview({ records, allRecords, currentUser }: 
     <div className="w-full space-y-6 print:hidden" id="voc-executive-kpi-dashboard">
       
       {/* Title & PPT Export Action */}
-      <div className="flex items-center justify-between gap-4">
-        <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-          Analytics Overview
-        </span>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+            Analytics Overview
+          </span>
+
+          {/* Session Switcher Pills */}
+          <div className="flex items-center bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveSession('all')}
+              className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                activeSession === 'all'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              All Sections
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSession('transactions')}
+              className={`px-3 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1.5 transition-all cursor-pointer ${
+                activeSession === 'transactions'
+                  ? 'bg-white text-amber-700 shadow-2xs font-extrabold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <PieChart className="w-3.5 h-3.5 text-amber-600" />
+              <span>By Transaction</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSession('scorecard')}
+              className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                activeSession === 'scorecard'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Scorecard & Trends
+            </button>
+          </div>
+        </div>
 
         {/* PowerPoint Export Button */}
         <div className="relative" ref={exportMenuRef}>
@@ -832,6 +876,18 @@ export default function ExecutiveOverview({ records, allRecords, currentUser }: 
               </button>
               <button
                 type="button"
+                onClick={() => handleExportPPT('transactions')}
+                disabled={isExporting}
+                className="w-full px-3 py-2 text-left hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+              >
+                <Presentation className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-[11px] text-emerald-700">Transaction Analytics Slide (.pptx)</div>
+                  <div className="text-[9px] text-slate-400 font-normal">1 Widescreen Slide: NPS & Distribution by Transaction</div>
+                </div>
+              </button>
+              <button
+                type="button"
                 onClick={() => handleExportPPT('full')}
                 disabled={isExporting}
                 className="w-full px-3 py-2 text-left hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
@@ -839,7 +895,7 @@ export default function ExecutiveOverview({ records, allRecords, currentUser }: 
                 <Presentation className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                 <div>
                   <div className="font-bold text-[11px] text-amber-800">Complete Deck (.pptx)</div>
-                  <div className="text-[9px] text-slate-400 font-normal">Summary slide + {records.length} case slides</div>
+                  <div className="text-[9px] text-slate-400 font-normal">Summary slide + Transaction slide + {records.length} case slides</div>
                 </div>
               </button>
             </div>
@@ -848,108 +904,108 @@ export default function ExecutiveOverview({ records, allRecords, currentUser }: 
       </div>
 
       {/* Executive Period Comparisons Scorecard: YTD & MTD */}
-      <div className="bg-gradient-to-br from-slate-50 to-slate-100/50 p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between gap-2 border-b border-slate-200/50 pb-2">
-          <div className="flex items-center gap-1.5">
-            <Layers className="w-3.5 h-3.5 text-amber-500" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              Period Comparisons
-            </h3>
+      {(activeSession === 'all' || activeSession === 'scorecard') && (
+        <div className="bg-gradient-to-br from-slate-50 to-slate-100/50 p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-200/50 pb-2">
+            <div className="flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-amber-500" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                Period Comparisons
+              </h3>
+            </div>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+              Jan - {ytdMtdStats.currentMonthName}
+            </span>
           </div>
-          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-            Jan - {ytdMtdStats.currentMonthName}
-          </span>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: YTD Survey Volume */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">YTD Survey Volume</span>
+                <span className="text-2xl font-black text-slate-800 tracking-tight tabular-nums mt-1 block">
+                  {ytdMtdStats.ytdCount}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year YTD</span>
+                <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                  ytdMtdStats.ytdCountDiff >= 0 
+                    ? 'bg-emerald-50 text-emerald-600' 
+                    : 'bg-rose-50 text-rose-600'
+                }`}>
+                  {ytdMtdStats.ytdCountDiff >= 0 ? '+' : ''}{ytdMtdStats.ytdCountDiff}%
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: MTD Survey Volume */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">MTD Survey Volume</span>
+                <span className="text-2xl font-black text-slate-800 tracking-tight tabular-nums mt-1 block">
+                  {ytdMtdStats.mtdCount}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year MTD</span>
+                <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                  ytdMtdStats.mtdCountDiff >= 0 
+                    ? 'bg-emerald-50 text-emerald-600' 
+                    : 'bg-rose-50 text-rose-600'
+                }`}>
+                  {ytdMtdStats.mtdCountDiff >= 0 ? '+' : ''}{ytdMtdStats.mtdCountDiff}%
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: YTD NPS Score */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">YTD NPS Score</span>
+                <span className="text-2xl font-black text-slate-800 tracking-tight mt-1 block animate-fade-in">
+                  {ytdMtdStats.ytdNps > 0 ? `+${ytdMtdStats.ytdNps}` : ytdMtdStats.ytdNps}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year YTD</span>
+                <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                  ytdMtdStats.ytdNpsDiff >= 0 
+                    ? 'bg-emerald-50 text-emerald-600' 
+                    : 'bg-rose-50 text-rose-600'
+                }`}>
+                  {ytdMtdStats.ytdNpsDiff >= 0 ? '+' : ''}{ytdMtdStats.ytdNpsDiff} pts
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: MTD NPS Score */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">MTD NPS Score</span>
+                <span className="text-2xl font-black text-slate-800 tracking-tight mt-1 block">
+                  {ytdMtdStats.mtdNps > 0 ? `+${ytdMtdStats.mtdNps}` : ytdMtdStats.mtdNps}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year MTD</span>
+                <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                  ytdMtdStats.mtdNpsDiff >= 0 
+                    ? 'bg-emerald-50 text-emerald-600' 
+                    : 'bg-rose-50 text-rose-600'
+                }`}>
+                  {ytdMtdStats.mtdNpsDiff >= 0 ? '+' : ''}{ytdMtdStats.mtdNpsDiff} pts
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: YTD Survey Volume */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-            <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">YTD Survey Volume</span>
-              <span className="text-2xl font-black text-slate-800 tracking-tight tabular-nums mt-1 block">
-                {ytdMtdStats.ytdCount}
-              </span>
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year YTD</span>
-              <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
-                ytdMtdStats.ytdCountDiff >= 0 
-                  ? 'bg-emerald-50 text-emerald-600' 
-                  : 'bg-rose-50 text-rose-600'
-              }`}>
-                {ytdMtdStats.ytdCountDiff >= 0 ? '+' : ''}{ytdMtdStats.ytdCountDiff}%
-              </div>
-            </div>
-          </div>
-
-          {/* Card 2: MTD Survey Volume */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-            <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">MTD Survey Volume</span>
-              <span className="text-2xl font-black text-slate-800 tracking-tight tabular-nums mt-1 block">
-                {ytdMtdStats.mtdCount}
-              </span>
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year MTD</span>
-              <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
-                ytdMtdStats.mtdCountDiff >= 0 
-                  ? 'bg-emerald-50 text-emerald-600' 
-                  : 'bg-rose-50 text-rose-600'
-              }`}>
-                {ytdMtdStats.mtdCountDiff >= 0 ? '+' : ''}{ytdMtdStats.mtdCountDiff}%
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: YTD NPS Score */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-            <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">YTD NPS Score</span>
-              <span className="text-2xl font-black text-slate-800 tracking-tight mt-1 block animate-fade-in">
-                {ytdMtdStats.ytdNps > 0 ? `+${ytdMtdStats.ytdNps}` : ytdMtdStats.ytdNps}
-              </span>
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year YTD</span>
-              <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
-                ytdMtdStats.ytdNpsDiff >= 0 
-                  ? 'bg-emerald-50 text-emerald-600' 
-                  : 'bg-rose-50 text-rose-600'
-              }`}>
-                {ytdMtdStats.ytdNpsDiff >= 0 ? '+' : ''}{ytdMtdStats.ytdNpsDiff} pts
-              </div>
-            </div>
-          </div>
-
-          {/* Card 4: MTD NPS Score */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between">
-            <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">MTD NPS Score</span>
-              <span className="text-2xl font-black text-slate-800 tracking-tight mt-1 block">
-                {ytdMtdStats.mtdNps > 0 ? `+${ytdMtdStats.mtdNps}` : ytdMtdStats.mtdNps}
-              </span>
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">vs Last Year MTD</span>
-              <div className={`flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-md ${
-                ytdMtdStats.mtdNpsDiff >= 0 
-                  ? 'bg-emerald-50 text-emerald-600' 
-                  : 'bg-rose-50 text-rose-600'
-              }`}>
-                {ytdMtdStats.mtdNpsDiff >= 0 ? '+' : ''}{ytdMtdStats.mtdNpsDiff} pts
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-
-
-      <div className="space-y-6">
-        
-        {/* Main Grid: KPIs and True Circular NPS Gauge */}
-        <div className="grid grid-cols-1 lg:grid-span-12 lg:grid-cols-12 gap-6">
+      {/* Main Grid: KPIs and True Circular NPS Gauge & Trends */}
+      {(activeSession === 'all' || activeSession === 'scorecard') && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-span-12 lg:grid-cols-12 gap-6">
           
           {/* Left 4 Cols: NPS True Gauge - Matching Chart 1.3 */}
           <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
@@ -1266,6 +1322,15 @@ export default function ExecutiveOverview({ records, allRecords, currentUser }: 
         </div>
 
       </div>
+      )}
+
+      {/* Transaction Analytics Session: NPS by Transaction & Distribution by Transaction */}
+      {(activeSession === 'all' || activeSession === 'transactions') && (
+        <TransactionOverview
+          records={records}
+          allRecords={allRecords}
+        />
+      )}
 
     </div>
   );
