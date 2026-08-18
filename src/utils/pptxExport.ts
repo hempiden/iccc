@@ -974,16 +974,16 @@ export function addTransactionAnalyticsSlide(
   slide.background = { color: SLATE_LIGHT };
 
   const standardTransactions = [
-    { name: 'Pickup by Courier', color: '10b981', defaultScore: 50, defaultCount: 24 },
-    { name: 'Pickup Exception', color: '3730a3', defaultScore: 75, defaultCount: 20 },
-    { name: 'Drop-off at Service Point', color: '0ea5e9', defaultScore: 22, defaultCount: 23 },
+    { name: 'Pickup by Courier', color: '10b981', defaultScore: 45, defaultCount: 11 },
+    { name: 'Pickup Exception', color: '3730a3', defaultScore: 33, defaultCount: 3 },
+    { name: 'Drop-off at Service Point', color: '0ea5e9', defaultScore: 12, defaultCount: 8 },
     { name: 'Self-Collection at Service Point', color: 'dc2626', defaultScore: 50, defaultCount: 2 },
-    { name: 'Delivery by Courier', color: 'c084fc', defaultScore: 85, defaultCount: 431 },
-    { name: 'Delivery Exception', color: '15803d', defaultScore: 74, defaultCount: 19 },
-    { name: 'Delivery Notification', color: 'd97706', defaultScore: 70, defaultCount: 61 },
-    { name: 'Delivery Change by Employee', color: '2563eb', defaultScore: 33, defaultCount: 3 },
-    { name: 'Duties and Taxes Payment to Employee', color: 'db2777', defaultScore: 62, defaultCount: 180 },
-    { name: 'Delivery Management via Self-Service', color: '0d9488', defaultScore: 25, defaultCount: 8 },
+    { name: 'Delivery by Courier', color: 'c084fc', defaultScore: 85, defaultCount: 139 },
+    { name: 'Delivery Exception', color: '15803d', defaultScore: 100, defaultCount: 2 },
+    { name: 'Delivery Notification', color: 'd97706', defaultScore: 68, defaultCount: 22 },
+    { name: 'Delivery Change by Employee', color: '2563eb', defaultScore: 100, defaultCount: 1 },
+    { name: 'Duties and Taxes Payment to Employee', color: 'db2777', defaultScore: 45, defaultCount: 62 },
+    { name: 'Delivery Management via Self-Service', color: '0d9488', defaultScore: 50, defaultCount: 4 },
   ];
 
   // 1. Top Header Banner
