@@ -54,11 +54,13 @@ function mapRecordToRow(r: VoCRecord) {
     'Follow-up Owner': r.owner,
     'Case Status': r.status,
     'Assigned Facility / Interaction': r.interaction || '',
+    'Target Deadline': r.deadline || (r.timeline && r.timeline[0]?.deadline) || '',
     'Transaction Name': r.transactionName || '',
     'Journey Name': r.journeyName || '',
     'Moment Of Truth': r.momentOfTruthName || '',
     'Topic / Theme': r.topic || '',
     'Sentiment': r.sentiment || 'NO_OPINION',
+    'Feedback Channel': r.responseFeedbackChannel || '',
     'Response Date': r.responseDate || '',
     'Creation Date': r.creationDate || '',
     'Follow-up Comments Column': r.followUpComments || '',
@@ -68,7 +70,9 @@ function mapRecordToRow(r: VoCRecord) {
     'Root Cause Comment': r.rootCauseComment || '',
     'Account Name': r.accountName || '',
     'Industry': r.industry || '',
-    'Country': r.countryName || 'Cambodia'
+    'Country': r.countryName || 'Cambodia',
+    'In-System Comments JSON': r.comments && r.comments.length > 0 ? JSON.stringify(r.comments) : '',
+    'Timeline Events JSON': r.timeline && r.timeline.length > 0 ? JSON.stringify(r.timeline) : ''
   };
 }
 
@@ -117,6 +121,7 @@ export function exportFilteredExcelWorkbook(
   const commentsSheet = XLSX.utils.json_to_sheet(commentRows.length > 0 ? commentRows : [{
     'Record ID': 'INFO',
     'Survey ID': 'N/A',
+    'AWB Number': 'N/A',
     'Comment ID': 'N/A',
     'Timestamp': new Date().toISOString(),
     'Author Name': 'System',
@@ -223,44 +228,13 @@ export function exportFilteredCSV(records: VoCRecord[], filterContext?: ExportFi
 
 /**
  * Exports the entire VoC database into a structured, multi-sheet SharePoint-compliant Excel file.
+ * Preserves all updated statuses, summaries, notes, comments, and timelines.
  */
 export function exportMasterExcelWorkbook(records: VoCRecord[], currentUser?: ActionOwner | null): void {
   const workbook = XLSX.utils.book_new();
 
-  // SHEET 1: Master VoC Records
-  const masterDataRows = records.map(r => ({
-    'Record ID': r.id,
-    'Survey ID': r.surveyId || '',
-    'AWB Number': r.awbNumber || '',
-    'Customer Name': r.customerName || '',
-    'Contact Phone': r.contactPhone || '',
-    'Contact Email': r.contactEmail || '',
-    'Likelihood (NPS)': r.likelihood,
-    'NPS Category': r.category,
-    'Ease Of Use': r.easeOfUse ?? '',
-    'Primary Customer Comment (Combined)': r.comment,
-    'Custom Summary': r.customSummary || '',
-    'Action Summary': r.actionSummary || '',
-    'Follow-up Owner': r.owner,
-    'Case Status': r.status,
-    'Assigned Facility / Interaction': r.interaction || '',
-    'Transaction Name': r.transactionName || '',
-    'Journey Name': r.journeyName || '',
-    'Moment Of Truth': r.momentOfTruthName || '',
-    'Topic / Theme': r.topic || '',
-    'Sentiment': r.sentiment || 'NO_OPINION',
-    'Response Date': r.responseDate || '',
-    'Creation Date': r.creationDate || '',
-    'Follow-up Comments Column': r.followUpComments || '',
-    'Action Details (Raw Logs)': r.actionDetailsRaw || '',
-    'Root Cause Category': r.rootCauseCategory || '',
-    'Root Cause': r.rootCause || '',
-    'Root Cause Comment': r.rootCauseComment || '',
-    'Account Name': r.accountName || '',
-    'Industry': r.industry || '',
-    'Country': r.countryName || 'Cambodia'
-  }));
-
+  // SHEET 1: Master VoC Records (Using consistent mapRecordToRow)
+  const masterDataRows = records.map(mapRecordToRow);
   const masterSheet = XLSX.utils.json_to_sheet(masterDataRows);
   XLSX.utils.book_append_sheet(workbook, masterSheet, 'VoC Master Data');
 
@@ -290,6 +264,7 @@ export function exportMasterExcelWorkbook(records: VoCRecord[], currentUser?: Ac
     const emptyCommentsSheet = XLSX.utils.json_to_sheet([{
       'Record ID': 'INFO',
       'Survey ID': 'N/A',
+      'AWB Number': 'N/A',
       'Comment ID': 'N/A',
       'Timestamp': new Date().toISOString(),
       'Author Name': 'System',
@@ -341,8 +316,9 @@ export function exportMasterExcelWorkbook(records: VoCRecord[], currentUser?: Ac
     'Exported By': currentUser?.fullName || 'DHL Colleague',
     'User Facility': currentUser?.facility || 'PNHGTW',
     'Total VoC Records': records.length,
-    'Storage Type': 'SharePoint Enterprise Excel Workbook (.xlsx)',
-    'Data Classification': 'DHL Express Confidential - Internal Workspace Only'
+    'Storage Type': 'DHL VoC Portable Master Database (.xlsx)',
+    'Data Classification': 'DHL Express Confidential - Internal Workspace Only',
+    'Restoration Instructions': 'Upload this Excel workbook directly into the DHL VoC Portal Upload Center to resume everything with all updated summaries, owners, case statuses, timelines, and conversation threads preserved.'
   }]);
   XLSX.utils.book_append_sheet(workbook, auditSheet, 'SharePoint Metadata');
 

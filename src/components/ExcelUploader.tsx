@@ -1,16 +1,19 @@
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, HelpCircle } from 'lucide-react';
-import { VoCRecord } from '../types';
+import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, HelpCircle, Download, Database, MessageSquare } from 'lucide-react';
+import { VoCRecord, ActionOwner, VoCComment, TimelineEvent } from '../types';
 import { parseActionDetails, inferStatus, getNPSCategory, classifyTopic, analyzeSentiment } from '../utils/parser';
+import { exportMasterExcelWorkbook } from '../utils/excelDatabase';
 
 interface ExcelUploaderProps {
   onRecordsLoaded: (records: VoCRecord[]) => Promise<void>;
   onAppendRecords: (records: VoCRecord[]) => Promise<void>;
   currentCount: number;
+  allRecords?: VoCRecord[];
+  currentUser?: ActionOwner | null;
 }
 
-export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, currentCount }: ExcelUploaderProps) {
+export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, currentCount, allRecords = [], currentUser }: ExcelUploaderProps) {
   const [dragActive, setDragActive] = useState(false);
   const [status, setStatus] = useState<{ type: 'idle' | 'success' | 'error'; message: string }>({ type: 'idle', message: '' });
   const [uploadMode, setUploadMode] = useState<'replace' | 'append'>('replace');
@@ -98,7 +101,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
     // Check if string is a numeric Excel serial date
     if (/^\d+(\.\d+)?$/.test(str)) {
       const numStr = Number(str);
-      if (numStr > 1000 && numStr < 100000) {
+      if (!isNaN(numStr) && numStr > 1000 && numStr < 100000) {
         const ms = (numStr - 25569) * 86400 * 1000;
         const date = new Date(ms);
         if (!isNaN(date.getTime())) {
@@ -112,51 +115,17 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
       }
     }
 
-    // Try regex-based match for DD/MM/YYYY, MM/DD/YYYY, or YYYY/MM/DD
-    const dmyRegex = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/;
-    const ymdRegex = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/;
-
-    let match = str.match(ymdRegex);
-    if (match) {
-      const y = parseInt(match[1], 10);
-      const m = String(parseInt(match[2], 10)).padStart(2, '0');
-      const d = String(parseInt(match[3], 10)).padStart(2, '0');
-      return `${y}-${m}-${d}`;
+    // Check YYYY-MM-DD or DD/MM/YYYY
+    const ymd = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (ymd) {
+      return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
     }
 
-    match = str.match(dmyRegex);
-    if (match) {
-      const p1 = parseInt(match[1], 10);
-      const p2 = parseInt(match[2], 10);
-      let y = parseInt(match[3], 10);
-      if (y < 100) {
-        y += y < 50 ? 2000 : 1900;
-      }
-
-      let day = p1;
-      let month = p2;
-      if (p2 > 12) {
-        day = p2;
-        month = p1;
-      } else if (p1 <= 12 && p2 <= 12) {
-        day = p1;
-        month = p2;
-      }
-
-      const mm = String(month).padStart(2, '0');
-      const dd = String(day).padStart(2, '0');
-      return `${y}-${mm}-${dd}`;
-    }
-
-    // Fallback to standard JS date parser
-    const parsed = new Date(str.replace(/-/g, '/'));
-    if (!isNaN(parsed.getTime())) {
-      const yyyy = parsed.getFullYear();
-      if (yyyy >= 1970 && yyyy <= 2100) {
-        const mm = String(parsed.getMonth() + 1).padStart(2, '0');
-        const dd = String(parsed.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
-      }
+    const dmy = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+    if (dmy) {
+      let yr = dmy[3];
+      if (yr.length === 2) yr = '20' + yr;
+      return `${yr}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
     }
 
     return str;
@@ -188,15 +157,96 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
           workbook = XLSX.read(bytes, { type: 'array' });
         }
 
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
+        const sheetNames = workbook.SheetNames;
+
+        // 1. Check for Secondary Sheets (Follow-up Comments & Timeline History)
+        const commentsSheetName = sheetNames.find(s => 
+          s.toLowerCase().includes('comment') || s.toLowerCase().includes('follow-up')
+        );
+        const commentsByRecordId = new Map<string, VoCComment[]>();
+        const commentsBySurveyId = new Map<string, VoCComment[]>();
+
+        if (commentsSheetName && workbook.Sheets[commentsSheetName]) {
+          const commentsJson = XLSX.utils.sheet_to_json(workbook.Sheets[commentsSheetName]);
+          commentsJson.forEach((cRow: any) => {
+            const recId = findValueByHeader(cRow, ['Record ID', 'RecordID', 'ID']);
+            const surId = findValueByHeader(cRow, ['Survey ID', 'SurveyID']);
+            const text = findValueByHeader(cRow, ['Follow-up Remark Text', 'Comment', 'Text', 'Remark', 'Message']);
+            if (!text || String(text).trim() === '' || String(text).includes('No follow-up remarks')) return;
+
+            const commentObj: VoCComment = {
+              id: String(findValueByHeader(cRow, ['Comment ID', 'CommentID', 'ID']) || `c-${Date.now()}-${Math.random()}`),
+              timestamp: String(findValueByHeader(cRow, ['Timestamp', 'Date', 'Time']) || new Date().toISOString()),
+              author: String(findValueByHeader(cRow, ['Author Name', 'Author', 'User']) || 'DHL Colleague'),
+              role: String(findValueByHeader(cRow, ['Author Role / Facility', 'Role', 'Facility']) || 'Colleague'),
+              text: String(text).trim()
+            };
+
+            if (recId) {
+              const rKey = String(recId).trim();
+              if (!commentsByRecordId.has(rKey)) commentsByRecordId.set(rKey, []);
+              commentsByRecordId.get(rKey)!.push(commentObj);
+            }
+            if (surId) {
+              const sKey = String(surId).trim();
+              if (!commentsBySurveyId.has(sKey)) commentsBySurveyId.set(sKey, []);
+              commentsBySurveyId.get(sKey)!.push(commentObj);
+            }
+          });
+        }
+
+        const timelineSheetName = sheetNames.find(s => 
+          s.toLowerCase().includes('timeline') || s.toLowerCase().includes('history')
+        );
+        const timelineByRecordId = new Map<string, TimelineEvent[]>();
+        const timelineBySurveyId = new Map<string, TimelineEvent[]>();
+
+        if (timelineSheetName && workbook.Sheets[timelineSheetName]) {
+          const timelineJson = XLSX.utils.sheet_to_json(workbook.Sheets[timelineSheetName]);
+          timelineJson.forEach((tRow: any) => {
+            const recId = findValueByHeader(tRow, ['Record ID', 'RecordID', 'ID']);
+            const surId = findValueByHeader(tRow, ['Survey ID', 'SurveyID']);
+            const action = findValueByHeader(tRow, ['Action Executed', 'Action', 'Event', 'Description']);
+            if (!action || String(action).trim() === '' || String(action).includes('No timeline events')) return;
+
+            const timelineObj: TimelineEvent = {
+              timestamp: String(findValueByHeader(tRow, ['Timestamp', 'Date']) || 'Recent'),
+              action: String(action).trim(),
+              pic: String(findValueByHeader(tRow, ['PIC / Owner', 'PIC', 'Owner']) || 'DHL Team'),
+              deadline: findValueByHeader(tRow, ['Target Deadline', 'Deadline']) ? String(findValueByHeader(tRow, ['Target Deadline', 'Deadline'])).trim() : undefined,
+              status: (findValueByHeader(tRow, ['Step Status', 'Status']) || 'Completed') as any
+            };
+
+            if (recId) {
+              const rKey = String(recId).trim();
+              if (!timelineByRecordId.has(rKey)) timelineByRecordId.set(rKey, []);
+              timelineByRecordId.get(rKey)!.push(timelineObj);
+            }
+            if (surId) {
+              const sKey = String(surId).trim();
+              if (!timelineBySurveyId.has(sKey)) timelineBySurveyId.set(sKey, []);
+              timelineBySurveyId.get(sKey)!.push(timelineObj);
+            }
+          });
+        }
+
+        // 2. Locate Master Sheet
+        const masterSheetName = sheetNames.find(s => 
+          s.toLowerCase().includes('master') || 
+          s.toLowerCase().includes('voc') || 
+          s.toLowerCase().includes('record') ||
+          s.toLowerCase().includes('filtered') ||
+          s.toLowerCase().includes('survey')
+        ) || sheetNames[0];
+
+        const worksheet = workbook.Sheets[masterSheetName];
 
         // Find the actual header row dynamically to avoid issues with blank rows on top
         const sheetRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
         let headerRowIdx = 0;
         const targetKeywords = [
           'survey id', 'id', 'surveyid', 'likelihood', 'nps', 'score', 'rating',
-          'comment', 'feedback', 'action details', 'actiondetails', 'owner'
+          'comment', 'feedback', 'action details', 'actiondetails', 'owner', 'custom summary'
         ];
 
         if (sheetRows && sheetRows.length > 0) {
@@ -231,8 +281,9 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
 
         rawJson.forEach((row: any, idx) => {
           // Identify columns with smart matching
+          const recordIdVal = findValueByHeader(row, ['Record ID', 'RecordID', 'Database ID']);
           const surveyIdVal = findValueByHeader(row, ['Survey ID', 'id', 'SurveyID', 'Survey_ID', 'Interaction', 'Interaction ID']);
-          const likelihoodVal = findValueByHeader(row, ['Likelihood', 'likelihood', 'NPS', 'Score', 'rating', 'NPS Score', 'Likelihood to Recommend']);
+          const likelihoodVal = findValueByHeader(row, ['Likelihood (NPS)', 'Likelihood', 'likelihood', 'NPS', 'Score', 'rating', 'NPS Score', 'Likelihood to Recommend']);
           const commentVal = findValueByHeader(row, ['Primary Customer Comment (Combined)', 'Primary Customer Comment', 'comment', 'feedback', 'Primary Comment', 'Comments', 'Primary Customer Comment (Translated)']);
           
           // Skip completely empty or unmapped rows to prevent phantom empty cards
@@ -245,32 +296,40 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
             return; // Skip empty row
           }
 
-          const actionDetailsVal = findValueByHeader(row, ['Action Details', 'Logs', 'ActionDetails', 'Action description', 'All log notes combined (if any)', 'timeline']);
-          const ownerVal = findValueByHeader(row, ['Current Follow-up Owner', 'owner', 'staff', 'Follow-up Owner', 'Current Alert Owner', 'Follow up Owner']);
-          const interactionVal = findValueByHeader(row, ['Interaction', 'Interaction ID', 'InteractionID', 'Code']);
-          const followUpCommentsVal = findValueByHeader(row, ['Follow-up: Customer Comments', 'Followup Comments', 'Customer Comments']);
+          // User Edits & Custom Summaries Preservation
+          const customSummaryVal = findValueByHeader(row, ['Custom Summary', 'Summary', 'Customer Summary', 'Comment Summary', 'Short Summary']);
+          const actionSummaryVal = findValueByHeader(row, ['Action Summary', 'Resolution Summary', 'Actions Summary', 'Resolution Note']);
+          const caseStatusVal = findValueByHeader(row, ['Case Status', 'status', 'Alert Status', 'Status', 'CaseStatus']);
+          const deadlineVal = findValueByHeader(row, ['Target Deadline', 'Deadline', 'TargetDeadline']);
+          const commentsJsonVal = findValueByHeader(row, ['In-System Comments JSON', 'Comments JSON', 'Comments Array', 'comments']);
+          const timelineJsonVal = findValueByHeader(row, ['Timeline Events JSON', 'Timeline JSON', 'Timeline Array']);
+
+          const actionDetailsVal = findValueByHeader(row, ['Action Details (Raw Logs)', 'Action Details', 'Logs', 'ActionDetails', 'Action description', 'All log notes combined (if any)', 'timeline']);
+          const ownerVal = findValueByHeader(row, ['Follow-up Owner', 'Follow up Owner', 'Current Follow-up Owner', 'owner', 'staff', 'Current Alert Owner', 'PIC']);
+          const interactionVal = findValueByHeader(row, ['Assigned Facility / Interaction', 'Interaction', 'Interaction ID', 'InteractionID', 'Code', 'Facility']);
+          const followUpCommentsVal = findValueByHeader(row, ['Follow-up Comments Column', 'Follow-up: Customer Comments', 'Followup Comments', 'Customer Comments']);
 
           // Management & BA Fields Smart Extraction
-          const journeyNameVal = findValueByHeader(row, ['Journey Name', 'Journey', 'Journey Name']);
-          const momentOfTruthNameVal = findValueByHeader(row, ['Moment Of Truth Name', 'Moment Of Truth', 'MomentOfTruth']);
+          const journeyNameVal = findValueByHeader(row, ['Journey Name', 'Journey']);
+          const momentOfTruthNameVal = findValueByHeader(row, ['Moment Of Truth', 'Moment Of Truth Name', 'MomentOfTruth']);
           const transactionNameVal = findValueByHeader(row, ['Transaction Name', 'Transaction', 'MOT Transaction Type']);
           const easeOfUseVal = findValueByHeader(row, ['Ease Of Use', 'EaseOfUse', 'Ease']);
-          const responseDateVal = findValueByHeader(row, ['Responsedate', 'Response Date', 'Date', 'Local Response Date']);
-          const creationDateVal = findValueByHeader(row, ['Creationdate', 'Creation Date', 'Local Creation Date']);
+          const responseDateVal = findValueByHeader(row, ['Response Date', 'Responsedate', 'Date', 'Local Response Date']);
+          const creationDateVal = findValueByHeader(row, ['Creation Date', 'Creationdate', 'Local Creation Date']);
           const customerNameVal = findValueByHeader(row, ['Customer Name', 'CustomerName', 'First Call - Updated Customer Name', 'Follow-up Updated Customer Name']);
           const contactPhoneVal = findValueByHeader(row, ['Contact Phone', 'Phone', 'Contact Phone Number', 'First Call - Updated Phone Number', 'Follow-up Updated Phone Number']);
           const contactEmailVal = findValueByHeader(row, ['Contact Email', 'Email', 'Contact Email Address', 'First Call - Updated Email Address', 'Follow-up Updated Email']);
-          const countryNameVal = findValueByHeader(row, ['Country name', 'Country', 'Country Code']);
+          const countryNameVal = findValueByHeader(row, ['Country', 'Country name', 'Country Code']);
           const regionVal = findValueByHeader(row, ['Region']);
           const industryVal = findValueByHeader(row, ['Industry']);
           const accountNameVal = findValueByHeader(row, ['Account Name', 'AccountName']);
-          const awbNumberVal = findValueByHeader(row, ['Combined AWB', 'AWB Number', 'AWB', 'Waybill Number', 'Waybill']);
+          const awbNumberVal = findValueByHeader(row, ['AWB Number', 'Combined AWB', 'AWB', 'Waybill Number', 'Waybill']);
           const rootCauseCategoryVal = findValueByHeader(row, ['Root Cause Category', 'RootCauseCategory']);
           const rootCauseVal = findValueByHeader(row, ['Root Cause', 'RootCause']);
           const rootCauseCommentVal = findValueByHeader(row, ['Root Cause Comment', 'RootCauseComment']);
-          const topicVal = findValueByHeader(row, ['Topic/Theme', 'Topic', 'Theme']);
+          const topicVal = findValueByHeader(row, ['Topic / Theme', 'Topic/Theme', 'Topic', 'Theme']);
           const sentimentVal = findValueByHeader(row, ['Sentiment', 'Primary Sentiment']);
-          const responseFeedbackChannelVal = findValueByHeader(row, ['Response Feedback Channel', 'ResponseFeedbackChannel', 'Feedback Channel', 'Channel', 'Response Feedback']);
+          const responseFeedbackChannelVal = findValueByHeader(row, ['Feedback Channel', 'Response Feedback Channel', 'ResponseFeedbackChannel', 'Channel', 'Response Feedback']);
 
           // Treat missing survey ID as a skip, or generate one
           const rawSurveyId = surveyIdVal ? String(surveyIdVal).trim() : `UPLOAD-${idx + 1}`;
@@ -295,7 +354,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
 
           const comment = commentVal ? String(commentVal).trim() : 'No comment provided.';
           const actionDetailsRaw = actionDetailsVal ? String(actionDetailsVal).trim() : '';
-          const owner = ownerVal ? String(ownerVal).trim() : '(blank)';
+          const owner = ownerVal ? String(ownerVal).trim() : 'Rothana Art';
           const interaction = interactionVal ? String(interactionVal).trim() : undefined;
           const followUpComments = followUpCommentsVal ? String(followUpCommentsVal).trim() : undefined;
 
@@ -308,16 +367,55 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
             }
           }
 
-          const timeline = parseActionDetails(actionDetailsRaw);
-          const statusVal = inferStatus(timeline, actionDetailsRaw);
-
           // BA Categorization fallbacks
           const transactionName = transactionNameVal ? String(transactionNameVal).trim() : 'Delivery by Courier';
           const topic = topicVal ? String(topicVal).trim() : (extractedSuffix || classifyTopic(comment, transactionName));
           
-          // Generate a truly unique database ID in case of multiple rows for the same survey ID (split by theme)
+          // Determine ID
           const cleanTopic = topic ? topic.replace(/[^a-zA-Z0-9]/g, '_') : 'General';
-          const id = `${cleanSurveyId}_${cleanTopic}`;
+          const id = recordIdVal ? String(recordIdVal).trim() : `${cleanSurveyId}_${cleanTopic}`;
+
+          // Reconstruct timeline events (Sheet 3 > JSON Column > Raw Action Details Parsing)
+          let timeline: TimelineEvent[] = [];
+          if (timelineByRecordId.has(id) && timelineByRecordId.get(id)!.length > 0) {
+            timeline = timelineByRecordId.get(id)!;
+          } else if (timelineBySurveyId.has(cleanSurveyId) && timelineBySurveyId.get(cleanSurveyId)!.length > 0) {
+            timeline = timelineBySurveyId.get(cleanSurveyId)!;
+          } else if (timelineJsonVal && typeof timelineJsonVal === 'string' && timelineJsonVal.startsWith('[')) {
+            try {
+              timeline = JSON.parse(timelineJsonVal);
+            } catch {
+              timeline = parseActionDetails(actionDetailsRaw);
+            }
+          } else {
+            timeline = parseActionDetails(actionDetailsRaw);
+          }
+
+          // Reconstruct in-system conversation comments (Sheet 2 > JSON Column)
+          let comments: VoCComment[] = [];
+          if (commentsByRecordId.has(id) && commentsByRecordId.get(id)!.length > 0) {
+            comments = commentsByRecordId.get(id)!;
+          } else if (commentsBySurveyId.has(cleanSurveyId) && commentsBySurveyId.get(cleanSurveyId)!.length > 0) {
+            comments = commentsBySurveyId.get(cleanSurveyId)!;
+          } else if (commentsJsonVal && typeof commentsJsonVal === 'string' && commentsJsonVal.startsWith('[')) {
+            try {
+              comments = JSON.parse(commentsJsonVal);
+            } catch {
+              comments = [];
+            }
+          }
+
+          // Status normalization
+          let statusVal: 'New' | 'In Progress' | 'Completed' = 'New';
+          if (caseStatusVal) {
+            const s = String(caseStatusVal).trim();
+            if (s === 'Completed' || s === 'Closed') statusVal = 'Completed';
+            else if (s === 'In Progress' || s === 'Pending') statusVal = 'In Progress';
+            else if (s === 'New') statusVal = 'New';
+            else statusVal = inferStatus(timeline, actionDetailsRaw);
+          } else {
+            statusVal = inferStatus(timeline, actionDetailsRaw);
+          }
           
           let sentiment: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' | 'NO_OPINION' = 'NO_OPINION';
           if (sentimentVal) {
@@ -335,12 +433,16 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
             likelihood,
             category: getNPSCategory(likelihood),
             comment,
+            customSummary: customSummaryVal ? String(customSummaryVal).trim() : undefined,
+            actionSummary: actionSummaryVal ? String(actionSummaryVal).trim() : undefined,
             actionDetailsRaw,
             timeline,
+            comments,
             owner,
             status: statusVal,
             interaction,
             followUpComments,
+            deadline: deadlineVal ? String(deadlineVal).trim() : undefined,
             // Extended Mapped columns:
             journeyName: journeyNameVal ? String(journeyNameVal).trim() : undefined,
             momentOfTruthName: momentOfTruthNameVal ? String(momentOfTruthNameVal).trim() : undefined,
@@ -370,25 +472,28 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
           return;
         }
 
+        const totalRestoredComments = parsedRecords.reduce((acc, r) => acc + (r.comments?.length || 0), 0);
+        const totalSummaries = parsedRecords.filter(r => !!r.customSummary || !!r.actionSummary).length;
+
         if (uploadMode === 'append') {
           setStatus({
             type: 'idle',
-            message: `Appending ${parsedRecords.length} records to local storage...`
+            message: `Appending ${parsedRecords.length} records to local workspace...`
           });
           await onAppendRecords(parsedRecords);
           setStatus({
             type: 'success',
-            message: `Successfully appended ${parsedRecords.length} customer records without losing existing data!`
+            message: `Successfully appended ${parsedRecords.length} customer records (Restored ${totalSummaries} custom summaries & ${totalRestoredComments} conversation comments)!`
           });
         } else {
           setStatus({
             type: 'idle',
-            message: `Replacing database with ${parsedRecords.length} new records...`
+            message: `Replacing database with ${parsedRecords.length} records...`
           });
           await onRecordsLoaded(parsedRecords);
           setStatus({
             type: 'success',
-            message: `Successfully replaced the database with ${parsedRecords.length} customer records!`
+            message: `Successfully restored ${parsedRecords.length} customer records with full fidelity (${totalSummaries} custom summaries, ${totalRestoredComments} follow-up comments)!`
           });
         }
 
@@ -409,123 +514,153 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto mb-8 bg-white p-6 rounded-2xl border border-gray-100 shadow-xs">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-            Upload Customer Survey Logs
-          </h2>
-          <p className="text-xs text-gray-500 mt-1">
-            Accepts Excel (.xlsx, .xls) and CSV files. Standard columns like 
-            <span className="font-mono text-gray-700 bg-gray-50 px-1 py-0.5 rounded mx-1">Survey ID</span>, 
-            <span className="font-mono text-gray-700 bg-gray-50 px-1 py-0.5 rounded mx-1">Likelihood</span>, 
-            <span className="font-mono text-gray-700 bg-gray-50 px-1 py-0.5 rounded mx-1">Primary Customer Comment (Combined)</span>, and 
-            <span className="font-mono text-gray-700 bg-gray-50 px-1 py-0.5 rounded mx-1">Action Details</span> are automatically detected.
+    <div className="w-full max-w-4xl mx-auto space-y-6">
+      
+      {/* 1. Quick Master Export Card (Allows offline export & resume) */}
+      <div className="bg-gradient-to-r from-emerald-900 to-slate-900 text-white rounded-2xl p-5 border border-emerald-800/80 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
+              Portable Backup & Resume
+            </span>
+            <span className="text-xs text-slate-300 font-medium">
+              {allRecords.length} total active records
+            </span>
+          </div>
+          <h3 className="text-base font-black tracking-tight text-white">
+            Export Master VoC Excel (.xlsx)
+          </h3>
+          <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
+            Download your entire workspace into a multi-sheet Excel file. All updated case statuses, follow-up owners, AI summaries, action plans, timelines, and conversation comments are preserved so you can upload it later to resume anytime.
           </p>
         </div>
-        
-        {currentCount > 0 && (
-          <div className="text-xs font-medium text-gray-500 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-lg self-start md:self-auto">
-            Currently loaded: <span className="text-emerald-700 font-bold">{currentCount}</span> records
+
+        <button
+          type="button"
+          onClick={() => exportMasterExcelWorkbook(allRecords.length > 0 ? allRecords : [], currentUser)}
+          disabled={allRecords.length === 0}
+          className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 text-xs font-black rounded-xl transition-all cursor-pointer shadow-sm shrink-0"
+        >
+          <Download className="w-4 h-4 text-slate-950" />
+          <span>Export Master Backup</span>
+        </button>
+      </div>
+
+      {/* 2. Ingestion Dropzone Card */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+              Upload VoC Survey Records
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Upload previously exported DHL VoC Master Workbooks or raw survey logs.
+            </p>
+          </div>
+          
+          {currentCount > 0 && (
+            <div className="text-xs font-medium text-gray-500 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-lg self-start md:self-auto">
+              Currently loaded: <span className="text-emerald-700 font-bold">{currentCount}</span> records
+            </div>
+          )}
+        </div>
+
+        {/* Upload Mode Selector */}
+        <div className="mb-5 p-3.5 bg-slate-50 rounded-xl border border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wide block">Upload Mode</span>
+            <span className="text-[11px] text-slate-500 block">Choose how to handle the uploaded dataset.</span>
+          </div>
+          <div className="flex bg-slate-200/60 p-1 rounded-lg border border-slate-200 shrink-0 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setUploadMode('replace')}
+              className={`px-3 py-1.5 text-xs font-black rounded-md transition-all cursor-pointer ${
+                uploadMode === 'replace' 
+                  ? 'bg-emerald-600 text-white shadow-xs' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Replace Entire DB (Resume)
+            </button>
+            <button
+              type="button"
+              onClick={() => setUploadMode('append')}
+              className={`px-3 py-1.5 text-xs font-black rounded-md transition-all cursor-pointer ${
+                uploadMode === 'append' 
+                  ? 'bg-emerald-600 text-white shadow-xs' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Append Records
+            </button>
+          </div>
+        </div>
+
+        <div
+          id="file-dropzone"
+          onDragEnter={handleDrag}
+          onDragOver={handleDrag}
+          onDragLeave={handleDrag}
+          onDrop={handleDrop}
+          onClick={triggerFileInput}
+          className={`relative group cursor-pointer transition-all duration-250 border-2 border-dashed rounded-xl p-8 text-center flex flex-col items-center justify-center ${
+            dragActive
+              ? 'border-emerald-500 bg-emerald-50/50'
+              : 'border-gray-200 hover:border-emerald-400 hover:bg-gray-50/50'
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept=".xlsx,.xls,.csv"
+            onChange={handleFileChange}
+          />
+          
+          <div className={`p-4 rounded-full mb-3 transition-colors duration-250 ${
+            dragActive ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-50 text-gray-400 group-hover:bg-emerald-50 group-hover:text-emerald-500'
+          }`}>
+            <Upload className="w-8 h-8" />
+          </div>
+
+          <p className="text-sm font-medium text-gray-700">
+            {dragActive ? 'Drop your file here' : 'Drag and drop your spreadsheet here'}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            or click to browse local files (.xlsx, .xls, .csv)
+          </p>
+        </div>
+
+        {status.type !== 'idle' && (
+          <div className={`mt-4 flex items-start gap-3 p-3.5 rounded-xl text-sm border ${
+            status.type === 'success' 
+              ? 'bg-emerald-50 border-emerald-100 text-emerald-800' 
+              : 'bg-rose-50 border-rose-100 text-rose-800'
+          }`}>
+            {status.type === 'success' ? (
+              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            )}
+            <span className="font-medium">{status.message}</span>
           </div>
         )}
-      </div>
 
-      {/* Upload Mode Selector */}
-      <div className="mb-5 p-3.5 bg-slate-50 rounded-xl border border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="space-y-0.5">
-          <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wide block">Upload Mode</span>
-          <span className="text-[11px] text-slate-500 block">Choose how to handle the uploaded dataset in Firestore.</span>
+        {/* Quick Help Collapsible Panel */}
+        <div className="mt-4 bg-slate-50 border border-slate-100/80 rounded-xl p-3.5 text-xs text-slate-600">
+          <span className="font-semibold text-slate-700 flex items-center gap-1.5 mb-1.5">
+            <HelpCircle className="w-4 h-4 text-slate-500" />
+            What is preserved when resuming with an exported Excel workbook?
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-500 pl-1 text-[11px]">
+            <div>• <strong className="text-slate-700">Custom Summaries & Action Notes:</strong> Restores user-crafted AI summaries and resolution plans.</div>
+            <div>• <strong className="text-slate-700">Follow-up Comments Thread:</strong> Restores multi-user conversation history and facility dispatches.</div>
+            <div>• <strong className="text-slate-700">Case Owners & Statuses:</strong> Preserves assigned PICs, deadlines, and 'In Progress' / 'Completed' states.</div>
+            <div>• <strong className="text-slate-700">Action Timelines:</strong> Rebuilds step-by-step audit events and timestamps.</div>
+          </div>
         </div>
-        <div className="flex bg-slate-200/60 p-1 rounded-lg border border-slate-200 shrink-0 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => setUploadMode('replace')}
-            className={`px-3 py-1.5 text-xs font-black rounded-md transition-all cursor-pointer ${
-              uploadMode === 'replace' 
-                ? 'bg-emerald-600 text-white shadow-xs' 
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Replace Entire DB (Default)
-          </button>
-          <button
-            type="button"
-            onClick={() => setUploadMode('append')}
-            className={`px-3 py-1.5 text-xs font-black rounded-md transition-all cursor-pointer ${
-              uploadMode === 'append' 
-                ? 'bg-emerald-600 text-white shadow-xs' 
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Append Records
-          </button>
-        </div>
-      </div>
-
-      <div
-        id="file-dropzone"
-        onDragEnter={handleDrag}
-        onDragOver={handleDrag}
-        onDragLeave={handleDrag}
-        onDrop={handleDrop}
-        onClick={triggerFileInput}
-        className={`relative group cursor-pointer transition-all duration-250 border-2 border-dashed rounded-xl p-8 text-center flex flex-col items-center justify-center ${
-          dragActive
-            ? 'border-emerald-500 bg-emerald-50/50'
-            : 'border-gray-200 hover:border-emerald-400 hover:bg-gray-50/50'
-        }`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          accept=".xlsx,.xls,.csv"
-          onChange={handleFileChange}
-        />
-        
-        <div className={`p-4 rounded-full mb-3 transition-colors duration-250 ${
-          dragActive ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-50 text-gray-400 group-hover:bg-emerald-50 group-hover:text-emerald-500'
-        }`}>
-          <Upload className="w-8 h-8" />
-        </div>
-
-        <p className="text-sm font-medium text-gray-700">
-          {dragActive ? 'Drop your file here' : 'Drag and drop your spreadsheet here'}
-        </p>
-        <p className="text-xs text-gray-400 mt-1">
-          or click to browse local files
-        </p>
-      </div>
-
-      {status.type !== 'idle' && (
-        <div className={`mt-4 flex items-start gap-3 p-3.5 rounded-xl text-sm border ${
-          status.type === 'success' 
-            ? 'bg-emerald-50 border-emerald-100 text-emerald-800' 
-            : 'bg-rose-50 border-rose-100 text-rose-800'
-        }`}>
-          {status.type === 'success' ? (
-            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-          ) : (
-            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-          )}
-          <span className="font-medium">{status.message}</span>
-        </div>
-      )}
-
-      {/* Quick Help Collapsible Panel */}
-      <div className="mt-4 bg-slate-50 border border-slate-100/80 rounded-xl p-3.5 text-xs text-slate-600">
-        <span className="font-semibold text-slate-700 flex items-center gap-1.5 mb-1.5">
-          <HelpCircle className="w-4 h-4 text-slate-500" />
-          Excel Column Format Guidelines:
-        </span>
-        <ul className="list-disc list-inside space-y-1 text-slate-500 pl-1">
-          <li><strong>Survey ID:</strong> Number or code, e.g., <code className="bg-white px-1 py-0.5 rounded border border-slate-200">281681709</code></li>
-          <li><strong>Likelihood:</strong> NPS score from <code className="bg-white px-1 py-0.5 rounded border border-slate-200">0 to 10</code></li>
-          <li><strong>Primary Customer Comment:</strong> The raw text feedback string</li>
-          <li><strong>Action Details:</strong> Long string of logs formatted with timestamps in brackets like: <code className="bg-white px-1 py-0.5 rounded border border-slate-200">[2026-06-02 16:58:34] Case Opened;</code></li>
-        </ul>
       </div>
     </div>
   );

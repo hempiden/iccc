@@ -516,6 +516,18 @@ export default function App() {
               )}
             </button>
 
+            {records.length > 0 && (
+              <button
+                type="button"
+                onClick={() => exportMasterExcelWorkbook(records, currentUser)}
+                className="w-full bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold py-2.5 rounded-lg text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                title="Export your current updated workspace data into Excel (.xlsx) to preserve all your updates"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                <span>Export Current Database ({records.length} records)</span>
+              </button>
+            )}
+
             <button
               onClick={handleLogout}
               className="w-full border border-slate-700 hover:bg-slate-700/40 text-slate-300 text-xs font-bold py-2.5 rounded-lg text-center cursor-pointer transition-colors"
@@ -594,6 +606,18 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Quick Master Excel Export Button for Backup & Resume */}
+          <button
+            type="button"
+            onClick={() => exportMasterExcelWorkbook(records, currentUser)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-900 border border-emerald-200/80 rounded-xl transition-all cursor-pointer shadow-2xs shrink-0"
+            title="Export complete master Excel workbook with all updated records, custom summaries, action notes, timelines, and conversation comments"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span className="hidden sm:inline">Export Excel</span>
+            <span className="text-[10px] bg-emerald-200/70 text-emerald-800 px-1.5 py-0.5 rounded-full font-mono font-bold">{records.length}</span>
+          </button>
+
           {/* Superadmin Command Center button */}
           {currentUser.role === 'superadmin' && (
             <button
@@ -733,6 +757,8 @@ export default function App() {
                       setActiveTab('dashboard');
                     }}
                     currentCount={records.length}
+                    allRecords={records}
+                    currentUser={currentUser}
                   />
                 </div>
 
