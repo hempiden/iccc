@@ -8,7 +8,7 @@ import {
 import { VoCRecord, TimelineEvent, ActionOwner } from '../types';
 import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix, formatTargetDeadline } from '../utils/parser';
 import { exportFilteredExcelWorkbook, exportFilteredCSV } from '../utils/excelDatabase';
-import { exportVoCToPowerPoint } from '../utils/pptxExport';
+import { exportVoCToPowerPoint, exportExecutiveSummarySlideToPowerPoint } from '../utils/pptxExport';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface PowerBiMirrorProps {
@@ -639,7 +639,7 @@ export default function PowerBiMirror({
 
   const [isExporting, setIsExporting] = useState(false);
 
-  const handleExportFiltered = async (format: 'xlsx' | 'csv' | 'pptx', onlySelected: boolean = false) => {
+  const handleExportFiltered = async (format: 'xlsx' | 'csv' | 'pptx' | 'pptx_summary', onlySelected: boolean = false) => {
     let targetRecords = filteredTableRecords;
     if (onlySelected && selectedSurveyIds.length > 0) {
       targetRecords = filteredTableRecords.filter(r => selectedSurveyIds.includes(r.id));
@@ -662,6 +662,8 @@ export default function PowerBiMirror({
         exportFilteredExcelWorkbook(targetRecords, filterContext, currentUser);
       } else if (format === 'csv') {
         exportFilteredCSV(targetRecords, filterContext);
+      } else if (format === 'pptx_summary') {
+        await exportExecutiveSummarySlideToPowerPoint(targetRecords, filterContext, currentUser);
       } else if (format === 'pptx') {
         await exportVoCToPowerPoint(targetRecords, filterContext, currentUser);
       }
@@ -1335,13 +1337,25 @@ export default function PowerBiMirror({
                     )}
                     <button
                       type="button"
+                      onClick={() => handleExportFiltered('pptx_summary', false)}
+                      disabled={isExporting}
+                      className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
+                    >
+                      <Presentation className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                      <div>
+                        <div className="font-bold text-[11px] text-red-700">Executive Summary Slide (.pptx)</div>
+                        <div className="text-[9px] text-slate-400 font-normal">1 Widescreen Slide: KPI Scorecard & Overview</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleExportFiltered('pptx', false)}
                       disabled={isExporting}
                       className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
                     >
                       <Presentation className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                       <div>
-                        <div className="font-bold text-[11px] text-amber-800">PowerPoint Presentation (.pptx)</div>
+                        <div className="font-bold text-[11px] text-amber-800">Complete Presentation Deck (.pptx)</div>
                         <div className="text-[9px] text-slate-400 font-normal">Scorecard summary + 1 slide per case</div>
                       </div>
                     </button>

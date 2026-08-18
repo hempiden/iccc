@@ -3,6 +3,17 @@ import { VoCRecord, ActionOwner } from '../types';
 import { ExportFilterContext } from './excelDatabase';
 import { getCleanSurveyId, formatTargetDeadline, getFollowUpTag } from './parser';
 
+// DHL Brand & UI Palette Constants
+const DHL_YELLOW = 'FFCC00';
+const DHL_RED = 'D40511';
+const SLATE_DARK = '0F172A';
+const SLATE_GRAY = '334155';
+const SLATE_LIGHT = 'F8FAFC';
+const BORDER_GRAY = 'CBD5E1';
+const GREEN_PROMOTER = '059669';
+const AMBER_PASSIVE = 'D97706';
+const RED_DETRACTOR = 'DC2626';
+
 /**
  * Generates a presentation slide replicating the "KEY ACTIONS TAKEN TO ADDRESS VOICE OF CUSTOMER" Action Matrix table.
  */
@@ -536,40 +547,15 @@ export function addActionMatrixSlide(
 
 
 /**
- * Generates an executive-grade, DHL-branded PowerPoint presentation (.pptx)
- * containing:
- *  1. Title / Executive Summary scorecard slide
- *  2. Individual dedicated detail slide for every filtered case
+ * Adds the Executive Summary & Scorecard Slide to a PowerPoint presentation
  */
-export async function exportVoCToPowerPoint(
+export function addExecutiveSummarySlide(
+  pres: pptxgen,
   records: VoCRecord[],
   filterContext?: ExportFilterContext,
-  currentUser?: ActionOwner | null
-): Promise<void> {
-  if (!records || records.length === 0) {
-    alert('No records available to export.');
-    return;
-  }
-
-  // Initialize PptxGenJS in 16:9 widescreen layout (13.33 x 7.5 inches)
-  const pres = new pptxgen();
-  pres.layout = 'LAYOUT_WIDE';
-  pres.title = 'DHL Voice of Customer (VoC) Executive Report';
-  pres.subject = 'VoC Feedback Summary & Case Resolution Portfolio';
-  pres.author = currentUser?.fullName || 'DHL Express Colleague';
-  pres.company = 'DHL Express';
-
-  // Palette Constants (DHL Brand System)
-  const DHL_YELLOW = 'FFCC00';
-  const DHL_RED = 'D40511';
-  const SLATE_DARK = '0F172A';
-  const SLATE_GRAY = '334155';
-  const SLATE_LIGHT = 'F8FAFC';
-  const BORDER_GRAY = 'CBD5E1';
-  const GREEN_PROMOTER = '059669';
-  const AMBER_PASSIVE = 'D97706';
-  const RED_DETRACTOR = 'DC2626';
-
+  currentUser?: ActionOwner | null,
+  hasSubsequentSlides: boolean = true
+): void {
   // Calculate Aggregated Metrics for Summary Slide
   const totalCount = records.length;
   let promoters = 0;
@@ -606,11 +592,11 @@ export async function exportVoCToPowerPoint(
   const passivePct = Math.round((passives / totalCount) * 100) || 0;
   const detractorPct = Math.round((detractors / totalCount) * 100) || 0;
   const npsScore = promoterPct - detractorPct;
-  const avgScore = (sumScore / totalCount).toFixed(1);
+  const avgScore = totalCount > 0 ? (sumScore / totalCount).toFixed(1) : '0.0';
   const completionRate = Math.round((completedCases / totalCount) * 100) || 0;
 
   // =========================================================================
-  // SLIDE 1: EXECUTIVE SUMMARY & PERFORMANCE SCORECARD
+  // SLIDE: EXECUTIVE SUMMARY & PERFORMANCE SCORECARD
   // =========================================================================
   const summarySlide = pres.addSlide();
   summarySlide.background = { color: 'F1F5F9' };
@@ -666,7 +652,7 @@ export async function exportVoCToPowerPoint(
 
   summarySlide.addText([
     { text: `Scope: ${totalCount} Cases Selected\n`, options: { bold: true, fontSize: 10, color: SLATE_DARK } },
-    { text: `${filterDesc}\nExported: ${new Date().toLocaleDateString('en-GB')} by ${currentUser?.fullName || 'Colleague'}`, options: { fontSize: 8.5, color: SLATE_GRAY } }
+    { text: `${filterDesc}\nExported: ${new Date().toLocaleDateString('en-GB')} by ${currentUser?.fullName || 'Hempiden'}`, options: { fontSize: 8.5, color: SLATE_GRAY } }
   ], {
     x: 7.8,
     y: 0.12,
@@ -909,13 +895,17 @@ export async function exportVoCToPowerPoint(
     fontFace: 'Arial'
   });
 
+  const governanceThirdBullet = hasSubsequentSlides
+    ? `The following ${totalCount} slides contain itemized customer transcripts, timeline audit steps, assigned PICs, and resolution notes for each individual record.`
+    : `The Voice of Customer intelligence database records itemized customer transcripts, timeline audit steps, and resolution notes across all ${totalCount} cases.`;
+
   summarySlide.addText([
     { text: '1. Fast-Track Detractor Resolution\n', options: { bold: true, color: RED_DETRACTOR, fontSize: 10 } },
     { text: `There are currently ${detractors} detractor case(s) requiring strict 24-hour first response and root cause logging.\n\n`, options: { color: SLATE_GRAY, fontSize: 9 } },
     { text: '2. Closed-Loop Customer Contact (CCC)\n', options: { bold: true, color: SLATE_DARK, fontSize: 10 } },
     { text: `${completionRate}% of current cases have reached "Completed" closed status with verified customer follow-up.\n\n`, options: { color: SLATE_GRAY, fontSize: 9 } },
-    { text: '3. Follow-up Details on Subsequent Slides\n', options: { bold: true, color: SLATE_DARK, fontSize: 10 } },
-    { text: `The following ${totalCount} slides contain itemized customer transcripts, timeline audit steps, assigned PICs, and resolution notes for each individual record.`, options: { color: SLATE_GRAY, fontSize: 9 } }
+    { text: hasSubsequentSlides ? '3. Follow-up Details on Subsequent Slides\n' : '3. Case Portfolio Governance\n', options: { bold: true, color: SLATE_DARK, fontSize: 10 } },
+    { text: governanceThirdBullet, options: { color: SLATE_GRAY, fontSize: 9 } }
   ], {
     x: 0.5 + panelW + 0.63,
     y: lowerY + 0.65,
@@ -935,6 +925,70 @@ export async function exportVoCToPowerPoint(
     align: 'center',
     fontFace: 'Arial'
   });
+}
+
+/**
+ * Exports a standalone 1-slide PowerPoint presentation (.pptx)
+ * of the Executive Summary & Scorecard view in 16:9 widescreen layout.
+ */
+export async function exportExecutiveSummarySlideToPowerPoint(
+  records: VoCRecord[],
+  filterContext?: ExportFilterContext,
+  currentUser?: ActionOwner | null
+): Promise<void> {
+  if (!records || records.length === 0) {
+    alert('No records available to export.');
+    return;
+  }
+
+  // Initialize PptxGenJS in 16:9 widescreen layout (13.33 x 7.5 inches)
+  const pres = new pptxgen();
+  pres.layout = 'LAYOUT_WIDE';
+  pres.title = 'DHL Voice of Customer - Executive Summary Scorecard';
+  pres.subject = 'VoC Executive Scorecard & KPI Portfolio';
+  pres.author = currentUser?.fullName || 'Hempiden';
+  pres.company = 'DHL Express';
+
+  // Add the 1-page Executive Summary Slide
+  addExecutiveSummarySlide(pres, records, filterContext, currentUser, false);
+
+  // Generate file name and download
+  const dateSuffix = new Date().toISOString().split('T')[0];
+  const catTag = filterContext?.category && filterContext.category !== 'All' ? `_${filterContext.category}` : '';
+  const countTag = `_${records.length}Cases`;
+  const fileName = `DHL_VoC_Executive_Summary${catTag}${countTag}_${dateSuffix}.pptx`;
+
+  await pres.writeFile({ fileName });
+}
+
+/**
+ * Generates an executive-grade, DHL-branded PowerPoint presentation (.pptx)
+ * containing:
+ *  1. Title / Executive Summary scorecard slide
+ *  2. Individual dedicated detail slide for every filtered case
+ */
+export async function exportVoCToPowerPoint(
+  records: VoCRecord[],
+  filterContext?: ExportFilterContext,
+  currentUser?: ActionOwner | null
+): Promise<void> {
+  if (!records || records.length === 0) {
+    alert('No records available to export.');
+    return;
+  }
+
+  // Initialize PptxGenJS in 16:9 widescreen layout (13.33 x 7.5 inches)
+  const pres = new pptxgen();
+  pres.layout = 'LAYOUT_WIDE';
+  pres.title = 'DHL Voice of Customer (VoC) Executive Report';
+  pres.subject = 'VoC Feedback Summary & Case Resolution Portfolio';
+  pres.author = currentUser?.fullName || 'DHL Express Colleague';
+  pres.company = 'DHL Express';
+
+  const totalCount = records.length;
+
+  // Add Slide 1: Executive Summary Scorecard
+  addExecutiveSummarySlide(pres, records, filterContext, currentUser, true);
 
   // =========================================================================
   // INDIVIDUAL CASE DETAIL SLIDES (1 CASE PER SLIDE)

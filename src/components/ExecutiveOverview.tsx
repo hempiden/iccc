@@ -1,23 +1,55 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Award, ShieldAlert, Sparkles, MessageSquare, CheckCircle2, 
   TrendingUp, Users, BarChart3, Layers, Calendar, HelpCircle, 
   TrendingDown, Star, ChevronRight, Inbox, HelpCircle as HelpIcon,
-  RefreshCw, AlertCircle
+  RefreshCw, AlertCircle, Presentation, Download, ChevronDown, Check
 } from 'lucide-react';
-import { VoCRecord } from '../types';
+import { VoCRecord, ActionOwner } from '../types';
+import { exportExecutiveSummarySlideToPowerPoint, exportVoCToPowerPoint } from '../utils/pptxExport';
 
 interface ExecutiveOverviewProps {
   records: VoCRecord[];
   allRecords?: VoCRecord[];
+  currentUser?: ActionOwner | null;
 }
 
-export default function ExecutiveOverview({ records, allRecords }: ExecutiveOverviewProps) {
+export default function ExecutiveOverview({ records, allRecords, currentUser }: ExecutiveOverviewProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'topics'>('overview');
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [selectedSentimentFilter, setSelectedSentimentFilter] = useState<'ALL' | 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL'>('ALL');
   const [trendInterval, setTrendInterval] = useState<'monthly' | 'weekly' | 'daily'>('weekly');
   const [showLastYear, setShowLastYear] = useState<boolean>(true);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [showExportMenu, setShowExportMenu] = useState<boolean>(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleExportPPT = async (mode: 'summary' | 'full') => {
+    if (records.length === 0) return;
+    setIsExporting(true);
+    try {
+      if (mode === 'summary') {
+        await exportExecutiveSummarySlideToPowerPoint(records, undefined, currentUser);
+      } else {
+        await exportVoCToPowerPoint(records, undefined, currentUser);
+      }
+    } catch (err) {
+      console.error('PPT export error:', err);
+    } finally {
+      setIsExporting(false);
+      setShowExportMenu(false);
+    }
+  };
 
   const total = records.length;
 
@@ -761,11 +793,58 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
   return (
     <div className="w-full space-y-6 print:hidden" id="voc-executive-kpi-dashboard">
       
-      {/* Title */}
-      <div className="flex items-center justify-between">
+      {/* Title & PPT Export Action */}
+      <div className="flex items-center justify-between gap-4">
         <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
           Analytics Overview
         </span>
+
+        {/* PowerPoint Export Button */}
+        <div className="relative" ref={exportMenuRef}>
+          <button
+            type="button"
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            disabled={isExporting}
+            className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+            title="Export PowerPoint Presentation"
+          >
+            <Presentation className="w-3.5 h-3.5 text-amber-600" />
+            <span>{isExporting ? 'Exporting...' : 'Export to PowerPoint'}</span>
+            <ChevronDown className="w-3 h-3 text-slate-400" />
+          </button>
+
+          {showExportMenu && (
+            <div className="absolute right-0 top-full mt-1.5 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100">
+              <div className="px-3 py-1.5 text-[9px] font-extrabold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                PowerPoint Export Options
+              </div>
+              <button
+                type="button"
+                onClick={() => handleExportPPT('summary')}
+                disabled={isExporting}
+                className="w-full px-3 py-2 text-left hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+              >
+                <Presentation className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-[11px] text-red-700">Executive Summary Slide (.pptx)</div>
+                  <div className="text-[9px] text-slate-400 font-normal">1 Widescreen Slide: Scorecard & Governance</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExportPPT('full')}
+                disabled={isExporting}
+                className="w-full px-3 py-2 text-left hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors cursor-pointer"
+              >
+                <Presentation className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-[11px] text-amber-800">Complete Deck (.pptx)</div>
+                  <div className="text-[9px] text-slate-400 font-normal">Summary slide + {records.length} case slides</div>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Executive Period Comparisons Scorecard: YTD & MTD */}

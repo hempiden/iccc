@@ -858,7 +858,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <ExecutiveOverview records={filteredByTimelineAndChannel} allRecords={records} />
+                <ExecutiveOverview records={filteredByTimelineAndChannel} allRecords={records} currentUser={currentUser} />
 
                 {/* Unified Interactive Power BI Mirror Component */}
                 <PowerBiMirror 
