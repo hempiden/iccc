@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Filter, Award, Sparkles, ShieldAlert, CheckCircle2, Clock, HelpCircle, RefreshCw, AlertCircle, Calendar } from 'lucide-react';
-import { VoCRecord } from '../types';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Search, Filter, Award, Sparkles, ShieldAlert, CheckCircle2, Clock, HelpCircle, RefreshCw, AlertCircle, Calendar, Download, FileSpreadsheet, FileText, ChevronDown } from 'lucide-react';
+import { VoCRecord, ActionOwner } from '../types';
 import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix } from '../utils/parser';
+import { exportFilteredExcelWorkbook, exportFilteredCSV } from '../utils/excelDatabase';
 
 interface CompactSidebarListProps {
   records: VoCRecord[];
@@ -20,6 +21,7 @@ interface CompactSidebarListProps {
   uniqueChannels: string[];
   categoryFilter: 'All' | 'Promoter' | 'Passive' | 'Detractor';
   setCategoryFilter: (category: 'All' | 'Promoter' | 'Passive' | 'Detractor') => void;
+  currentUser?: ActionOwner | null;
 }
 
 export default function CompactSidebarList({ 
@@ -38,9 +40,22 @@ export default function CompactSidebarList({
   setChannelFilter,
   uniqueChannels,
   categoryFilter,
-  setCategoryFilter
+  setCategoryFilter,
+  currentUser
 }: CompactSidebarListProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const filteredRecords = useMemo(() => {
     return records.filter(record => {
@@ -56,6 +71,24 @@ export default function CompactSidebarList({
       return matchesSearch && matchesCategory;
     });
   }, [records, searchQuery, categoryFilter]);
+
+  const handleExport = (format: 'xlsx' | 'csv') => {
+    const filterContext = {
+      category: categoryFilter,
+      status: statusFilter,
+      channel: channelFilter,
+      dateRange: `${formatDateShort(sliderStart)} - ${formatDateShort(sliderEnd)}`,
+      searchQuery: searchQuery || undefined,
+      selectedCount: filteredRecords.length
+    };
+
+    if (format === 'xlsx') {
+      exportFilteredExcelWorkbook(filteredRecords, filterContext, currentUser);
+    } else {
+      exportFilteredCSV(filteredRecords, filterContext);
+    }
+    setShowExportMenu(false);
+  };
 
   const getScoreColor = (score: number) => {
     if (score >= 9) return 'text-emerald-600';
@@ -350,10 +383,63 @@ export default function CompactSidebarList({
         )}
       </div>
 
-      {/* Sidebar stats footer */}
-      <div className="p-2.5 bg-slate-50 border-t border-slate-100 text-[9px] text-slate-400 font-bold flex items-center justify-between">
-        <span>TOTAL:</span>
-        <span className="text-slate-600">{records.length} SURVEYS</span>
+      {/* Sidebar stats & export footer */}
+      <div className="p-2.5 bg-slate-50 border-t border-slate-200 text-[10px] flex items-center justify-between gap-2 relative">
+        <div className="flex items-center gap-1.5 text-slate-500 font-bold">
+          <span className="text-[9px] uppercase tracking-wider text-slate-400">TOTAL:</span>
+          <span className="text-slate-800 font-extrabold">{filteredRecords.length} SURVEYS</span>
+        </div>
+
+        {/* Export Button & Menu */}
+        <div className="relative" ref={exportMenuRef}>
+          <button
+            type="button"
+            onClick={() => setShowExportMenu(prev => !prev)}
+            className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-amber-50 border border-slate-300 hover:border-amber-400 text-slate-700 hover:text-amber-800 rounded-md font-bold text-[10px] transition-all cursor-pointer shadow-2xs"
+            title="Export filtered records matching active search, NPS category, status, and timeline"
+          >
+            <Download className="w-3 h-3 text-amber-600" />
+            <span>Export ({filteredRecords.length})</span>
+            <ChevronDown className={`w-2.5 h-2.5 text-slate-400 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showExportMenu && (
+            <div className="absolute right-0 bottom-full mb-1.5 w-52 bg-white rounded-lg shadow-xl border border-slate-200 py-1.5 z-50 animate-fade-in text-left">
+              <div className="px-3 py-1 border-b border-slate-100 mb-1">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">
+                  Export Filtered ({filteredRecords.length})
+                </span>
+                <span className="text-[9px] text-slate-500 truncate block">
+                  {categoryFilter !== 'All' ? `[${categoryFilter}] ` : ''}
+                  {statusFilter !== 'All' ? `[${statusFilter}] ` : ''}
+                  {channelFilter !== 'All' ? `[${channelFilter}]` : ''}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleExport('xlsx')}
+                className="w-full px-3 py-1.5 hover:bg-amber-50/80 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2 transition-colors text-left cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-[11px]">Excel Workbook (.xlsx)</div>
+                  <div className="text-[9px] text-slate-400 font-normal">Multi-sheet with comments & timeline</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExport('csv')}
+                className="w-full px-3 py-1.5 hover:bg-amber-50/80 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2 transition-colors text-left cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-[11px]">CSV Document (.csv)</div>
+                  <div className="text-[9px] text-slate-400 font-normal">Universal UTF-8 spreadsheet</div>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

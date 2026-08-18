@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Sparkles, ChevronDown, ChevronRight, Search, RotateCcw, 
   ArrowRight, ExternalLink, HelpCircle, Eye, EyeOff, Check, X,
   TrendingUp, BarChart3, List, Award, ShieldAlert, Sliders, Calendar,
-  Presentation, Trash2
+  Presentation, Trash2, Download, FileSpreadsheet, FileText, CheckSquare
 } from 'lucide-react';
-import { VoCRecord, TimelineEvent } from '../types';
+import { VoCRecord, TimelineEvent, ActionOwner } from '../types';
 import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix, formatTargetDeadline } from '../utils/parser';
+import { exportFilteredExcelWorkbook, exportFilteredCSV } from '../utils/excelDatabase';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface PowerBiMirrorProps {
@@ -19,6 +20,7 @@ interface PowerBiMirrorProps {
   categoryFilter?: 'All' | 'Promoter' | 'Passive' | 'Detractor';
   setCategoryFilter?: (category: 'All' | 'Promoter' | 'Passive' | 'Detractor') => void;
   isPresentationPage?: boolean;
+  currentUser?: ActionOwner | null;
 }
 
 // Interface for structured weekly chart data
@@ -225,7 +227,8 @@ export default function PowerBiMirror({
   statusFilter,
   categoryFilter,
   setCategoryFilter,
-  isPresentationPage = false
+  isPresentationPage = false,
+  currentUser
 }: PowerBiMirrorProps) {
   // --- States for Dropdown Filters ---
   const [responseFeed, setResponseFeed] = useState<'All' | 'Detractor' | 'Passive' | 'Promoter'>('All');
@@ -234,6 +237,18 @@ export default function PowerBiMirror({
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [showFeedDropdown, setShowFeedDropdown] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // --- Search and Interactivity ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -619,6 +634,31 @@ export default function PowerBiMirror({
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleExportFiltered = (format: 'xlsx' | 'csv', onlySelected: boolean = false) => {
+    let targetRecords = filteredTableRecords;
+    if (onlySelected && selectedSurveyIds.length > 0) {
+      targetRecords = filteredTableRecords.filter(r => selectedSurveyIds.includes(r.id));
+    }
+
+    const appliedCat = categoryFilter !== 'All' ? categoryFilter : (npsCategory !== 'All' ? npsCategory : (responseFeed !== 'All' ? responseFeed : 'All'));
+    const filterContext = {
+      category: appliedCat,
+      status: statusFilter || (presentationMode ? 'Completed' : 'All'),
+      searchQuery: searchQuery || undefined,
+      weekFilter: selectedChartFilter.week || selectedWeeks.join(', '),
+      channel: selectedChartFilter.channel || undefined,
+      isPartialSelection: onlySelected,
+      selectedCount: targetRecords.length
+    };
+
+    if (format === 'xlsx') {
+      exportFilteredExcelWorkbook(targetRecords, filterContext, currentUser);
+    } else {
+      exportFilteredCSV(targetRecords, filterContext);
+    }
+    setShowExportMenu(false);
   };
 
   // --- AI Summary Generator (Instant Client-side AI) ---
@@ -1197,6 +1237,100 @@ export default function PowerBiMirror({
                 <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                   ×
                 </button>
+              )}
+            </div>
+
+            {/* Export Filtered Records Button & Dropdown */}
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowExportMenu(prev => !prev)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-amber-50 border border-slate-300 hover:border-amber-400 text-slate-700 hover:text-amber-800 rounded font-bold text-[11px] transition-all cursor-pointer shadow-2xs shrink-0"
+                title="Export filtered records to Excel or CSV spreadsheet"
+              >
+                <Download className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>
+                  {selectedSurveyIds.length > 0 
+                    ? `Export (${selectedSurveyIds.length} Selected)` 
+                    : `Export (${filteredTableRecords.length})`}
+                </span>
+                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showExportMenu && (
+                <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 z-50 animate-fade-in text-left">
+                  <div className="px-3.5 py-1.5 border-b border-slate-100 mb-1">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                      Export Filtered VoC Data
+                    </span>
+                    <span className="text-[10px] text-slate-600 font-medium truncate block">
+                      {filteredTableRecords.length} records matching current filter
+                    </span>
+                  </div>
+
+                  {/* If rows are checked/selected */}
+                  {selectedSurveyIds.length > 0 && (
+                    <div className="px-1 mb-1 pb-1 border-b border-slate-100">
+                      <div className="px-2.5 py-1 text-[9px] font-extrabold text-amber-700 uppercase tracking-wider flex items-center gap-1">
+                        <CheckSquare className="w-3 h-3" />
+                        Selected Rows Only ({selectedSurveyIds.length})
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleExportFiltered('xlsx', true)}
+                        className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <div>
+                          <div className="font-bold text-[11px]">Selected to Excel (.xlsx)</div>
+                          <div className="text-[9px] text-slate-400 font-normal">{selectedSurveyIds.length} checked items</div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExportFiltered('csv', true)}
+                        className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <div>
+                          <div className="font-bold text-[11px]">Selected to CSV (.csv)</div>
+                          <div className="text-[9px] text-slate-400 font-normal">{selectedSurveyIds.length} checked items</div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* All currently filtered records */}
+                  <div className="px-1">
+                    {selectedSurveyIds.length > 0 && (
+                      <div className="px-2.5 py-1 text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">
+                        All Filtered Records ({filteredTableRecords.length})
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleExportFiltered('xlsx', false)}
+                      className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <div>
+                        <div className="font-bold text-[11px]">All Filtered to Excel (.xlsx)</div>
+                        <div className="text-[9px] text-slate-400 font-normal">Full multi-sheet report with audit logs</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExportFiltered('csv', false)}
+                      className="w-full px-3 py-1.5 hover:bg-amber-50 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-2.5 transition-colors text-left cursor-pointer rounded-md"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <div>
+                        <div className="font-bold text-[11px]">All Filtered to CSV (.csv)</div>
+                        <div className="text-[9px] text-slate-400 font-normal">Standard comma-separated spreadsheet</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>

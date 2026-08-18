@@ -682,6 +682,7 @@ export default function App() {
             uniqueChannels={uniqueChannels}
             categoryFilter={categoryFilter}
             setCategoryFilter={setCategoryFilter}
+            currentUser={currentUser}
           />
         </aside>
  
@@ -871,6 +872,7 @@ export default function App() {
                   statusFilter={statusFilter}
                   categoryFilter={categoryFilter}
                   setCategoryFilter={setCategoryFilter}
+                  currentUser={currentUser}
                 />
               </div>
             )}
