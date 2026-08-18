@@ -369,55 +369,53 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
     }
 
     if (trendInterval === 'monthly') {
-      const months = [
-        { name: 'Mar 2026', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Apr 2026', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'May 2026', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Jun 2026', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Jul 2026', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } }
-      ];
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const targetMonths = Array.from({ length: 5 }, (_, i) => {
+        const d = new Date(maxDate.getFullYear(), maxDate.getMonth() - 4 + i, 1);
+        return {
+          year: d.getFullYear(),
+          month: d.getMonth(),
+          name: `${monthNames[d.getMonth()]} ${d.getFullYear()}`,
+          cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 },
+          ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }
+        };
+      });
+
+      const parseDate = (dStr?: string) => {
+        if (!dStr) return null;
+        const d = new Date(dStr.replace(/-/g, '/'));
+        return isNaN(d.getTime()) ? null : d;
+      };
 
       records.forEach((r, idx) => {
-        let monthIndex = idx % 5;
-        const dStr = r.responseDate || r.creationDate;
-        if (dStr) {
-          const d = new Date(dStr.replace(/-/g, '/'));
-          const m = d.getMonth(); // 2 is Mar, 3 is Apr, 4 is May, 5 is Jun, 6 is Jul
-          if (m >= 2 && m <= 6) {
-            monthIndex = m - 2;
-          } else {
-            monthIndex = parseInt(r.id.slice(-2), 10) % 5 || idx % 5;
-          }
+        const d = parseDate(r.responseDate || r.creationDate);
+        let mObj = d ? targetMonths.find(tm => tm.year === d.getFullYear() && tm.month === d.getMonth()) : null;
+        if (!mObj) {
+          mObj = targetMonths[idx % 5];
         }
-        const mObj = months[monthIndex].cy;
-        mObj.count++;
-        mObj.sumScore += r.likelihood;
-        if (r.category === 'Promoter') mObj.promoters++;
-        else if (r.category === 'Passive') mObj.passives++;
-        else mObj.detractors++;
+        const cy = mObj.cy;
+        cy.count++;
+        cy.sumScore += r.likelihood;
+        if (r.category === 'Promoter') cy.promoters++;
+        else if (r.category === 'Passive') cy.passives++;
+        else cy.detractors++;
       });
 
       lyRecords.forEach((r, idx) => {
-        let monthIndex = idx % 5;
-        const dStr = r.responseDate || r.creationDate;
-        if (dStr) {
-          const d = new Date(dStr.replace(/-/g, '/'));
-          const m = d.getMonth();
-          if (m >= 2 && m <= 6) {
-            monthIndex = m - 2;
-          } else {
-            monthIndex = parseInt(r.id.slice(-2), 10) % 5 || idx % 5;
-          }
+        const d = parseDate(r.responseDate || r.creationDate);
+        let mObj = d ? targetMonths.find(tm => tm.month === d.getMonth()) : null;
+        if (!mObj) {
+          mObj = targetMonths[idx % 5];
         }
-        const mObj = months[monthIndex].ly;
-        mObj.count++;
-        mObj.sumScore += r.likelihood;
-        if (r.category === 'Promoter') mObj.promoters++;
-        else if (r.category === 'Passive') mObj.passives++;
-        else mObj.detractors++;
+        const ly = mObj.ly;
+        ly.count++;
+        ly.sumScore += r.likelihood;
+        if (r.category === 'Promoter') ly.promoters++;
+        else if (r.category === 'Passive') ly.passives++;
+        else ly.detractors++;
       });
 
-      return months.map(m => {
+      return targetMonths.map(m => {
         const calculateStats = (obj: typeof m.cy) => {
           if (obj.count === 0) return { promoterPct: 0, passivePct: 0, detractorPct: 0, nps: 0, avgScore: '0.0', count: 0 };
           const promPct = (obj.promoters / obj.count) * 100;
@@ -509,33 +507,43 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
         };
       });
     } else {
-      // Weekly - Calculate actual week numbers from record dates
-      const getWeekNumFromDateStr = (dateStr?: string): number => {
-        if (!dateStr) return 23;
+      // Weekly - Calculate actual week numbers isolated to the current target year (determinedYear)
+      const parseYearAndWeek = (dateStr?: string): { year: number; week: number } | null => {
+        if (!dateStr) return null;
         try {
           const d = new Date(dateStr.replace(/-/g, '/'));
-          if (isNaN(d.getTime())) return 23;
+          if (isNaN(d.getTime())) return null;
           const year = d.getFullYear();
           const startOfYear = new Date(year, 0, 1);
           const pastDaysOfYear = (d.getTime() - startOfYear.getTime()) / 86400000;
-          return Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
+          const week = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
+          return { year, week: Math.max(1, Math.min(53, week)) };
         } catch {
-          return 23;
+          return null;
         }
       };
 
-      // Extract week numbers for all records with dates
-      const weekNumsInRecords = records
-        .map(r => getWeekNumFromDateStr(r.responseDate || r.creationDate))
-        .filter(w => w > 0 && w <= 53);
+      // Extract week numbers ONLY for records belonging to the target determinedYear (e.g. 2026)
+      const cyWeeks = records
+        .map(r => parseYearAndWeek(r.responseDate || r.creationDate))
+        .filter((w): w is { year: number; week: number } => w !== null && w.year === determinedYear)
+        .map(w => w.week);
 
-      // Determine max week in dataset (for June 2026, max week is ~26 or 27)
-      const maxWeek = weekNumsInRecords.length > 0
-        ? Math.max(...weekNumsInRecords)
-        : 26;
+      // Determine max week in dataset specifically for determinedYear (e.g. 2026 week 31 for July 31)
+      let maxWeek = 31;
+      if (cyWeeks.length > 0) {
+        maxWeek = Math.max(...cyWeeks);
+      } else if (maxDate) {
+        const startOfYear = new Date(determinedYear, 0, 1);
+        const pastDaysOfYear = (maxDate.getTime() - startOfYear.getTime()) / 86400000;
+        maxWeek = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
+      }
 
-      // Ensure 5 consecutive week numbers ending at maxWeek (e.g. 22, 23, 24, 25, 26 for June)
-      const targetWeeks = Array.from({ length: 5 }, (_, i) => maxWeek - 4 + i);
+      maxWeek = Math.max(1, Math.min(53, maxWeek));
+
+      // Ensure 5 consecutive week numbers ending at maxWeek (e.g. W-27, W-28, W-29, W-30, W-31)
+      const startWeek = Math.max(1, maxWeek - 4);
+      const targetWeeks = Array.from({ length: 5 }, (_, i) => startWeek + i);
 
       const weeks = targetWeeks.map(wNum => ({
         weekNum: wNum,
@@ -546,11 +554,16 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
 
       records.forEach((r, idx) => {
         const dStr = r.responseDate || r.creationDate;
-        const wNum = getWeekNumFromDateStr(dStr);
-        let weekObj = weeks.find(w => w.weekNum === wNum);
+        const parsed = parseYearAndWeek(dStr);
+        let weekObj = parsed ? weeks.find(w => w.weekNum === parsed.week) : null;
         if (!weekObj) {
-          // Fallback to index mapping if date falls outside the 5-week range
-          weekObj = weeks[idx % 5];
+          if (parsed) {
+            if (parsed.week < targetWeeks[0]) weekObj = weeks[0];
+            else if (parsed.week > targetWeeks[4]) weekObj = weeks[4];
+            else weekObj = weeks[idx % 5];
+          } else {
+            weekObj = weeks[idx % 5];
+          }
         }
         const cy = weekObj.cy;
         cy.count++;
@@ -562,10 +575,16 @@ export default function ExecutiveOverview({ records, allRecords }: ExecutiveOver
 
       lyRecords.forEach((r, idx) => {
         const dStr = r.responseDate || r.creationDate;
-        const wNum = getWeekNumFromDateStr(dStr);
-        let weekObj = weeks.find(w => w.weekNum === wNum);
+        const parsed = parseYearAndWeek(dStr);
+        let weekObj = parsed ? weeks.find(w => w.weekNum === parsed.week) : null;
         if (!weekObj) {
-          weekObj = weeks[idx % 5];
+          if (parsed) {
+            if (parsed.week < targetWeeks[0]) weekObj = weeks[0];
+            else if (parsed.week > targetWeeks[4]) weekObj = weeks[4];
+            else weekObj = weeks[idx % 5];
+          } else {
+            weekObj = weeks[idx % 5];
+          }
         }
         const ly = weekObj.ly;
         ly.count++;
