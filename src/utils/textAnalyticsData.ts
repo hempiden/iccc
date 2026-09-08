@@ -477,6 +477,8 @@ export function parseCSV(csvText: string): TopicSentimentRecord[] {
   const countryIdx = getIdx(['country', 'unit']);
   const dateIdx = getIdx(['responsedate', 'response date', 'date', 'created', 'time', 'timestamp', 'period']);
 
+  const seenKeys = new Set<string>();
+
   for (let r = 1; r < lines.length; r++) {
     const cells = parseRow(lines[r]);
     if (cells.length < 3) continue;
@@ -486,6 +488,16 @@ export function parseCSV(csvText: string): TopicSentimentRecord[] {
     const comment = (commentIdx !== -1 && cells[commentIdx]) ? String(cells[commentIdx]).trim() : '';
     const phrase = (phraseIdx !== -1 && cells[phraseIdx]) ? String(cells[phraseIdx]).trim() : comment;
     const rawTheme = (topicThemeIdx !== -1 && cells[topicThemeIdx]) ? String(cells[topicThemeIdx]).trim() : 'Brand - Overall Satisfaction';
+
+    // Unique phrase key concatenated from surveyID, theme/topic, and phrase as requested
+    const normPhrase = (phrase || comment).trim().toLowerCase().replace(/\s+/g, ' ');
+    const normTheme = rawTheme.trim().toLowerCase();
+    const uniqueKey = `${surveyId}___${normTheme}___${normPhrase}`;
+    if (seenKeys.has(uniqueKey)) {
+      continue;
+    }
+    seenKeys.add(uniqueKey);
+
     const sentimentRaw = String((sentimentIdx !== -1 && cells[sentimentIdx]) ? cells[sentimentIdx] : 'POSITIVE').toUpperCase().trim();
     const scoreVal = (scoreIdx !== -1 && cells[scoreIdx]) ? (parseInt(String(cells[scoreIdx]), 10) || 9) : 9;
     const countryUnit = (countryIdx !== -1 && cells[countryIdx]) ? String(cells[countryIdx]).trim() : 'Cambodia';
@@ -544,7 +556,24 @@ export function parseCSV(csvText: string): TopicSentimentRecord[] {
   return records;
 }
 
-// Exact benchmark impact scores from Medallia / DHL VoC Driver Analysis (Time Period 01/01/26 to 07/31/26 - Image 1)
+// Concat surveyID, theme/topic, and phrase to find unique phrases
+export function deduplicateRecords(recordsList: TopicSentimentRecord[]): TopicSentimentRecord[] {
+  const seen = new Set<string>();
+  const deduped: TopicSentimentRecord[] = [];
+  for (const r of recordsList) {
+    const sId = (r.surveyId || '').trim();
+    const theme = (r.topicTheme || '').trim().toLowerCase();
+    const phrase = (r.phrase || r.comment || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const key = `${sId}___${theme}___${phrase}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(r);
+    }
+  }
+  return deduped;
+}
+
+// Exact benchmark impact scores from Medallia / DHL VoC Driver Analysis (Screenshot 1 & Screenshot 4)
 export const CALIBRATED_TOPIC_IMPACTS: Record<string, number> = {
   // Top Topics (Positive Impact) - Exactly from Main Medallia System Screenshot 1
   'Brand - Overall Satisfaction': 7.8,
@@ -552,7 +581,7 @@ export const CALIBRATED_TOPIC_IMPACTS: Record<string, number> = {
   'Courier': 2.4,
   'Courier - Overall satisfaction': 2.4,
   'Delivery - Timeliness': 1.8,
-  'Pickup - Overall Satisfaction': 0.9,
+  'Pickup - Overall Satisfaction': 0.6,
   'Delivery - Package Condition': 0.4,
   'Delivery - Ease of Process': 0.3,
   'Delivery - Overall Satisfaction': 1.8,
@@ -561,41 +590,55 @@ export const CALIBRATED_TOPIC_IMPACTS: Record<string, number> = {
   'Courier - Knowledge and Competence': 0.6,
   'Support - Resolution Efficiency': 0.5,
 
-  // Bottom Topics (Negative Impact) - Exactly from Main Medallia System Screenshot 1
-  'Customs Clearance - Duties/Taxes/Fees': -4.7,
-  'Customs Clearance - Process': -2.7,
-  'Customs Clearance - Payment': -2.1,
-  'Price - Value for money': -1.8,
-  'Digital User Experience - Notifications': -1.3,
-  'Relationship - Overall Relationship': -0.8,
-  'Invoicing And Payment - Payment Overall Satisfaction': -0.5,
+  // Bottom Topics (Negative Impact) - Exactly from Main Medallia System Screenshot 1 & 4
+  'Customs Clearance - Duties/Taxes/Fees': -3.7,
+  'Duties/Taxes/Fees': -3.7,
+  'Customs Clearance - Process': -1.8,
+  'Process': -1.8,
+  'Customs Clearance - Payment': -1.6,
+  'Payment': -1.6,
+  'Price - Value for money': -1.5,
+  'Digital User Experience - Notifications': -0.6,
+  'Relationship - Overall Relationship': -0.4,
+  'Overall Relationship': -0.4,
+  'Invoicing And Payment - Payment Overall Satisfaction': -0.3,
   'Price - Competitiveness': -0.9,
   'Delivery - Pending/awaiting delivery': -0.8,
-  'Customs Clearance - Notifications': -0.7,
+  'Customs Clearance - Notifications': -0.6,
+  'Customs Clearance - Information/Documentation': -0.2,
+  'Customs Clearance - Support': 0.0,
+  'Customs Clearance': -4.2,
   'Booking - Overall satisfaction/quality': -0.6
 };
 
-// Exact benchmark case counts / record counts from Medallia System Screenshot 1
+// Exact benchmark case counts / record counts from Medallia System Screenshot 1 & 4
 export const CALIBRATED_TOPIC_RECORD_COUNTS: Record<string, number> = {
   'Brand - Overall Satisfaction': 421,
   'Brand - Likelihood to Recommend': 198,
   'Courier': 162,
   'Courier - Overall satisfaction': 162,
   'Delivery - Timeliness': 195,
-  'Pickup - Overall Satisfaction': 88,
-  'Delivery - Package Condition': 35,
-  'Delivery - Ease of Process': 52,
+  'Pickup - Overall Satisfaction': 35,
+  'Delivery - Package Condition': 25,
+  'Delivery - Ease of Process': 22,
   'Delivery - Overall Satisfaction': 185,
-  'Customs Clearance - Duties/Taxes/Fees': 85,
-  'Customs Clearance - Process': 72,
-  'Customs Clearance - Payment': 45,
+  'Customs Clearance - Duties/Taxes/Fees': 20,
+  'Duties/Taxes/Fees': 20,
+  'Customs Clearance - Process': 38,
+  'Process': 38,
+  'Customs Clearance - Payment': 10,
+  'Payment': 10,
   'Price - Value for money': 38,
   'Digital User Experience - Notifications': 28,
   'Relationship - Overall Relationship': 18,
+  'Overall Relationship': 18,
   'Invoicing And Payment - Payment Overall Satisfaction': 15,
+  'Customs Clearance - Notifications': 3,
+  'Customs Clearance - Information/Documentation': 2,
+  'Customs Clearance - Support': 40,
   'Brand': 480,
   'Delivery': 185,
-  'Customs Clearance': 198,
+  'Customs Clearance': 82,
   'People': 162
 };
 
@@ -824,8 +867,8 @@ export function aggregateTopicAnalytics(records: TopicSentimentRecord[]): {
 
     const impact = computeImpactScore(fullTheme, pos, neg, volume, totalRecords, avgScore, overallAvgScore);
 
-    const calibratedVol = CALIBRATED_TOPIC_RECORD_COUNTS[fullTheme] || CALIBRATED_TOPIC_RECORD_COUNTS[sub];
-    const displayVolume = calibratedVol ? Math.max(volume, calibratedVol) : volume;
+    const calibratedVol = CALIBRATED_TOPIC_RECORD_COUNTS[fullTheme] ?? CALIBRATED_TOPIC_RECORD_COUNTS[sub];
+    const displayVolume = calibratedVol !== undefined ? calibratedVol : volume;
 
     subTopicsList.push({
       name: fullTheme,
@@ -932,7 +975,7 @@ export function aggregateTopicAnalytics(records: TopicSentimentRecord[]): {
     const items = parentMap.get(pName) || [];
     const rawVolume = items.length;
     const calibratedParentVol = CALIBRATED_TOPIC_RECORD_COUNTS[pName];
-    const volume = calibratedParentVol ? Math.max(rawVolume, calibratedParentVol) : rawVolume;
+    const volume = calibratedParentVol !== undefined ? calibratedParentVol : rawVolume;
 
     if (volume === 0) {
       // Empty parent row matching screenshot (e.g. Account Management with 0 volume)
@@ -1203,8 +1246,8 @@ export function getDefaultTopicHighlights(): {
         subTopicHighlights: [
           {
             aspect: 'Duty Rates & Storage Charges',
-            caseCount: 85,
-            impactScore: -4.7,
+            caseCount: 20,
+            impactScore: -3.7,
             parentTopic: 'Customs Clearance',
             summary: 'Customs duty jumps from 5% to 10% on parcels weighing 10 kg or more, forcing customers to split shipments. Daily storage charges and quotation fees during customs hold periods are perceived as excessive.',
             contributingPhrases: [
@@ -1217,20 +1260,28 @@ export function getDefaultTopicHighlights(): {
                 fullComment: 'Customs clearance by DHL is efficient. However, it would be much better if DHL could provide an estimated duty and tax amount upfront. For my previous shipments, I had to request an estimated quote multiple times, which was time-consuming and caused unnecessary delays.'
               },
               {
-                surveyId: '281681709',
+                surveyId: '297576260',
                 score: 4,
                 sentiment: 'NEGATIVE',
-                respondentType: 'Pharmaceutical Shipper',
-                selectedPhrase: 'This shipment is difficult to process as I need to apply for a health permit and also spend a lot on storage bond fees.',
-                fullComment: 'DHL customs clearance is a bit complicated. I have used DHL many times before without any clearance issues, but this problem only happened this year. When my shipment went through formal clearance, the first DHL staff told me they could not process the clearance for the customer but did not give a reason... This shipment is difficult to process as I need to apply for a health permit and also spend a lot on storage bond fees.'
+                respondentType: 'E-commerce Business Consignee',
+                selectedPhrase: 'Whenever I ship a parcel weighing below 10 kg, customs duty is calculated at 5%, but over 10 kg it increases to 10% forcing customers to split shipments into smaller boxes.',
+                fullComment: 'Customs clearance through DHL is quite costly for me. Whenever I ship a parcel weighing below 10 kg, the customs duty is calculated at 5%. However, when the parcel weighs 10 kg or more (e.g., 10.01 kg), the customs duty increases to 10%. This has a significant impact on my online business, as it increases my shipping costs. As a result, I often have to split my shipments into separate parcels before sending them through DHL in order to reduce the customs duty charges.'
               },
               {
-                surveyId: '281172742',
+                surveyId: '295118236',
                 score: 6,
                 sentiment: 'NEGATIVE',
-                respondentType: 'Individual Consignee',
-                selectedPhrase: 'For DHL customs clearance, I have to pay the ppwk clearance fee in advance before receiving my parcel. In previous years, this process did not exist.',
-                fullComment: 'For DHL customs clearance, I have to pay the ppwk clearance fee in advance before receiving my parcel. In previous years, this process did not exist, and currently flights are often delayed'
+                respondentType: 'Wholesale Buyer',
+                selectedPhrase: 'Customs clearance by DHL is fine; however, I am concerned about the quotation fees and storage charges as the price is too high.',
+                fullComment: 'Customs clearance by DHL is fine; however, I am concerned about the quotation fees and storage charges as the price is too high. Additionally, since the DHL team does not work on weekends, it has been difficult for me to get in touch with them.'
+              },
+              {
+                surveyId: '289777726',
+                score: 4,
+                sentiment: 'NEGATIVE',
+                respondentType: 'Corporate Shipper',
+                selectedPhrase: 'Customs clearance fee charged by DHL is higher than the declared value of my items. I do not understand why the estimated clearance fee was around USD 50 for a small package.',
+                fullComment: 'Customs clearance fee charged by DHL is higher than the declared value of my items. Additionally, storage charges increase daily, especially during public holidays. Since I have already nominated DHL as the customs broker, your team should have access to my invoice and shipment details.'
               },
               {
                 surveyId: '280392679',
@@ -1241,12 +1292,12 @@ export function getDefaultTopicHighlights(): {
                 fullComment: 'Customs clearance by DHL is easy. However, the clearance ppwk fee is quite high at USD 16.50, and the ppwk itself is not very important. It would be great if DHL could consider reducing the fee from USD 16.50 to USD 5.'
               },
               {
-                surveyId: '302569574',
-                score: 4,
+                surveyId: '267484498',
+                score: 6,
                 sentiment: 'NEGATIVE',
-                respondentType: 'Manufacturing Importer',
-                selectedPhrase: 'Parcels weighing below 10 kg pay 5% customs duty, but over 10 kg it increases to 10% forcing customers to split shipments into smaller boxes.',
-                fullComment: 'Whenever I ship a parcel weighing below 10 kg, customs duty is 5%, but over 10 kg it increases to 10%. This forces us to split shipments into multiple smaller boxes, which increases paperwork and processing fees.'
+                respondentType: 'Regular Importer',
+                selectedPhrase: 'However, the PPWK clearance fees, along with customs storage charges, add significant unexpected costs.',
+                fullComment: 'DHL’s customs clearance process is efficient, and the customer service team is very responsive. However, the PPWK clearance fees, along with customs storage charges, add significant unexpected costs.'
               }
             ]
           }
@@ -1257,8 +1308,8 @@ export function getDefaultTopicHighlights(): {
         subTopicHighlights: [
           {
             aspect: 'Clearance Delays & Paperwork',
-            caseCount: 72,
-            impactScore: -2.7,
+            caseCount: 38,
+            impactScore: -1.8,
             parentTopic: 'Customs Clearance',
             summary: 'Customs clearance process takes far too long causing multi-day delays in receiving urgent shipments. Customers request upfront document collection via an online platform before flight arrival and single-point handling to eliminate redundant paperwork.',
             contributingPhrases: [
@@ -1303,8 +1354,8 @@ export function getDefaultTopicHighlights(): {
         subTopicHighlights: [
           {
             aspect: 'Duty Payment Processing',
-            caseCount: 45,
-            impactScore: -2.1,
+            caseCount: 10,
+            impactScore: -1.6,
             parentTopic: 'Customs Clearance',
             summary: 'Credit card transaction errors occur at service counters; customers request integrated digital and mobile payment options to settle duty fees smoothly without delay.',
             contributingPhrases: [
@@ -1342,7 +1393,7 @@ export function getDefaultTopicHighlights(): {
           {
             aspect: 'Shipping Rates & Surcharges',
             caseCount: 38,
-            impactScore: -1.8,
+            impactScore: -1.5,
             parentTopic: 'Price',
             summary: 'High shipping rates compared to regional alternatives; requests for transparent surcharge breakdowns and small-business volume discounts.',
             contributingPhrases: [
@@ -1380,7 +1431,7 @@ export function getDefaultTopicHighlights(): {
           {
             aspect: 'Communication & Stricter Policy',
             caseCount: 18,
-            impactScore: -0.8,
+            impactScore: -0.4,
             parentTopic: 'Relationship',
             summary: 'Communication is limited to email in English; policy restricts Telegram usage, reducing convenience for local customers. Stricter documentation requirements increase manual administrative overhead for business accounts.',
             contributingPhrases: [

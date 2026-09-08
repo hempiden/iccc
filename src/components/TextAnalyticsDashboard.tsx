@@ -46,6 +46,7 @@ import {
 import {
   RAW_SAMPLE_CSV,
   parseCSV,
+  deduplicateRecords,
   aggregateTopicAnalytics,
   getDefaultTopicHighlights,
   TOPIC_AI_SUMMARIES,
@@ -59,20 +60,22 @@ interface TextAnalyticsDashboardProps {
 }
 
 export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ onBackToVoC }) => {
-  // Persistence state
+  // Persistence state with deduplication by surveyID + topic/theme + phrase
   const [records, setRecords] = useState<TopicSentimentRecord[]>(() => {
     const saved = localStorage.getItem('dhl_voc_topic_sentiment_records');
     if (saved) {
       try {
         const parsed: TopicSentimentRecord[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          let needsSave = false;
-          const healed = parsed.map((r, idx) => {
+          // Remove duplicates from repeated uploads
+          const deduped = deduplicateRecords(parsed);
+          let needsSave = deduped.length !== parsed.length;
+          const healed = deduped.map((r, idx) => {
             if (!r.responseDate) {
               needsSave = true;
               return {
                 ...r,
-                responseDate: generateRealisticResponseDate(r.surveyId, idx, parsed.length)
+                responseDate: generateRealisticResponseDate(r.surveyId, idx, deduped.length)
               };
             }
             return r;
@@ -90,7 +93,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         // fallback
       }
     }
-    return parseCSV(RAW_SAMPLE_CSV);
+    return deduplicateRecords(parseCSV(RAW_SAMPLE_CSV));
   });
 
   // Min and Max dates across records
@@ -183,13 +186,15 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Automatically reset stale cache if bottom3 still has 'People' or 'Delivery' or lacks contributingPhrases
+        // Automatically reset stale cache if bottom3 still has 'People' or 'Delivery' or lacks contributingPhrases or has outdated counts
         if (
           parsed &&
           Array.isArray(parsed.bottom3) &&
           (parsed.bottom3.some((b: any) => b.topic === 'People' || b.topic === 'Delivery') ||
            !parsed.top3?.[0]?.subTopicHighlights?.[0]?.contributingPhrases ||
-           !parsed.bottom3?.[0]?.subTopicHighlights?.[0]?.contributingPhrases)
+           !parsed.bottom3?.[0]?.subTopicHighlights?.[0]?.contributingPhrases ||
+           parsed.bottom3?.[0]?.subTopicHighlights?.[0]?.caseCount === 85 ||
+           parsed.bottom3?.[0]?.subTopicHighlights?.[0]?.impactScore === -4.7)
         ) {
           const fresh = getDefaultTopicHighlights();
           localStorage.setItem('dhl_voc_topic_highlights', JSON.stringify(fresh));
@@ -228,52 +233,73 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     const normTopic = topic.toLowerCase();
     const normAspect = aspect.toLowerCase();
 
-    // Direct accurate matchers for bottom friction topics
-    if (normTopic.includes('dut') || normTopic.includes('tax') || normTopic.includes('fee')) {
+    // 1. Exact matcher for Customs Clearance - Duties/Taxes/Fees
+    if (
+      normTopic.includes('dut') ||
+      normTopic.includes('tax') ||
+      normTopic.includes('fee') ||
+      normAspect.includes('dut') ||
+      normAspect.includes('tax') ||
+      normAspect.includes('storage charge') ||
+      normAspect.includes('ppwk')
+    ) {
       return filteredRecords.filter(r =>
-        (r.subTopic || '').toLowerCase().includes('dut') ||
-        (r.subTopic || '').toLowerCase().includes('fee') ||
-        (r.subTopic || '').toLowerCase().includes('tax') ||
-        (r.topicTheme || '').toLowerCase().includes('duties') ||
-        (r.topicTheme || '').toLowerCase().includes('taxes') ||
-        (r.topicTheme || '').toLowerCase().includes('fees') ||
-        (r.phrase || '').toLowerCase().includes('tax') ||
-        (r.phrase || '').toLowerCase().includes('duty') ||
-        (r.phrase || '').toLowerCase().includes('fee') ||
-        (r.comment || '').toLowerCase().includes('tax') ||
-        (r.comment || '').toLowerCase().includes('duty') ||
-        (r.comment || '').toLowerCase().includes('fee')
+        (r.topicTheme || '').includes('Customs Clearance - Duties/Taxes/Fees') ||
+        (r.subTopic || '').includes('Duties/Taxes/Fees') ||
+        (r.parentTopic === 'Customs Clearance' && (
+          (r.subTopic || '').toLowerCase().includes('dut') ||
+          (r.subTopic || '').toLowerCase().includes('tax') ||
+          (r.subTopic || '').toLowerCase().includes('fee')
+        ))
       );
     }
 
-    if (normTopic === 'process' || normTopic.includes('clearance process')) {
+    // 2. Customs Clearance - Process
+    if (
+      normTopic === 'process' ||
+      normTopic.includes('clearance process') ||
+      (normTopic.includes('custom') && normAspect.includes('process')) ||
+      normAspect.includes('clearance delay')
+    ) {
       return filteredRecords.filter(r =>
-        (r.subTopic || '').toLowerCase() === 'process' ||
-        (r.topicTheme || '').toLowerCase().includes('process') ||
-        (r.phrase || '').toLowerCase().includes('process') ||
-        (r.phrase || '').toLowerCase().includes('clearance') ||
-        (r.comment || '').toLowerCase().includes('clearance process')
+        (r.topicTheme || '').includes('Customs Clearance - Process') ||
+        (r.parentTopic === 'Customs Clearance' && (r.subTopic || '').toLowerCase() === 'process')
       );
     }
 
+    // 3. Customs Clearance - Payment
+    if (
+      normTopic.includes('payment') &&
+      (normTopic.includes('custom') || normAspect.includes('custom') || normAspect.includes('duty') || normAspect.includes('processing'))
+    ) {
+      return filteredRecords.filter(r =>
+        (r.topicTheme || '').includes('Customs Clearance - Payment') ||
+        (r.parentTopic === 'Customs Clearance' && (r.subTopic || '').toLowerCase().includes('payment'))
+      );
+    }
+
+    // 4. Price - Value for money
+    if (normTopic.includes('price') || normTopic.includes('value for money') || normAspect.includes('shipping rate') || normAspect.includes('surcharge')) {
+      return filteredRecords.filter(r =>
+        (r.topicTheme || '').includes('Price - Value for money') ||
+        (r.parentTopic === 'Price' && (r.subTopic || '').toLowerCase().includes('value'))
+      );
+    }
+
+    // 5. Relationship - Overall Relationship
     if (normTopic.includes('relationship')) {
       return filteredRecords.filter(r =>
-        (r.parentTopic || '').toLowerCase().includes('relationship') ||
-        (r.subTopic || '').toLowerCase().includes('relationship') ||
-        (r.topicTheme || '').toLowerCase().includes('relationship') ||
-        (r.comment || '').toLowerCase().includes('telegram') ||
-        (r.comment || '').toLowerCase().includes('email') ||
-        (r.comment || '').toLowerCase().includes('communication') ||
-        (r.comment || '').toLowerCase().includes('documentation')
+        (r.topicTheme || '').includes('Relationship') ||
+        (r.parentTopic === 'Relationship')
       );
     }
 
+    // 6. Generic Payment
     if (normTopic.includes('payment')) {
       return filteredRecords.filter(r =>
         (r.subTopic || '').toLowerCase().includes('payment') ||
         (r.topicTheme || '').toLowerCase().includes('payment') ||
-        (r.phrase || '').toLowerCase().includes('payment') ||
-        (r.comment || '').toLowerCase().includes('payment')
+        (r.phrase || '').toLowerCase().includes('payment')
       );
     }
 
@@ -371,10 +397,11 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     return aggregateTopicAnalytics(filteredRecords);
   }, [filteredRecords]);
 
-  // Save to local storage whenever records or highlights change
+  // Save to local storage whenever records or highlights change (with deduplication)
   const saveRecords = (newRecords: TopicSentimentRecord[]) => {
-    setRecords(newRecords);
-    localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(newRecords));
+    const deduped = deduplicateRecords(newRecords);
+    setRecords(deduped);
+    localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(deduped));
   };
 
   const saveHighlights = (newHighlights: typeof highlights) => {
@@ -432,9 +459,9 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
             ...sh,
             aspect: sh.aspect || defAspect?.aspect || 'Key Highlight',
             summary: sh.summary,
-            caseCount: sh.caseCount || defAspect?.caseCount || t.volume,
-            impactScore: sh.impactScore || defAspect?.impactScore || t.impactScore,
-            contributingPhrases: sh.contributingPhrases || defAspect?.contributingPhrases || []
+            caseCount: defAspect?.caseCount ?? (sh.caseCount === 85 ? 20 : sh.caseCount) ?? t.volume,
+            impactScore: defAspect?.impactScore ?? (sh.impactScore === -4.7 ? -3.7 : sh.impactScore) ?? t.impactScore,
+            contributingPhrases: (defAspect?.contributingPhrases && defAspect.contributingPhrases.length > 0) ? defAspect.contributingPhrases : (sh.contributingPhrases || [])
           };
         });
       }
@@ -601,9 +628,15 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       const content = evt.target?.result;
       if (typeof content === 'string') {
         const parsed = parseCSV(content);
-        if (parsed.length > 0) {
-          saveRecords(parsed);
-          setUploadStatus(`Successfully loaded ${parsed.length} phrase records!`);
+        const deduped = deduplicateRecords(parsed);
+        if (deduped.length > 0) {
+          saveRecords(deduped);
+          const dupCount = parsed.length - deduped.length;
+          setUploadStatus(
+            dupCount > 0
+              ? `Successfully loaded ${deduped.length} unique phrase records (${dupCount} duplicate rows removed).`
+              : `Successfully loaded ${deduped.length} unique phrase records!`
+          );
           setActiveTab('top_bottom');
         } else {
           setUploadStatus('Could not parse valid records from CSV. Please check formatting.');
@@ -616,9 +649,15 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
   const handlePasteSubmit = () => {
     if (!pasteCSVText.trim()) return;
     const parsed = parseCSV(pasteCSVText);
-    if (parsed.length > 0) {
-      saveRecords(parsed);
-      setUploadStatus(`Successfully parsed ${parsed.length} phrase records from pasted text.`);
+    const deduped = deduplicateRecords(parsed);
+    if (deduped.length > 0) {
+      saveRecords(deduped);
+      const dupCount = parsed.length - deduped.length;
+      setUploadStatus(
+        dupCount > 0
+          ? `Successfully parsed ${deduped.length} unique phrase records (${dupCount} duplicate rows removed).`
+          : `Successfully parsed ${deduped.length} unique phrase records from pasted text.`
+      );
       setPasteCSVText('');
       setActiveTab('top_bottom');
     } else {
@@ -1763,23 +1802,9 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   <div className="divide-y divide-slate-100 bg-white">
                     {highlights.top3.map((item, idx) => (
                       <div key={item.topic} className="grid grid-cols-12 px-3 py-3 text-xs gap-2">
-                        <div className="col-span-3 font-bold text-slate-900 flex flex-col justify-start gap-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                            <span className="text-slate-900 font-bold">{item.topic}</span>
-                          </div>
-                          {item.subTopicHighlights[0]?.caseCount && (
-                            <div className="flex items-center gap-1 text-[10px] pl-3.5 flex-wrap">
-                              <span className="px-1.5 py-0.5 rounded font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                {item.subTopicHighlights[0].caseCount} cases
-                              </span>
-                              {item.subTopicHighlights[0].impactScore && (
-                                <span className="px-1.5 py-0.5 rounded font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  +{item.subTopicHighlights[0].impactScore.toFixed(1)} Impact
-                                </span>
-                              )}
-                            </div>
-                          )}
+                        <div className="col-span-3 font-bold text-slate-900 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                          <span className="text-slate-900 font-bold">{item.topic}</span>
                         </div>
                         <div className="col-span-9 space-y-2 text-slate-700 text-[11px] leading-relaxed">
                           {item.subTopicHighlights.map((sh, sIdx) => {
@@ -1923,25 +1948,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   </div>
                 </div>
 
-                {/* BOTTOM 3 TOPICS TABLE (RED HEADER) - STRICTLY SYNCED WITH CHART */}
+                {/* BOTTOM 3 TOPICS TABLE (RED HEADER) */}
                 <div className="border border-red-300 rounded-xl overflow-hidden shadow-sm">
-                  <div className="bg-red-600 text-white px-4 py-2 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black tracking-wider uppercase">
-                        {showAllChartFrictionTopics ? 'BOTTOM TOPICS IMPACT (ALL FROM CHART)' : 'BOTTOM 3 TOPICS'}
-                      </span>
-                      <span className="text-[10px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-full">
-                        Synced with Chart
-                      </span>
-                    </div>
-                    {analytics.bottomSubTopics.length > 3 && (
-                      <button
-                        onClick={() => setShowAllChartFrictionTopics(!showAllChartFrictionTopics)}
-                        className="text-[10px] font-bold bg-white text-red-700 hover:bg-red-50 px-2 py-0.5 rounded transition shadow-2xs"
-                      >
-                        {showAllChartFrictionTopics ? 'Show Top 3' : `Show All (${Math.min(4, analytics.bottomSubTopics.length)}) from Chart`}
-                      </button>
-                    )}
+                  <div className="bg-red-600 text-white text-center py-2 text-xs font-black tracking-wider uppercase">
+                    BOTTOM 3 TOPICS
                   </div>
                   <div className="bg-slate-100 text-slate-800 text-[11px] font-bold grid grid-cols-12 px-3 py-1.5 border-b border-red-200">
                     <span className="col-span-3">Topics</span>
@@ -1951,21 +1961,9 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   <div className="divide-y divide-slate-100 bg-white">
                     {effectiveBottomHighlights.map((item, idx) => (
                       <div key={item.topic} className="grid grid-cols-12 px-3 py-3 text-xs gap-2">
-                        <div className="col-span-3 font-bold text-slate-900 flex flex-col justify-start gap-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
-                            <span className="text-slate-900 font-bold">{item.topic}</span>
-                          </div>
-                          <div className="flex items-center gap-1 text-[10px] pl-3.5 flex-wrap">
-                            <span className="px-1.5 py-0.5 rounded font-extrabold bg-red-100 text-red-700 border border-red-200">
-                              {item.impactScore.toFixed(1)} Impact
-                            </span>
-                            {item.subTopicHighlights[0]?.caseCount && (
-                              <span className="px-1.5 py-0.5 rounded font-extrabold bg-slate-100 text-slate-700 border border-slate-200">
-                                {item.subTopicHighlights[0].caseCount} cases
-                              </span>
-                            )}
-                          </div>
+                        <div className="col-span-3 font-bold text-slate-900 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
+                          <span className="text-slate-900 font-bold">{item.topic}</span>
                         </div>
                         <div className="col-span-9 space-y-2 text-slate-700 text-[11px] leading-relaxed">
                           {item.subTopicHighlights.map((sh, sIdx) => {
@@ -2538,9 +2536,17 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                 {/* Metrics Row */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Matched Cases</span>
-                    <div className="text-lg font-black text-slate-900 mt-0.5">
-                      {allMatchedCases.length} records
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Case & Survey Count</span>
+                      {selectedHighlightDetail.caseCount && (
+                        <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          Medallia: {selectedHighlightDetail.caseCount}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-lg font-black text-slate-900 mt-0.5 flex items-baseline gap-1.5">
+                      <span>{new Set(allMatchedCases.map(c => c.surveyId)).size} surveys</span>
+                      <span className="text-xs font-normal text-slate-500">({allMatchedCases.length} phrases)</span>
                     </div>
                   </div>
 
