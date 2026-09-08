@@ -933,7 +933,7 @@ function addICCCExecutiveSlide(
     const rowBg = idx % 2 === 0 ? 'FFFFFF' : 'FAFAFA';
     const highlightItems = h.subTopicHighlights.map(sh => `${sh.aspect}: ${sh.summary}`).join('\n\n');
     const primaryAspect = h.subTopicHighlights[0];
-    const caseText = primaryAspect?.caseCount ? `\n(${primaryAspect.caseCount} cases)` : '';
+    const caseText = primaryAspect?.caseCount ? `\n(${primaryAspect.caseCount} phrases)` : '';
 
     topTableRows.push([
       { 
@@ -1016,7 +1016,7 @@ function addICCCExecutiveSlide(
     const rowBg = idx % 2 === 0 ? 'FFFFFF' : 'FAFAFA';
     const highlightItems = h.subTopicHighlights.map(sh => `${sh.aspect}: ${sh.summary}`).join('\n\n');
     const primaryAspect = h.subTopicHighlights[0];
-    const caseText = primaryAspect?.caseCount ? `\n(${primaryAspect.caseCount} cases)` : '';
+    const caseText = primaryAspect?.caseCount ? `\n(${primaryAspect.caseCount} phrases)` : '';
 
     botTableRows.push([
       { 
@@ -1073,7 +1073,7 @@ function addICCCExecutiveSlide(
   highlights.top3.forEach((h, hIdx) => {
     presenterNotes.push(`\n[${hIdx + 1}] TOPIC: ${h.topic.toUpperCase()}`);
     h.subTopicHighlights.forEach(sh => {
-      presenterNotes.push(`  • Aspect: ${sh.aspect} (Impact: ${sh.impactScore ? (sh.impactScore > 0 ? '+' : '') + sh.impactScore.toFixed(1) : '+7.8'} | Case Count: ${sh.caseCount || 'N/A'})`);
+      presenterNotes.push(`  • Aspect: ${sh.aspect} (Impact: ${sh.impactScore ? (sh.impactScore > 0 ? '+' : '') + sh.impactScore.toFixed(1) : '+7.8'} | Phrase Count: ${sh.caseCount || 'N/A'})`);
       presenterNotes.push(`  • Joined Summary: "${sh.summary}"`);
       if (sh.contributingPhrases && sh.contributingPhrases.length > 0) {
         presenterNotes.push(`  • Selected Survey Phrases & Full Comments (${sh.contributingPhrases.length} surveys joined):`);
@@ -1093,7 +1093,7 @@ function addICCCExecutiveSlide(
   highlights.bottom3.forEach((h, hIdx) => {
     presenterNotes.push(`\n[${hIdx + 1}] TOPIC: ${h.topic.toUpperCase()}`);
     h.subTopicHighlights.forEach(sh => {
-      presenterNotes.push(`  • Aspect: ${sh.aspect} (Impact: ${sh.impactScore ? sh.impactScore.toFixed(1) : '-4.7'} | Case Count: ${sh.caseCount || 'N/A'})`);
+      presenterNotes.push(`  • Aspect: ${sh.aspect} (Impact: ${sh.impactScore ? sh.impactScore.toFixed(1) : '-4.7'} | Phrase Count: ${sh.caseCount || 'N/A'})`);
       presenterNotes.push(`  • Joined Summary: "${sh.summary}"`);
       if (sh.contributingPhrases && sh.contributingPhrases.length > 0) {
         presenterNotes.push(`  • Selected Survey Phrases & Full Comments (${sh.contributingPhrases.length} surveys joined):`);

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   FileSpreadsheet,
   Download,
@@ -41,7 +41,8 @@ import {
   TopicAnalyticsItem,
   SentimentType,
   TopicHighlightSummary,
-  ContributingSurveyPhrase
+  ContributingSurveyPhrase,
+  VoCRecord
 } from '../types';
 import {
   RAW_SAMPLE_CSV,
@@ -52,68 +53,96 @@ import {
   TOPIC_AI_SUMMARIES,
   generateRealisticResponseDate
 } from '../utils/textAnalyticsData';
+import {
+  syncTopicRecordsWithVoCLookup
+} from '../utils/vocDateLookup';
 import { exportTextAnalyticsToPowerPoint } from '../utils/textAnalyticsPptx';
 import * as XLSX from 'xlsx';
 
 interface TextAnalyticsDashboardProps {
+  vocRecords?: VoCRecord[];
   onBackToVoC?: () => void;
 }
 
-export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ onBackToVoC }) => {
+export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ vocRecords, onBackToVoC }) => {
+  // Sync status tracking between VoC Survey Records and Text Analytics Survey IDs
+  const [vocSyncStatus, setVocSyncStatus] = useState<{ matchedCount: number; totalVoCLinked: number }>({
+    matchedCount: 0,
+    totalVoCLinked: 0
+  });
+  const [syncToastMessage, setSyncToastMessage] = useState<string | null>(null);
+
   // Persistence state with deduplication by surveyID + topic/theme + phrase
   const [records, setRecords] = useState<TopicSentimentRecord[]>(() => {
+    let initialRecords: TopicSentimentRecord[] = [];
     const saved = localStorage.getItem('dhl_voc_topic_sentiment_records');
     if (saved) {
       try {
         const parsed: TopicSentimentRecord[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Remove duplicates from repeated uploads
-          const deduped = deduplicateRecords(parsed);
-          let needsSave = deduped.length !== parsed.length;
-          const healed = deduped.map((r, idx) => {
-            if (!r.responseDate) {
-              needsSave = true;
-              return {
-                ...r,
-                responseDate: generateRealisticResponseDate(r.surveyId, idx, deduped.length)
-              };
-            }
-            return r;
-          });
-          if (needsSave) {
-            try {
-              localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(healed));
-            } catch {
-              // ignore
-            }
-          }
-          return healed;
+          initialRecords = parsed;
         }
       } catch {
         // fallback
       }
     }
-    return deduplicateRecords(parseCSV(RAW_SAMPLE_CSV));
+    if (initialRecords.length === 0) {
+      initialRecords = parseCSV(RAW_SAMPLE_CSV);
+    }
+
+    // Deduplicate records
+    const deduped = deduplicateRecords(initialRecords);
+
+    // Initial VoC lookup sync using surveyID
+    const { updatedRecords } = syncTopicRecordsWithVoCLookup(deduped, vocRecords);
+    return updatedRecords;
   });
+
+  // Re-sync with VoC Survey Records whenever vocRecords changes or on mount
+  useEffect(() => {
+    const { updatedRecords, matchedCount, totalVoCLinked } = syncTopicRecordsWithVoCLookup(records, vocRecords);
+    setVocSyncStatus({ matchedCount, totalVoCLinked });
+    const hasChanges = updatedRecords.some((r, idx) => r.responseDate !== records[idx]?.responseDate);
+    if (hasChanges) {
+      setRecords(updatedRecords);
+      try {
+        localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(updatedRecords));
+      } catch {
+        // ignore
+      }
+    }
+  }, [vocRecords]);
+
+  // Handler for manual VoC Survey Records date re-sync
+  const handleManualVoCDateSync = () => {
+    const { updatedRecords, matchedCount, totalVoCLinked } = syncTopicRecordsWithVoCLookup(records, vocRecords);
+    setRecords(updatedRecords);
+    try {
+      localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(updatedRecords));
+    } catch {
+      // ignore
+    }
+    setVocSyncStatus({ matchedCount, totalVoCLinked });
+    setSyncToastMessage(
+      `✓ Successfully linked ${matchedCount} survey records with interactive dates from VoC Survey Records by Survey ID!`
+    );
+    setTimeout(() => setSyncToastMessage(null), 4500);
+  };
 
   // Min and Max dates across records
   const { minDate, maxDate } = useMemo(() => {
-    let min = '2026-06-01';
-    let max = '2026-07-31';
+    let min = '';
+    let max = '';
     if (records.length > 0) {
-      let foundMin = '';
-      let foundMax = '';
       records.forEach(r => {
-        if (r.responseDate) {
+        if (r.responseDate && r.responseDate.length >= 10) {
           const d = r.responseDate.substring(0, 10);
-          if (!foundMin || d < foundMin) foundMin = d;
-          if (!foundMax || d > foundMax) foundMax = d;
+          if (!min || d < min) min = d;
+          if (!max || d > max) max = d;
         }
       });
-      if (foundMin) min = foundMin;
-      if (foundMax) max = foundMax;
     }
-    return { minDate: min, maxDate: max };
+    return { minDate: min || '2026-03-01', maxDate: max || '2026-07-31' };
   }, [records]);
 
   const [startDate, setStartDate] = useState<string>('2026-06-01');
@@ -132,18 +161,20 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     return `${fmt(start)} to ${fmt(end)}`;
   };
 
-  const isAllTime = (!startDate || startDate <= minDate) && (!endDate || endDate >= maxDate);
-
   // Filter records by date range
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
-      if (!r.responseDate) return true;
+      if (!r.responseDate) return false;
       const d = r.responseDate.substring(0, 10);
       if (startDate && d < startDate) return false;
       if (endDate && d > endDate) return false;
       return true;
     });
   }, [records, startDate, endDate]);
+
+  const isAllTime = filteredRecords.length === records.length && (
+    (!startDate || startDate <= minDate) && (!endDate || endDate >= maxDate)
+  );
 
   const [activeTab, setActiveTab] = useState<'top_bottom' | 'summary' | 'iccc' | 'upload'>('top_bottom');
   const [searchQuery, setSearchQuery] = useState('');
@@ -394,19 +425,144 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
   // Compute aggregated topic analytics based on date-filtered records
   const analytics = useMemo(() => {
-    return aggregateTopicAnalytics(filteredRecords);
-  }, [filteredRecords]);
+    return aggregateTopicAnalytics(filteredRecords, isAllTime);
+  }, [filteredRecords, isAllTime]);
 
   // Save to local storage whenever records or highlights change (with deduplication)
   const saveRecords = (newRecords: TopicSentimentRecord[]) => {
     const deduped = deduplicateRecords(newRecords);
-    setRecords(deduped);
-    localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(deduped));
+    const { updatedRecords } = syncTopicRecordsWithVoCLookup(deduped, vocRecords);
+    setRecords(updatedRecords);
+    localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(updatedRecords));
   };
 
   const saveHighlights = (newHighlights: typeof highlights) => {
     setHighlights(newHighlights);
     localStorage.setItem('dhl_voc_topic_highlights', JSON.stringify(newHighlights));
+  };
+
+  // Derive top topics highlights strictly from the top topics impact listed in the chart
+  const effectiveTopHighlights = useMemo(() => {
+    // Top topics that appear in the top topics impact chart
+    const chartTopics = analytics.topSubTopics.slice(0, 3);
+    const defaultTop = getDefaultTopicHighlights().top3;
+
+    return chartTopics.map(t => {
+      const topicLabel = t.subTopic || t.name.replace(/^.*-\s*/, '');
+      const parentLabel = t.parentTopic || 'General';
+
+      // Look for user edited highlight in highlights.top3
+      const existing = highlights.top3.find(
+        h => h.topic.toLowerCase() === topicLabel.toLowerCase() ||
+             h.topic.toLowerCase() === t.name.toLowerCase() ||
+             h.topic.toLowerCase() === parentLabel.toLowerCase() ||
+             h.subTopicHighlights?.some(sh => sh.aspect.toLowerCase() === topicLabel.toLowerCase())
+      );
+
+      // Look for matching baseline in defaultTop
+      const matchedDefault = defaultTop.find(
+        d => d.topic.toLowerCase() === topicLabel.toLowerCase() ||
+             d.topic.toLowerCase() === t.name.toLowerCase() ||
+             d.topic.toLowerCase() === parentLabel.toLowerCase() ||
+             d.subTopicHighlights?.some(sh => sh.aspect.toLowerCase() === topicLabel.toLowerCase())
+      );
+
+      const matchedDefaultAspect = matchedDefault?.subTopicHighlights?.find(
+        sh => sh.aspect.toLowerCase() === topicLabel.toLowerCase() ||
+              topicLabel.toLowerCase().includes(sh.aspect.toLowerCase()) ||
+              sh.aspect.toLowerCase().includes(topicLabel.toLowerCase())
+      ) || matchedDefault?.subTopicHighlights?.[0];
+
+      // Look in TOPIC_AI_SUMMARIES
+      const aiSummaryObj = TOPIC_AI_SUMMARIES[t.name] || 
+        Object.entries(TOPIC_AI_SUMMARIES).find(([k]) => 
+          k.toLowerCase().includes(topicLabel.toLowerCase()) || 
+          topicLabel.toLowerCase().includes(k.toLowerCase())
+        )?.[1];
+
+      let subTopicHighlights = existing?.subTopicHighlights;
+
+      if (!subTopicHighlights || subTopicHighlights.length === 0) {
+        const fallbackSummary = aiSummaryObj?.summary || 
+          (t.samplePhrases && t.samplePhrases.length > 0 
+            ? t.samplePhrases.slice(0, 2).map(sp => sp.phrase || sp.comment).join('. ') + '.'
+            : `Customer feedback highlights strong positive sentiment for ${topicLabel} with an impact score of +${t.impactScore.toFixed(1)}.`);
+
+        const contributingPhrases = (t.samplePhrases && t.samplePhrases.length > 0)
+          ? t.samplePhrases.slice(0, 5).map(sp => ({
+              surveyId: sp.surveyId,
+              score: sp.score,
+              sentiment: (sp.sentiment || 'POSITIVE') as any,
+              respondentType: 'Verified Customer',
+              selectedPhrase: sp.phrase,
+              fullComment: sp.comment || sp.phrase
+            }))
+          : (matchedDefaultAspect?.contributingPhrases || []);
+
+        subTopicHighlights = [
+          {
+            aspect: topicLabel,
+            parentTopic: parentLabel,
+            summary: fallbackSummary,
+            impactScore: t.impactScore,
+            caseCount: t.volume,
+            contributingPhrases
+          }
+        ];
+      } else {
+        // Ensure caseCount and impactScore follow the chart
+        subTopicHighlights = subTopicHighlights.map((sh, sIdx) => {
+          const defAspect = matchedDefaultAspect || matchedDefault?.subTopicHighlights?.[sIdx];
+          const dynamicPhrases = (t.samplePhrases && t.samplePhrases.length > 0)
+            ? t.samplePhrases.slice(0, 5).map(sp => ({
+                surveyId: sp.surveyId,
+                score: sp.score,
+                sentiment: (sp.sentiment || 'POSITIVE') as any,
+                respondentType: 'Verified Customer',
+                selectedPhrase: sp.phrase,
+                fullComment: sp.comment || sp.phrase
+              }))
+            : (defAspect?.contributingPhrases || sh.contributingPhrases || []);
+
+          return {
+            ...sh,
+            aspect: sh.aspect || topicLabel,
+            summary: sh.summary || aiSummaryObj?.summary || defAspect?.summary || 'Consistent positive customer feedback.',
+            caseCount: isAllTime ? (defAspect?.caseCount ?? t.volume) : t.volume,
+            impactScore: isAllTime ? (defAspect?.impactScore ?? t.impactScore) : t.impactScore,
+            contributingPhrases: dynamicPhrases
+          };
+        });
+      }
+
+      return {
+        topic: topicLabel,
+        fullTopicName: t.name,
+        parentTopic: parentLabel,
+        impactScore: t.impactScore,
+        subTopicHighlights
+      };
+    });
+  }, [analytics.topSubTopics, highlights.top3, isAllTime]);
+
+  // Update top highlights when edited in UI
+  const handleUpdateTopHighlight = (topicLabel: string, sIdx: number, newSummary: string) => {
+    const updated = { ...highlights };
+    const tIdx = updated.top3.findIndex(
+      t => t.topic.toLowerCase() === topicLabel.toLowerCase() ||
+           topicLabel.toLowerCase().includes(t.topic.toLowerCase())
+    );
+    if (tIdx >= 0) {
+      if (updated.top3[tIdx].subTopicHighlights[sIdx]) {
+        updated.top3[tIdx].subTopicHighlights[sIdx].summary = newSummary;
+      }
+    } else {
+      updated.top3.push({
+        topic: topicLabel,
+        subTopicHighlights: [{ aspect: topicLabel, summary: newSummary }]
+      });
+    }
+    saveHighlights(updated);
   };
 
   // Derive bottom topics highlights strictly from the bottom topics impact listed in the chart
@@ -459,8 +615,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
             ...sh,
             aspect: sh.aspect || defAspect?.aspect || 'Key Highlight',
             summary: sh.summary,
-            caseCount: defAspect?.caseCount ?? (sh.caseCount === 85 ? 20 : sh.caseCount) ?? t.volume,
-            impactScore: defAspect?.impactScore ?? (sh.impactScore === -4.7 ? -3.7 : sh.impactScore) ?? t.impactScore,
+            caseCount: isAllTime ? (defAspect?.caseCount ?? t.volume) : t.volume,
+            impactScore: isAllTime ? (defAspect?.impactScore ?? t.impactScore) : t.impactScore,
             contributingPhrases: (defAspect?.contributingPhrases && defAspect.contributingPhrases.length > 0) ? defAspect.contributingPhrases : (sh.contributingPhrases || [])
           };
         });
@@ -474,7 +630,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         subTopicHighlights
       };
     });
-  }, [analytics.bottomSubTopics, highlights.bottom3, showAllChartFrictionTopics]);
+  }, [analytics.bottomSubTopics, highlights.bottom3, showAllChartFrictionTopics, isAllTime]);
 
   // Update bottom highlights when edited in UI
   const handleUpdateBottomHighlight = (topicLabel: string, sIdx: number, newSummary: string) => {
@@ -540,7 +696,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
           overallMixedPercent: analytics.overallMixedPercent
         },
         {
-          top3: highlights.top3,
+          top3: effectiveTopHighlights.map(eh => ({
+            topic: eh.topic,
+            subTopicHighlights: eh.subTopicHighlights
+          })),
           bottom3: effectiveBottomHighlights.map(eh => ({
             topic: eh.topic,
             subTopicHighlights: eh.subTopicHighlights
@@ -838,8 +997,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   <input
                     type="date"
                     value={startDate}
-                    min={minDate}
-                    max={endDate || maxDate}
+                    min="2020-01-01"
+                    max="2030-12-31"
                     onChange={e => setStartDate(e.target.value)}
                     className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer text-xs"
                   />
@@ -852,8 +1011,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   <input
                     type="date"
                     value={endDate}
-                    min={startDate || minDate}
-                    max={maxDate}
+                    min="2020-01-01"
+                    max="2030-12-31"
                     onChange={e => setEndDate(e.target.value)}
                     className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer text-xs"
                   />
@@ -864,11 +1023,24 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
               <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   onClick={() => {
-                    setStartDate(minDate);
-                    setEndDate(maxDate);
+                    setStartDate('2026-01-01');
+                    setEndDate('2026-07-31');
                   }}
                   className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
-                    isAllTime
+                    startDate === '2026-01-01' && endDate === '2026-07-31'
+                      ? 'bg-amber-500 text-slate-950 shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  All (01/01 – 07/31)
+                </button>
+                <button
+                  onClick={() => {
+                    setStartDate('2026-06-01');
+                    setEndDate('2026-07-31');
+                  }}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+                    startDate === '2026-06-01' && endDate === '2026-07-31'
                       ? 'bg-amber-500 text-slate-950 shadow-xs'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
@@ -915,6 +1087,23 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   Last 14 Days
                 </button>
               </div>
+
+              {/* VoC Survey Records Lookup Button */}
+              <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+                <button
+                  onClick={handleManualVoCDateSync}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 bg-slate-100 hover:bg-amber-100 hover:text-amber-900 border border-slate-200 hover:border-amber-300 transition shadow-2xs"
+                  title="Lookup and sync interactive dates from VoC Survey Records using Survey ID"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Sync VoC Survey Dates</span>
+                  {vocSyncStatus.matchedCount > 0 && (
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-1.5 py-0.2 rounded-full border border-emerald-200">
+                      {vocSyncStatus.matchedCount} linked
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Right: Response count & Reset */}
@@ -934,8 +1123,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
               {!isAllTime && (
                 <button
                   onClick={() => {
-                    setStartDate(minDate);
-                    setEndDate(maxDate);
+                    setStartDate('2026-06-01');
+                    setEndDate('2026-07-31');
                   }}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition"
                   title="Reset date filter to full time window"
@@ -947,6 +1136,22 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
             </div>
           </div>
         </div>
+
+        {/* Sync Toast Alert */}
+        {syncToastMessage && (
+          <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-2.5 rounded-xl text-xs font-medium flex items-center justify-between shadow-xs animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{syncToastMessage}</span>
+            </div>
+            <button
+              onClick={() => setSyncToastMessage(null)}
+              className="text-emerald-700 hover:text-emerald-900 text-xs font-bold px-2 py-0.5"
+            >
+              &times;
+            </button>
+          </div>
+        )}
 
         {/* TAB 1: TOP & BOTTOM SUB-TOPICS (SCREENSHOT 1) */}
         {activeTab === 'top_bottom' && (
@@ -1800,11 +2005,16 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   </div>
 
                   <div className="divide-y divide-slate-100 bg-white">
-                    {highlights.top3.map((item, idx) => (
-                      <div key={item.topic} className="grid grid-cols-12 px-3 py-3 text-xs gap-2">
-                        <div className="col-span-3 font-bold text-slate-900 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                          <span className="text-slate-900 font-bold">{item.topic}</span>
+                    {effectiveTopHighlights.map((item, idx) => (
+                      <div key={`${item.topic}_${idx}`} className="grid grid-cols-12 px-3 py-3 text-xs gap-2">
+                        <div className="col-span-3 font-bold text-slate-900 flex items-start gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-1"></span>
+                          <div>
+                            <span className="text-slate-900 font-bold block">{item.topic}</span>
+                            {item.parentTopic && item.parentTopic !== item.topic && item.parentTopic !== 'General' && (
+                              <span className="text-[10px] text-slate-400 font-medium block">{item.parentTopic}</span>
+                            )}
+                          </div>
                         </div>
                         <div className="col-span-9 space-y-2 text-slate-700 text-[11px] leading-relaxed">
                           {item.subTopicHighlights.map((sh, sIdx) => {
@@ -1816,11 +2026,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                     <strong className="text-slate-900 font-semibold">{sh.aspect}: </strong>
                                     <textarea
                                       value={sh.summary}
-                                      onChange={e => {
-                                        const updated = { ...highlights };
-                                        updated.top3[idx].subTopicHighlights[sIdx].summary = e.target.value;
-                                        saveHighlights(updated);
-                                      }}
+                                      onChange={e => handleUpdateTopHighlight(item.topic, sIdx, e.target.value)}
                                       className="w-full text-xs p-1.5 rounded border border-slate-300 mt-1 font-sans"
                                       rows={2}
                                     />
@@ -1845,7 +2051,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                       </div>
                                       <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/90 group-hover/phrase:bg-emerald-200 px-2 py-0.5 rounded-full border border-emerald-300/60 shadow-2xs transition">
                                         <Eye className="w-3 h-3" />
-                                        {sh.caseCount ? `${sh.caseCount} cases` : (matchingCases.length > 0 ? `${matchingCases.length} cases` : 'View cases')}
+                                        {sh.caseCount ? `${sh.caseCount} phrases` : (matchingCases.length > 0 ? `${matchingCases.length} phrases` : 'View phrases')}
                                       </span>
                                     </div>
 
@@ -1859,7 +2065,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                         <div className="flex items-center gap-1.5 shrink-0">
                                           {sh.caseCount && (
                                             <span className="text-[10px] font-extrabold bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded">
-                                              {sh.caseCount} cases
+                                              {sh.caseCount} phrases
                                             </span>
                                           )}
                                           <span className="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded">
@@ -1930,7 +2136,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
                                       <div className="flex items-center justify-between text-[10px] text-indigo-300 font-semibold pt-2 border-t border-slate-800">
                                         <span className="flex items-center gap-1 text-slate-400">
-                                          <Quote className="w-3 h-3 text-emerald-400" /> Click topic row to explore all cases
+                                          <Quote className="w-3 h-3 text-emerald-400" /> Click topic row to explore all phrases
                                         </span>
                                         <span className="text-emerald-400 font-bold flex items-center gap-0.5">
                                           Open explorer &rarr;
@@ -1960,10 +2166,15 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
                   <div className="divide-y divide-slate-100 bg-white">
                     {effectiveBottomHighlights.map((item, idx) => (
-                      <div key={item.topic} className="grid grid-cols-12 px-3 py-3 text-xs gap-2">
-                        <div className="col-span-3 font-bold text-slate-900 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
-                          <span className="text-slate-900 font-bold">{item.topic}</span>
+                      <div key={`${item.topic}_${idx}`} className="grid grid-cols-12 px-3 py-3 text-xs gap-2">
+                        <div className="col-span-3 font-bold text-slate-900 flex items-start gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-red-500 shrink-0 mt-1"></span>
+                          <div>
+                            <span className="text-slate-900 font-bold block">{item.topic}</span>
+                            {item.parentTopic && item.parentTopic !== item.topic && item.parentTopic !== 'General' && (
+                              <span className="text-[10px] text-slate-400 font-medium block">{item.parentTopic}</span>
+                            )}
+                          </div>
                         </div>
                         <div className="col-span-9 space-y-2 text-slate-700 text-[11px] leading-relaxed">
                           {item.subTopicHighlights.map((sh, sIdx) => {
@@ -2000,7 +2211,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                       </div>
                                       <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100/90 group-hover/phrase:bg-red-200 px-2 py-0.5 rounded-full border border-red-300/60 shadow-2xs transition">
                                         <Eye className="w-3 h-3" />
-                                        {sh.caseCount ? `${sh.caseCount} cases` : (matchingCases.length > 0 ? `${matchingCases.length} cases` : 'View cases')}
+                                        {sh.caseCount ? `${sh.caseCount} phrases` : (matchingCases.length > 0 ? `${matchingCases.length} phrases` : 'View phrases')}
                                       </span>
                                     </div>
 
@@ -2014,7 +2225,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                         <div className="flex items-center gap-1.5 shrink-0">
                                           {sh.caseCount && (
                                             <span className="text-[10px] font-extrabold bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded">
-                                              {sh.caseCount} cases
+                                              {sh.caseCount} phrases
                                             </span>
                                           )}
                                           <span className="text-[10px] font-extrabold bg-red-500/20 text-red-300 border border-red-500/40 px-1.5 py-0.5 rounded">
@@ -2085,7 +2296,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
                                       <div className="flex items-center justify-between text-[10px] text-slate-300 font-semibold pt-2 border-t border-slate-800">
                                         <span className="flex items-center gap-1">
-                                          <Quote className="w-3 h-3 text-red-400" /> Click topic row to explore all cases
+                                          <Quote className="w-3 h-3 text-red-400" /> Click topic row to explore all phrases
                                         </span>
                                         <span className="text-red-400 font-bold flex items-center gap-0.5">
                                           Open explorer &rarr;
@@ -2454,7 +2665,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                           : 'bg-red-50 text-red-800 border-red-200'
                       }`}>
                         {isPositiveType ? `+${selectedHighlightDetail.impactScore.toFixed(1)} Impact` : `${selectedHighlightDetail.impactScore.toFixed(1)} Impact`}
-                        {selectedHighlightDetail.caseCount ? ` • ${selectedHighlightDetail.caseCount} cases` : ''}
+                        {selectedHighlightDetail.caseCount ? ` • ${selectedHighlightDetail.caseCount} phrases` : ''}
                       </span>
                     )}
                   </div>
@@ -2463,81 +2674,11 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   </p>
                 </div>
 
-                {/* Key Contributing Phrases Section (Synthesized from multiple surveys) */}
-                {selectedHighlightDetail.contributingPhrases && selectedHighlightDetail.contributingPhrases.length > 0 && (
-                  <div className="bg-white p-4 rounded-xl border border-indigo-200 shadow-2xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
-                        <span className="text-xs font-black text-indigo-950 uppercase tracking-wide">
-                          Key Contributing Survey Phrases ({selectedHighlightDetail.contributingPhrases.length} Surveys Joined)
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
-                        Presenter Note Detail
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {selectedHighlightDetail.contributingPhrases.map((cp, cpI) => (
-                        <div key={cpI} className="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-2 text-xs">
-                          <div className="flex items-center justify-between gap-1 text-[11px]">
-                            <button
-                              onClick={() => handleCopySurveyId(cp.surveyId)}
-                              title="Click to copy Survey ID"
-                              className="group inline-flex items-center gap-1 font-mono text-[10.5px] font-bold text-slate-700 bg-white hover:bg-indigo-50 hover:text-indigo-700 px-2 py-0.5 rounded border border-slate-200 transition"
-                            >
-                              <span>Survey #{cp.surveyId}</span>
-                              {copiedSurveyId === cp.surveyId ? (
-                                <Check className="w-3 h-3 text-emerald-600" />
-                              ) : (
-                                <Copy className="w-3 h-3 text-slate-400 group-hover:text-indigo-600" />
-                              )}
-                            </button>
-                            <div className="flex items-center gap-1.5">
-                              {cp.respondentType && (
-                                <span className="text-[10px] text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                                  {cp.respondentType}
-                                </span>
-                              )}
-                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded border ${
-                                cp.score >= 9
-                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                  : cp.score >= 7
-                                  ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                  : 'bg-red-100 text-red-800 border-red-300'
-                              }`}>
-                                {cp.score}/10 NPS ({cp.sentiment})
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Extracted Selected Phrase */}
-                          <div className="text-slate-900 font-bold bg-white p-2 rounded-lg border border-slate-200 text-xs">
-                            <span className="text-[10px] uppercase font-bold text-indigo-600 block mb-0.5">
-                              Selected Phrase:
-                            </span>
-                            "{cp.selectedPhrase}"
-                          </div>
-
-                          {/* Full Customer Comment */}
-                          <div className="text-slate-600 text-[11.5px] italic bg-white/70 p-2 rounded-lg border border-slate-200/80 leading-relaxed">
-                            <span className="text-[10px] not-italic font-bold text-slate-400 block mb-0.5 uppercase">
-                              Full Customer Comment:
-                            </span>
-                            "{cp.fullComment}"
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Metrics Row */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">Case & Survey Count</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Phrase & Survey Count</span>
                       {selectedHighlightDetail.caseCount && (
                         <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
                           Medallia: {selectedHighlightDetail.caseCount}
@@ -2596,7 +2737,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                             : 'bg-white text-slate-600 hover:bg-slate-200/70 border border-slate-200'
                         }`}
                       >
-                        {sent === 'ALL' ? 'All Cases' : sent}
+                        {sent === 'ALL' ? 'All Phrases' : sent}
                       </button>
                     ))}
                   </div>
@@ -2686,7 +2827,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                 ) : (
                   <div className="text-center py-10 bg-white rounded-xl border border-dashed border-slate-300">
                     <p className="text-xs text-slate-500">
-                      No matching cases found for "{caseModalSearch}" under {caseModalSentiment} filter.
+                      No matching phrases found for "{caseModalSearch}" under {caseModalSentiment} filter.
                     </p>
                   </div>
                 )}

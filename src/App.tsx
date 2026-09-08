@@ -592,6 +592,7 @@ export default function App() {
   if (activeTab === 'analytics') {
     return (
       <TextAnalyticsDashboard 
+        vocRecords={records}
         onBackToVoC={() => {
           setActiveTab('dashboard');
           setSelectedRecordId(null);
