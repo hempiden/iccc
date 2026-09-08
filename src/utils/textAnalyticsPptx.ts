@@ -31,7 +31,8 @@ export async function exportTextAnalyticsToPowerPoint(
     top3: TopicHighlightSummary[];
     bottom3: TopicHighlightSummary[];
   },
-  selectedSlideOption: 'all' | 'top_bottom' | 'summary' | 'iccc' = 'all'
+  selectedSlideOption: 'all' | 'top_bottom' | 'summary' | 'iccc' = 'all',
+  dateRangeText: string = '06/01/26 to 07/31/26'
 ): Promise<void> {
   const pres = new pptxgen();
   pres.layout = 'LAYOUT_WIDE'; // 16:9 widescreen layout (13.33 x 7.5 inches)
@@ -44,18 +45,18 @@ export async function exportTextAnalyticsToPowerPoint(
 
   // Slide 1: Title Cover (Only if exporting all)
   if (selectedSlideOption === 'all') {
-    addCoverSlide(pres, overallMetrics);
+    addCoverSlide(pres, overallMetrics, dateRangeText);
     slideIndex++;
   }
 
   // Slide 2: Top & Bottom Sub-Topics (Screenshot 1)
   if (selectedSlideOption === 'all' || selectedSlideOption === 'top_bottom') {
-    addTopBottomSubTopicsSlide(pres, topSubTopics.slice(0, 7), bottomSubTopics.slice(0, 7), slideIndex++);
+    addTopBottomSubTopicsSlide(pres, topSubTopics.slice(0, 7), bottomSubTopics.slice(0, 7), slideIndex++, dateRangeText);
   }
 
   // Slide 3: Text Analytics Summary (Screenshot 2)
   if (selectedSlideOption === 'all' || selectedSlideOption === 'summary') {
-    addTextAnalyticsSummarySlide(pres, parentTopics, overallMetrics, slideIndex++);
+    addTextAnalyticsSummarySlide(pres, parentTopics, overallMetrics, slideIndex++, dateRangeText);
   }
 
   // Slide 4: ICCC+ - Top and Bottom Topics (Screenshot 3 EXACT Executive Slide)
@@ -70,7 +71,7 @@ export async function exportTextAnalyticsToPowerPoint(
 // =========================================================================
 // 1. COVER SLIDE
 // =========================================================================
-function addCoverSlide(pres: pptxgen, metrics: any) {
+function addCoverSlide(pres: pptxgen, metrics: any, dateRangeText: string = '06/01/26 to 07/31/26') {
   const slide = pres.addSlide();
   slide.background = { color: '0F172A' }; // Dark Slate
 
@@ -189,7 +190,8 @@ function addTopBottomSubTopicsSlide(
   pres: pptxgen,
   topTopics: TopicAnalyticsItem[],
   bottomTopics: TopicAnalyticsItem[],
-  slideNumber: number
+  slideNumber: number,
+  dateRangeText: string = '06/01/26 to 07/31/26'
 ) {
   const slide = pres.addSlide();
   slide.background = { color: 'FFFFFF' };
@@ -216,7 +218,7 @@ function addTopBottomSubTopicsSlide(
     fontFace: 'Arial'
   });
 
-  slide.addText('Time Period: 06/01/26 to 07/31/26 | Reporting Date: Responsedate | Question: Main Score incl. Social', {
+  slide.addText(`Time Period: ${dateRangeText} | Reporting Date: Responsedate | Question: Main Score incl. Social`, {
     x: 0.6,
     y: 0.78,
     w: 12.1,
@@ -404,7 +406,8 @@ function addTextAnalyticsSummarySlide(
   pres: pptxgen,
   parentTopics: TopicAnalyticsItem[],
   overallMetrics: any,
-  slideNumber: number
+  slideNumber: number,
+  dateRangeText: string = '06/01/26 to 07/31/26'
 ) {
   const slide = pres.addSlide();
   slide.background = { color: 'FFFFFF' };
@@ -431,7 +434,7 @@ function addTextAnalyticsSummarySlide(
     fontFace: 'Arial'
   });
 
-  slide.addText('Time Period: 06/01/26 to 07/31/26 | Question: Main Score incl. Social', {
+  slide.addText(`Time Period: ${dateRangeText} | Question: Main Score incl. Social`, {
     x: 0.6,
     y: 0.75,
     w: 6.5,
@@ -1030,13 +1033,15 @@ function addICCCExecutiveSlide(
     ]);
   });
 
+  const botRowH = [0.38, 0.32, ...highlights.bottom3.map(() => 3.75 / Math.max(1, highlights.bottom3.length))];
+
   slide.addTable(botTableRows, {
     x: 6.78,
     y: tableY,
     w: tableW,
     colW: [1.35, 4.60],
     border: { pt: 0.5, color: BORDER_LIGHT },
-    rowH: [0.38, 0.32, 1.25, 1.25, 1.25]
+    rowH: botRowH
   });
 
   // Footer: DHL Express Cambodia | ICCC+ Bi-Monthly Meeting & Slide Number 4

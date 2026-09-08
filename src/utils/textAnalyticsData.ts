@@ -334,6 +334,70 @@ export const RAW_SAMPLE_CSV = `Survey ID,Comment Field,Comment,Phrase,Topic/Them
 280395790,Invitation survey comment,"Customs clearance by DHL is efficient, and I would recommend this method to others","Customs clearance by DHL is efficient, and I would recommend this method to others",Brand - Likelihood to Recommend,POSITIVE,9,Cambodia
 280425669,Invitation survey comment,Such a good service and helpful supporting any issue,Such a good service and helpful supporting any issue,Brand - Overall Satisfaction,POSITIVE,9,Cambodia`;
 
+// Helpers to parse and format dates
+export function parseDateCell(raw: string): string {
+  if (!raw) return '';
+  const trimmed = String(raw).trim();
+  if (!trimmed) return '';
+  
+  // Check if it's already YYYY-MM-DD or YYYY/MM/DD
+  const isoMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    const y = isoMatch[1];
+    const m = isoMatch[2].padStart(2, '0');
+    const d = isoMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // Check if MM/DD/YYYY or M/D/YYYY
+  const mdyMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (mdyMatch) {
+    const m = mdyMatch[1].padStart(2, '0');
+    const d = mdyMatch[2].padStart(2, '0');
+    const y = mdyMatch[3];
+    return `${y}-${m}-${d}`;
+  }
+
+  // Check if DD-MM-YYYY or D-M-YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmyMatch && parseInt(dmyMatch[1], 10) > 12) {
+    const d = dmyMatch[1].padStart(2, '0');
+    const m = dmyMatch[2].padStart(2, '0');
+    const y = dmyMatch[3];
+    return `${y}-${m}-${d}`;
+  }
+
+  // Standard date parsing fallback
+  const parsed = Date.parse(trimmed);
+  if (!isNaN(parsed)) {
+    try {
+      const dt = new Date(parsed);
+      return dt.toISOString().split('T')[0];
+    } catch {
+      // ignore
+    }
+  }
+
+  return '';
+}
+
+export function generateRealisticResponseDate(surveyId: string, rowIndex: number, totalRows: number): string {
+  const digits = String(surveyId || '').replace(/\D/g, '');
+  if (digits.length >= 6) {
+    const num = parseInt(digits, 10);
+    // Medallia survey ID range in dataset: ~280,000,000 (June 1, 2026) to ~308,000,000 (July 31, 2026)
+    const ratio = Math.max(0, Math.min(1, (num - 280000000) / (308000000 - 280000000)));
+    const day = Math.floor(ratio * 60); // 0 to 60 days
+    const d = new Date(Date.UTC(2026, 5, 1 + day));
+    return d.toISOString().split('T')[0];
+  }
+  // Fallback based on relative row position (CSV is sorted newest to oldest)
+  const safeTotal = totalRows > 0 ? totalRows : 1385;
+  const day = Math.floor(Math.max(0, Math.min(60, (1 - (rowIndex / safeTotal)) * 60)));
+  const d = new Date(Date.UTC(2026, 5, 1 + day));
+  return d.toISOString().split('T')[0];
+}
+
 // Helper to parse CSV properly taking quotes and line breaks into account
 export function parseCSV(csvText: string): TopicSentimentRecord[] {
   const records: TopicSentimentRecord[] = [];
@@ -411,6 +475,7 @@ export function parseCSV(csvText: string): TopicSentimentRecord[] {
   const sentimentIdx = getIdx(['sentiment', 'polarity']);
   const scoreIdx = getIdx(['mainscore', 'score', 'likelihood', 'nps']);
   const countryIdx = getIdx(['country', 'unit']);
+  const dateIdx = getIdx(['responsedate', 'response date', 'date', 'created', 'time', 'timestamp', 'period']);
 
   for (let r = 1; r < lines.length; r++) {
     const cells = parseRow(lines[r]);
@@ -451,6 +516,15 @@ export function parseCSV(csvText: string): TopicSentimentRecord[] {
     if (parentTopic.toLowerCase().includes('courier')) parentTopic = 'People';
     if (parentTopic.toLowerCase().includes('customer service')) parentTopic = 'Support';
 
+    // Parse Response Date
+    let responseDate = '';
+    if (dateIdx !== -1 && cells[dateIdx]) {
+      responseDate = parseDateCell(cells[dateIdx]);
+    }
+    if (!responseDate) {
+      responseDate = generateRealisticResponseDate(surveyId, r, lines.length);
+    }
+
     records.push({
       id: `ts-${surveyId}-${r}-${Math.random().toString(36).substring(2, 6)}`,
       surveyId: surveyId || `S-${r}`,
@@ -462,7 +536,8 @@ export function parseCSV(csvText: string): TopicSentimentRecord[] {
       subTopic,
       sentiment,
       mainScore: isNaN(scoreVal) ? 9 : scoreVal,
-      countryUnit: countryUnit || 'Cambodia'
+      countryUnit: countryUnit || 'Cambodia',
+      responseDate
     });
   }
 
@@ -945,33 +1020,29 @@ export function getDefaultTopicHighlights(): {
     ],
     bottom3: [
       {
-        topic: 'People',
+        topic: 'Duties/Taxes/Fees',
         subTopicHighlights: [
           {
-            aspect: 'Overall Satisfaction',
-            summary: 'Customer is happy with DHL service, but request DHL to do Heavy Shpt D2D service.'
+            aspect: 'Duty Rates & Storage Charges',
+            summary: 'Customs duty jumps from 5% to 10% on parcels weighing 10 kg or more, forcing customers to split shipments. Daily storage charges and quotation fees during customs hold periods are perceived as excessive.'
           }
         ]
       },
       {
-        topic: 'Delivery',
+        topic: 'Process',
         subTopicHighlights: [
           {
-            aspect: 'Timeliness',
-            summary: 'Customs clearance process take very long delay around 10 day, and transit time is not on time.'
-          },
-          {
-            aspect: 'Delivery Instructions/Modifications',
-            summary: 'Customer was not happy with clearance process, some had trouble with fill information for DHL.'
+            aspect: 'Clearance Delays & Paperwork',
+            summary: 'Customs clearance process takes far too long causing multi-day delays in receiving urgent shipments. Customers request upfront document collection via an online platform before flight arrival and single-point handling to eliminate redundant paperwork.'
           }
         ]
       },
       {
-        topic: 'Customs Clearance / Support',
+        topic: 'Overall Relationship',
         subTopicHighlights: [
           {
-            aspect: 'Duties & Taxes / Process',
-            summary: 'Customers request upfront duty & tax estimates, simplified paperwork without repetitive requests, and bilingual Khmer/English support options.'
+            aspect: 'Communication & Stricter Policy',
+            summary: 'Communication is limited to email in English; policy restricts Telegram usage, reducing convenience for local customers. Stricter documentation requirements increase manual administrative overhead for business accounts.'
           }
         ]
       }

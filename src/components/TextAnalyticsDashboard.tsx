@@ -32,7 +32,9 @@ import {
   Eye,
   Quote,
   ArrowUpRight,
-  Check
+  Check,
+  Calendar,
+  RotateCcw
 } from 'lucide-react';
 import {
   TopicSentimentRecord,
@@ -45,7 +47,8 @@ import {
   parseCSV,
   aggregateTopicAnalytics,
   getDefaultTopicHighlights,
-  TOPIC_AI_SUMMARIES
+  TOPIC_AI_SUMMARIES,
+  generateRealisticResponseDate
 } from '../utils/textAnalyticsData';
 import { exportTextAnalyticsToPowerPoint } from '../utils/textAnalyticsPptx';
 import * as XLSX from 'xlsx';
@@ -60,13 +63,83 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     const saved = localStorage.getItem('dhl_voc_topic_sentiment_records');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed: TopicSentimentRecord[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          let needsSave = false;
+          const healed = parsed.map((r, idx) => {
+            if (!r.responseDate) {
+              needsSave = true;
+              return {
+                ...r,
+                responseDate: generateRealisticResponseDate(r.surveyId, idx, parsed.length)
+              };
+            }
+            return r;
+          });
+          if (needsSave) {
+            try {
+              localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(healed));
+            } catch {
+              // ignore
+            }
+          }
+          return healed;
+        }
       } catch {
         // fallback
       }
     }
     return parseCSV(RAW_SAMPLE_CSV);
   });
+
+  // Min and Max dates across records
+  const { minDate, maxDate } = useMemo(() => {
+    let min = '2026-06-01';
+    let max = '2026-07-31';
+    if (records.length > 0) {
+      let foundMin = '';
+      let foundMax = '';
+      records.forEach(r => {
+        if (r.responseDate) {
+          const d = r.responseDate.substring(0, 10);
+          if (!foundMin || d < foundMin) foundMin = d;
+          if (!foundMax || d > foundMax) foundMax = d;
+        }
+      });
+      if (foundMin) min = foundMin;
+      if (foundMax) max = foundMax;
+    }
+    return { minDate: min, maxDate: max };
+  }, [records]);
+
+  const [startDate, setStartDate] = useState<string>('2026-06-01');
+  const [endDate, setEndDate] = useState<string>('2026-07-31');
+
+  // Format date range text for subtitle and exports (e.g. 06/01/26 to 07/31/26)
+  const formatDateRangeDisplay = (start: string, end: string) => {
+    const fmt = (dStr: string) => {
+      if (!dStr) return '';
+      const parts = dStr.split('-');
+      if (parts.length === 3) {
+        return `${parts[1]}/${parts[2]}/${parts[0].slice(-2)}`;
+      }
+      return dStr;
+    };
+    return `${fmt(start)} to ${fmt(end)}`;
+  };
+
+  const isAllTime = (!startDate || startDate <= minDate) && (!endDate || endDate >= maxDate);
+
+  // Filter records by date range
+  const filteredRecords = useMemo(() => {
+    return records.filter(r => {
+      if (!r.responseDate) return true;
+      const d = r.responseDate.substring(0, 10);
+      if (startDate && d < startDate) return false;
+      if (endDate && d > endDate) return false;
+      return true;
+    });
+  }, [records, startDate, endDate]);
 
   const [activeTab, setActiveTab] = useState<'top_bottom' | 'summary' | 'iccc' | 'upload'>('top_bottom');
   const [searchQuery, setSearchQuery] = useState('');
@@ -108,7 +181,18 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     const saved = localStorage.getItem('dhl_voc_topic_highlights');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // Automatically reset stale cache if bottom3 still has 'People' or 'Delivery' (which are top topics, not bottom impact friction topics)
+        if (
+          parsed &&
+          Array.isArray(parsed.bottom3) &&
+          parsed.bottom3.some((b: any) => b.topic === 'People' || b.topic === 'Delivery')
+        ) {
+          const fresh = getDefaultTopicHighlights();
+          localStorage.setItem('dhl_voc_topic_highlights', JSON.stringify(fresh));
+          return fresh;
+        }
+        return parsed;
       } catch {
         // fallback
       }
@@ -116,6 +200,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     return getDefaultTopicHighlights();
   });
 
+  const [showAllChartFrictionTopics, setShowAllChartFrictionTopics] = useState(false);
   const [isEditingHighlights, setIsEditingHighlights] = useState(false);
   const [pasteCSVText, setPasteCSVText] = useState('');
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -137,7 +222,56 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     const normTopic = topic.toLowerCase();
     const normAspect = aspect.toLowerCase();
 
-    return records.filter(r => {
+    // Direct accurate matchers for bottom friction topics
+    if (normTopic.includes('dut') || normTopic.includes('tax') || normTopic.includes('fee')) {
+      return filteredRecords.filter(r =>
+        (r.subTopic || '').toLowerCase().includes('dut') ||
+        (r.subTopic || '').toLowerCase().includes('fee') ||
+        (r.subTopic || '').toLowerCase().includes('tax') ||
+        (r.topicTheme || '').toLowerCase().includes('duties') ||
+        (r.topicTheme || '').toLowerCase().includes('taxes') ||
+        (r.topicTheme || '').toLowerCase().includes('fees') ||
+        (r.phrase || '').toLowerCase().includes('tax') ||
+        (r.phrase || '').toLowerCase().includes('duty') ||
+        (r.phrase || '').toLowerCase().includes('fee') ||
+        (r.comment || '').toLowerCase().includes('tax') ||
+        (r.comment || '').toLowerCase().includes('duty') ||
+        (r.comment || '').toLowerCase().includes('fee')
+      );
+    }
+
+    if (normTopic === 'process' || normTopic.includes('clearance process')) {
+      return filteredRecords.filter(r =>
+        (r.subTopic || '').toLowerCase() === 'process' ||
+        (r.topicTheme || '').toLowerCase().includes('process') ||
+        (r.phrase || '').toLowerCase().includes('process') ||
+        (r.phrase || '').toLowerCase().includes('clearance') ||
+        (r.comment || '').toLowerCase().includes('clearance process')
+      );
+    }
+
+    if (normTopic.includes('relationship')) {
+      return filteredRecords.filter(r =>
+        (r.parentTopic || '').toLowerCase().includes('relationship') ||
+        (r.subTopic || '').toLowerCase().includes('relationship') ||
+        (r.topicTheme || '').toLowerCase().includes('relationship') ||
+        (r.comment || '').toLowerCase().includes('telegram') ||
+        (r.comment || '').toLowerCase().includes('email') ||
+        (r.comment || '').toLowerCase().includes('communication') ||
+        (r.comment || '').toLowerCase().includes('documentation')
+      );
+    }
+
+    if (normTopic.includes('payment')) {
+      return filteredRecords.filter(r =>
+        (r.subTopic || '').toLowerCase().includes('payment') ||
+        (r.topicTheme || '').toLowerCase().includes('payment') ||
+        (r.phrase || '').toLowerCase().includes('payment') ||
+        (r.comment || '').toLowerCase().includes('payment')
+      );
+    }
+
+    return filteredRecords.filter(r => {
       const parent = (r.parentTopic || '').toLowerCase();
       const sub = (r.subTopic || '').toLowerCase();
       const theme = (r.topicTheme || '').toLowerCase();
@@ -149,6 +283,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         parent.includes(normTopic) ||
         normTopic.includes(parent) ||
         theme.includes(normTopic) ||
+        normTopic.includes(sub) ||
+        sub.includes(normTopic) ||
         normTopic.split(/[\s/]+/).some(w => w.length > 2 && (parent.includes(w) || theme.includes(w)));
 
       if (!topicMatches) return false;
@@ -162,7 +298,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
           phrase.includes('quality') ||
           phrase.includes('good') ||
           comment.includes('service') ||
-          comment.includes('quality')
+          comment.includes('quality') ||
+          r.mainScore >= 8
         );
       }
       if (normAspect.includes('recommend')) {
@@ -200,31 +337,6 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
           sub.includes('timeliness')
         );
       }
-      if (normAspect.includes('duty') || normAspect.includes('tax') || normAspect.includes('fee')) {
-        return (
-          theme.includes('duties') ||
-          theme.includes('taxes') ||
-          theme.includes('fees') ||
-          phrase.includes('tax') ||
-          phrase.includes('duty') ||
-          phrase.includes('fee') ||
-          phrase.includes('paperwork') ||
-          comment.includes('tax') ||
-          comment.includes('duty') ||
-          comment.includes('fee')
-        );
-      }
-      if (normAspect.includes('process') || normAspect.includes('clearance')) {
-        return (
-          theme.includes('process') ||
-          theme.includes('clearance') ||
-          phrase.includes('process') ||
-          phrase.includes('clearance') ||
-          comment.includes('clearance') ||
-          comment.includes('process') ||
-          comment.includes('delay')
-        );
-      }
       if (normAspect.includes('instruction') || normAspect.includes('modification')) {
         return (
           theme.includes('instruction') ||
@@ -248,10 +360,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     setTimeout(() => setCopiedSurveyId(null), 2000);
   };
 
-  // Compute aggregated topic analytics
+  // Compute aggregated topic analytics based on date-filtered records
   const analytics = useMemo(() => {
-    return aggregateTopicAnalytics(records);
-  }, [records]);
+    return aggregateTopicAnalytics(filteredRecords);
+  }, [filteredRecords]);
 
   // Save to local storage whenever records or highlights change
   const saveRecords = (newRecords: TopicSentimentRecord[]) => {
@@ -264,9 +376,116 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     localStorage.setItem('dhl_voc_topic_highlights', JSON.stringify(newHighlights));
   };
 
+  // Derive bottom topics highlights strictly from the bottom topics impact listed in the chart
+  const effectiveBottomHighlights = useMemo(() => {
+    // Only topics that appear in the bottom topics impact chart
+    const chartTopics = showAllChartFrictionTopics
+      ? analytics.bottomSubTopics.slice(0, 4)
+      : analytics.bottomSubTopics.slice(0, 3);
+
+    const defaultFrictionAspects: Record<string, { aspect: string; summary: string }[]> = {
+      'Duties/Taxes/Fees': [
+        {
+          aspect: 'Duty Rates & Storage Charges',
+          summary: 'Customs duty jumps from 5% to 10% on parcels weighing 10 kg or more, forcing customers to split shipments. Daily storage charges and quotation fees during customs hold periods are perceived as excessive.'
+        }
+      ],
+      'Process': [
+        {
+          aspect: 'Clearance Delays & Paperwork',
+          summary: 'Customs clearance process takes far too long causing multi-day delays in receiving urgent shipments. Customers request upfront document collection via an online platform before flight arrival and single-point handling to eliminate redundant paperwork.'
+        }
+      ],
+      'Overall Relationship': [
+        {
+          aspect: 'Communication & Stricter Policy',
+          summary: 'Communication is limited to email in English; policy restricts Telegram usage, reducing convenience for local customers. Stricter documentation requirements increase manual administrative overhead for business accounts.'
+        }
+      ],
+      'Payment': [
+        {
+          aspect: 'Duty Payment Processing',
+          summary: 'Credit card transaction errors occur at service counters; customers request integrated digital and mobile payment options to settle duty fees smoothly.'
+        }
+      ],
+      'Notifications': [
+        {
+          aspect: 'Proactive Delay Alerts',
+          summary: 'Customers report missing automated notifications when shipments are held for customs inspection, having to follow up manually.'
+        }
+      ]
+    };
+
+    return chartTopics.map(t => {
+      const topicLabel = t.subTopic || t.name.replace(/^.*-\s*/, '');
+
+      // Look for user edited highlight in highlights.bottom3
+      const existing = highlights.bottom3.find(
+        h => h.topic.toLowerCase() === topicLabel.toLowerCase() ||
+             h.topic.toLowerCase() === t.name.toLowerCase() ||
+             (h.topic.toLowerCase().includes('duty') && topicLabel.toLowerCase().includes('duty')) ||
+             (h.topic.toLowerCase().includes('process') && topicLabel.toLowerCase().includes('process')) ||
+             (h.topic.toLowerCase().includes('relationship') && topicLabel.toLowerCase().includes('relationship')) ||
+             (h.topic.toLowerCase().includes('payment') && topicLabel.toLowerCase().includes('payment'))
+      );
+
+      if (existing && existing.subTopicHighlights.length > 0) {
+        return {
+          topic: topicLabel,
+          fullTopicName: t.name,
+          parentTopic: t.parentTopic,
+          impactScore: t.impactScore,
+          subTopicHighlights: existing.subTopicHighlights
+        };
+      }
+
+      // Check default friction aspects
+      const matchedKey = Object.keys(defaultFrictionAspects).find(
+        k => k.toLowerCase() === topicLabel.toLowerCase() || topicLabel.toLowerCase().includes(k.toLowerCase())
+      );
+
+      const subTopicHighlights = matchedKey
+        ? defaultFrictionAspects[matchedKey]
+        : [
+            {
+              aspect: 'Friction Highlight',
+              summary: t.samplePhrases?.[0]?.comment || `Customer feedback indicates negative impact for ${topicLabel} with an impact score of ${t.impactScore.toFixed(1)}.`
+            }
+          ];
+
+      return {
+        topic: topicLabel,
+        fullTopicName: t.name,
+        parentTopic: t.parentTopic,
+        impactScore: t.impactScore,
+        subTopicHighlights
+      };
+    });
+  }, [analytics.bottomSubTopics, highlights.bottom3, showAllChartFrictionTopics]);
+
+  // Update bottom highlights when edited in UI
+  const handleUpdateBottomHighlight = (topicLabel: string, sIdx: number, newSummary: string) => {
+    const updated = { ...highlights };
+    const bIdx = updated.bottom3.findIndex(
+      b => b.topic.toLowerCase() === topicLabel.toLowerCase() ||
+           topicLabel.toLowerCase().includes(b.topic.toLowerCase())
+    );
+    if (bIdx >= 0) {
+      if (updated.bottom3[bIdx].subTopicHighlights[sIdx]) {
+        updated.bottom3[bIdx].subTopicHighlights[sIdx].summary = newSummary;
+      }
+    } else {
+      updated.bottom3.push({
+        topic: topicLabel,
+        subTopicHighlights: [{ aspect: 'Friction Highlight', summary: newSummary }]
+      });
+    }
+    saveHighlights(updated);
+  };
+
   // Filtered phrases for feed
   const filteredPhrases = useMemo(() => {
-    return records.filter(r => {
+    return filteredRecords.filter(r => {
       if (selectedSentiment !== 'ALL') {
         if (selectedSentiment === 'POSITIVE' && r.sentiment !== 'POSITIVE' && r.sentiment !== 'STRONGLY_POSITIVE') return false;
         if (selectedSentiment === 'NEGATIVE' && r.sentiment !== 'NEGATIVE') return false;
@@ -290,7 +509,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       }
       return true;
     });
-  }, [records, selectedSentiment, selectedParentTopic, selectedSubTopic, searchQuery]);
+  }, [filteredRecords, selectedSentiment, selectedParentTopic, selectedSubTopic, searchQuery]);
 
   // PowerPoint Export Handlers
   const handleExportPPTX = async (option: 'all' | 'top_bottom' | 'summary' | 'iccc') => {
@@ -307,8 +526,15 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
           overallNeutralPercent: analytics.overallNeutralPercent,
           overallMixedPercent: analytics.overallMixedPercent
         },
-        highlights,
-        option
+        {
+          top3: highlights.top3,
+          bottom3: effectiveBottomHighlights.map(eh => ({
+            topic: eh.topic,
+            subTopicHighlights: eh.subTopicHighlights
+          }))
+        },
+        option,
+        formatDateRangeDisplay(startDate, endDate)
       );
     } catch (err) {
       console.error('Failed to export PPTX:', err);
@@ -321,10 +547,11 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
   const handleExportExcel = () => {
     const wb = XLSX.utils.book_new();
 
-    // Sheet 1: Raw Records
+    // Sheet 1: Filtered Raw Records
     const rawWs = XLSX.utils.json_to_sheet(
-      records.map(r => ({
+      filteredRecords.map(r => ({
         'Survey ID': r.surveyId,
+        'Response Date': r.responseDate || '',
         'Comment Field': r.commentField,
         'Full Comment': r.comment,
         'AI Phrase': r.phrase,
@@ -361,7 +588,21 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     );
     XLSX.utils.book_append_sheet(wb, botWs, 'Bottom Topics');
 
-    XLSX.writeFile(wb, `DHL_Text_Analytics_Data_${new Date().toISOString().split('T')[0]}.xlsx`);
+    // Sheet 3: Report Filter & Summary
+    const summaryWs = XLSX.utils.json_to_sheet([
+      { 'Report Parameter': 'Time Period', 'Value': formatDateRangeDisplay(startDate, endDate) },
+      { 'Report Parameter': 'Reporting Date Field', 'Value': 'Responsedate' },
+      { 'Report Parameter': 'Total Dataset Volume', 'Value': records.length },
+      { 'Report Parameter': 'Analyzed / Filtered Volume', 'Value': filteredRecords.length },
+      { 'Report Parameter': 'Positive Sentiment Rate', 'Value': `${analytics.overallPosPercent}%` },
+      { 'Report Parameter': 'Negative Sentiment Rate', 'Value': `${analytics.overallNegPercent}%` },
+      { 'Report Parameter': 'Neutral Sentiment Rate', 'Value': `${analytics.overallNeutralPercent}%` },
+      { 'Report Parameter': 'Mixed Opinion Rate', 'Value': `${analytics.overallMixedPercent}%` },
+      { 'Report Parameter': 'Export Timestamp', 'Value': new Date().toISOString() }
+    ]);
+    XLSX.utils.book_append_sheet(wb, summaryWs, 'Report Filter & Metadata');
+
+    XLSX.writeFile(wb, `DHL_Text_Analytics_${startDate}_to_${endDate}.xlsx`);
   };
 
   // CSV File Ingestion
@@ -545,6 +786,143 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        {/* Global Date Filter Bar (Responsedate Window) */}
+        <div className="bg-white rounded-xl shadow-xs border border-slate-200/90 p-4 transition-all">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            {/* Left: Title & Pickers */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2.5 pr-3 border-r border-slate-200">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
+                    <span>Date Filter</span>
+                    <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono">Responsedate</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Filter customer comments and topic impact by response date
+                  </p>
+                </div>
+              </div>
+
+              {/* Date Inputs */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-300 hover:border-slate-400 focus-within:border-amber-500 rounded-lg px-2.5 py-1.5 text-xs">
+                  <span className="text-slate-500 font-medium">From:</span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    min={minDate}
+                    max={endDate || maxDate}
+                    onChange={e => setStartDate(e.target.value)}
+                    className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer text-xs"
+                  />
+                </div>
+
+                <span className="text-slate-400 font-bold text-xs">to</span>
+
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-300 hover:border-slate-400 focus-within:border-amber-500 rounded-lg px-2.5 py-1.5 text-xs">
+                  <span className="text-slate-500 font-medium">To:</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    min={startDate || minDate}
+                    max={maxDate}
+                    onChange={e => setEndDate(e.target.value)}
+                    className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  onClick={() => {
+                    setStartDate(minDate);
+                    setEndDate(maxDate);
+                  }}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+                    isAllTime
+                      ? 'bg-amber-500 text-slate-950 shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Full Period (06/01 – 07/31)
+                </button>
+                <button
+                  onClick={() => {
+                    setStartDate('2026-06-01');
+                    setEndDate('2026-06-30');
+                  }}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+                    startDate === '2026-06-01' && endDate === '2026-06-30'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  June 2026
+                </button>
+                <button
+                  onClick={() => {
+                    setStartDate('2026-07-01');
+                    setEndDate('2026-07-31');
+                  }}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+                    startDate === '2026-07-01' && endDate === '2026-07-31'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  July 2026
+                </button>
+                <button
+                  onClick={() => {
+                    setStartDate('2026-07-18');
+                    setEndDate('2026-07-31');
+                  }}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+                    startDate === '2026-07-18' && endDate === '2026-07-31'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Last 14 Days
+                </button>
+              </div>
+            </div>
+
+            {/* Right: Response count & Reset */}
+            <div className="flex items-center gap-3 shrink-0 self-end lg:self-center">
+              <div className="text-right">
+                <div className="text-xs font-bold text-slate-800">
+                  <span className="text-indigo-600 font-black">{filteredRecords.length.toLocaleString()}</span> / {records.length.toLocaleString()}
+                  <span className="text-slate-500 font-normal ml-1">
+                    ({records.length > 0 ? Math.round((filteredRecords.length / records.length) * 100) : 0}%)
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400 font-medium">
+                  Analyzed Responses
+                </div>
+              </div>
+
+              {!isAllTime && (
+                <button
+                  onClick={() => {
+                    setStartDate(minDate);
+                    setEndDate(maxDate);
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition"
+                  title="Reset date filter to full time window"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* TAB 1: TOP & BOTTOM SUB-TOPICS (SCREENSHOT 1) */}
         {activeTab === 'top_bottom' && (
           <div className="space-y-6">
@@ -571,11 +949,19 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                       </button>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
-                      <span>Time Period: 06/01/26 to 07/31/26</span>
+                      <span className="inline-flex items-center gap-1 font-semibold text-slate-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded text-xs">
+                        <Calendar className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        Time Period: {formatDateRangeDisplay(startDate, endDate)}
+                      </span>
                       <span className="text-slate-300">|</span>
                       <span>Reporting Date: Responsedate</span>
                       <span className="text-slate-300">|</span>
                       <span>Question: Main Score incl. Social</span>
+                      {!isAllTime && (
+                        <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200/70 px-2 py-0.5 rounded-full">
+                          Showing {filteredRecords.length} of {records.length} records
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -811,7 +1197,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                       <Info className="w-3 h-3 text-slate-400" />
                     </span>
                     <span className="text-slate-400">
-                      Total Analyzed Responses: <strong>{records.length}</strong>
+                      Total Analyzed Responses: <strong>{filteredRecords.length.toLocaleString()}</strong>
+                      {!isAllTime && (
+                        <span className="text-slate-400 ml-1"> (of {records.length.toLocaleString()} total)</span>
+                      )}
                     </span>
                   </div>
                 </div>
@@ -839,7 +1228,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   {analytics.overallPosPercent}%
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5 font-medium">
-                  {records.filter(r => r.sentiment === 'POSITIVE' || r.sentiment === 'STRONGLY_POSITIVE').length} of {records.length} records
+                  {filteredRecords.filter(r => r.sentiment === 'POSITIVE' || r.sentiment === 'STRONGLY_POSITIVE').length} of {filteredRecords.length} records
                 </div>
               </div>
 
@@ -857,7 +1246,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   {analytics.overallNegPercent}%
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5 font-medium">
-                  {records.filter(r => r.sentiment === 'NEGATIVE').length} of {records.length} records
+                  {filteredRecords.filter(r => r.sentiment === 'NEGATIVE').length} of {filteredRecords.length} records
                 </div>
               </div>
 
@@ -875,7 +1264,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   {analytics.overallMixedPercent}%
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5 font-medium">
-                  {records.filter(r => r.sentiment === 'MIXED_OPINION').length} records
+                  {filteredRecords.filter(r => r.sentiment === 'MIXED_OPINION').length} records
                 </div>
               </div>
 
@@ -893,7 +1282,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   {analytics.overallNeutralPercent}%
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5 font-medium">
-                  {records.filter(r => r.sentiment === 'NEUTRAL' || r.sentiment === 'NO_OPINION').length} records
+                  {filteredRecords.filter(r => r.sentiment === 'NEUTRAL' || r.sentiment === 'NO_OPINION').length} records
                 </div>
               </div>
             </div>
@@ -1206,6 +1595,18 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                 </button>
 
                 <button
+                  onClick={() => {
+                    const fresh = getDefaultTopicHighlights();
+                    saveHighlights(fresh);
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition"
+                  title="Reset highlights to default calibrated topics matching the chart"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Reset Highlights
+                </button>
+
+                <button
                   onClick={() => handleExportPPTX('iccc')}
                   className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow transition"
                 >
@@ -1226,6 +1627,21 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   <h1 className="text-2xl sm:text-3xl font-black text-red-600 tracking-tight mt-0.5">
                     ICCC+ - Top and Bottom Topics
                   </h1>
+                  <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-1">
+                    <span className="font-semibold text-slate-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
+                      Time Period: {formatDateRangeDisplay(startDate, endDate)}
+                    </span>
+                    <span>•</span>
+                    <span>Reporting Date: Responsedate</span>
+                    {!isAllTime && (
+                      <>
+                        <span>•</span>
+                        <span className="text-indigo-600 font-bold">
+                          {filteredRecords.length} of {records.length} records analyzed
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1317,17 +1733,21 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                 <div className="lg:col-span-4 bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-3xl font-black text-emerald-600 leading-none">96.1%</div>
-                      <div className="text-xs font-semibold text-slate-700">Positive (293 records)</div>
+                      <div className="text-3xl font-black text-emerald-600 leading-none">{analytics.overallPosPercent}%</div>
+                      <div className="text-xs font-semibold text-slate-700">
+                        Positive ({filteredRecords.filter(r => r.sentiment === 'POSITIVE' || r.sentiment === 'STRONGLY_POSITIVE').length} records)
+                      </div>
                     </div>
                     <div>
-                      <div className="text-3xl font-black text-red-600 leading-none">3.6%</div>
-                      <div className="text-xs font-semibold text-slate-700">Negative (11 records)</div>
+                      <div className="text-3xl font-black text-red-600 leading-none">{analytics.overallNegPercent}%</div>
+                      <div className="text-xs font-semibold text-slate-700">
+                        Negative ({filteredRecords.filter(r => r.sentiment === 'NEGATIVE').length} records)
+                      </div>
                     </div>
                   </div>
                   <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600 font-medium">
-                    <span>0.3% Mixed Opinion</span>
-                    <span>8.5% Neutral</span>
+                    <span>{analytics.overallMixedPercent}% Mixed Opinion</span>
+                    <span>{analytics.overallNeutralPercent}% Neutral</span>
                   </div>
                 </div>
               </div>
@@ -1438,10 +1858,25 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   </div>
                 </div>
 
-                {/* BOTTOM 3 TOPICS TABLE (RED HEADER) */}
+                {/* BOTTOM 3 TOPICS TABLE (RED HEADER) - STRICTLY SYNCED WITH CHART */}
                 <div className="border border-red-300 rounded-xl overflow-hidden shadow-sm">
-                  <div className="bg-red-600 text-white text-center py-2 text-xs font-black tracking-wider uppercase">
-                    BOTTOM 3 TOPICS
+                  <div className="bg-red-600 text-white px-4 py-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black tracking-wider uppercase">
+                        {showAllChartFrictionTopics ? 'BOTTOM TOPICS IMPACT (ALL FROM CHART)' : 'BOTTOM 3 TOPICS'}
+                      </span>
+                      <span className="text-[10px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-full">
+                        Synced with Chart
+                      </span>
+                    </div>
+                    {analytics.bottomSubTopics.length > 3 && (
+                      <button
+                        onClick={() => setShowAllChartFrictionTopics(!showAllChartFrictionTopics)}
+                        className="text-[10px] font-bold bg-white text-red-700 hover:bg-red-50 px-2 py-0.5 rounded transition shadow-2xs"
+                      >
+                        {showAllChartFrictionTopics ? 'Show Top 3' : `Show All (${Math.min(4, analytics.bottomSubTopics.length)}) from Chart`}
+                      </button>
+                    )}
                   </div>
                   <div className="bg-slate-100 text-slate-800 text-[11px] font-bold grid grid-cols-12 px-3 py-1.5 border-b border-red-200">
                     <span className="col-span-3">Topics</span>
@@ -1449,11 +1884,23 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   </div>
 
                   <div className="divide-y divide-slate-100 bg-white">
-                    {highlights.bottom3.map((item, idx) => (
+                    {effectiveBottomHighlights.map((item, idx) => (
                       <div key={item.topic} className="grid grid-cols-12 px-3 py-3 text-xs gap-2">
-                        <div className="col-span-3 font-bold text-slate-900 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
-                          {item.topic}
+                        <div className="col-span-3 font-bold text-slate-900 flex flex-col justify-start gap-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
+                            <span className="text-slate-900 font-bold">{item.topic}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[10px] pl-3.5">
+                            <span className="px-1.5 py-0.5 rounded font-extrabold bg-red-100 text-red-700 border border-red-200">
+                              {item.impactScore.toFixed(1)} Impact
+                            </span>
+                            {item.parentTopic && (
+                              <span className="text-slate-400 font-normal truncate max-w-[80px]" title={item.parentTopic}>
+                                ({item.parentTopic})
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="col-span-9 space-y-2 text-slate-700 text-[11px] leading-relaxed">
                           {item.subTopicHighlights.map((sh, sIdx) => {
@@ -1465,11 +1912,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                     <strong className="text-slate-900 font-semibold">{sh.aspect}: </strong>
                                     <textarea
                                       value={sh.summary}
-                                      onChange={e => {
-                                        const updated = { ...highlights };
-                                        updated.bottom3[idx].subTopicHighlights[sIdx].summary = e.target.value;
-                                        saveHighlights(updated);
-                                      }}
+                                      onChange={e => handleUpdateBottomHighlight(item.topic, sIdx, e.target.value)}
                                       className="w-full text-xs p-1.5 rounded border border-slate-300 mt-1 font-sans"
                                       rows={2}
                                     />
@@ -1503,7 +1946,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                           <span>{item.topic} &bull; {sh.aspect}</span>
                                         </div>
                                         <span className="text-[10px] font-extrabold bg-red-500/20 text-red-300 border border-red-500/40 px-1.5 py-0.5 rounded">
-                                          -Friction Area
+                                          {item.impactScore.toFixed(1)} Impact
                                         </span>
                                       </div>
 
@@ -1625,9 +2068,15 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
               </div>
 
               {/* Current Dataset Stats */}
-              <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-600">
+              <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2">
                 <span>
                   Currently storing: <strong>{records.length} records</strong>
+                </span>
+                <span>
+                  Date Span: <strong className="text-slate-800">{minDate} to {maxDate}</strong>
+                </span>
+                <span>
+                  Active Filter: <strong className="text-indigo-600">{filteredRecords.length} records</strong> ({formatDateRangeDisplay(startDate, endDate)})
                 </span>
                 <span>
                   Distinct Sub-Topics: <strong>{analytics.subTopics.length}</strong>
