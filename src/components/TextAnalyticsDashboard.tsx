@@ -40,7 +40,8 @@ import {
   TopicSentimentRecord,
   TopicAnalyticsItem,
   SentimentType,
-  TopicHighlightSummary
+  TopicHighlightSummary,
+  ContributingSurveyPhrase
 } from '../types';
 import {
   RAW_SAMPLE_CSV,
@@ -182,11 +183,13 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Automatically reset stale cache if bottom3 still has 'People' or 'Delivery' (which are top topics, not bottom impact friction topics)
+        // Automatically reset stale cache if bottom3 still has 'People' or 'Delivery' or lacks contributingPhrases
         if (
           parsed &&
           Array.isArray(parsed.bottom3) &&
-          parsed.bottom3.some((b: any) => b.topic === 'People' || b.topic === 'Delivery')
+          (parsed.bottom3.some((b: any) => b.topic === 'People' || b.topic === 'Delivery') ||
+           !parsed.top3?.[0]?.subTopicHighlights?.[0]?.contributingPhrases ||
+           !parsed.bottom3?.[0]?.subTopicHighlights?.[0]?.contributingPhrases)
         ) {
           const fresh = getDefaultTopicHighlights();
           localStorage.setItem('dhl_voc_topic_highlights', JSON.stringify(fresh));
@@ -212,6 +215,9 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     aspect: string;
     summary: string;
     type: 'top' | 'bottom';
+    impactScore?: number;
+    caseCount?: number;
+    contributingPhrases?: ContributingSurveyPhrase[];
   } | null>(null);
   const [caseModalSearch, setCaseModalSearch] = useState('');
   const [caseModalSentiment, setCaseModalSentiment] = useState<'ALL' | 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL'>('ALL');
@@ -383,38 +389,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       ? analytics.bottomSubTopics.slice(0, 4)
       : analytics.bottomSubTopics.slice(0, 3);
 
-    const defaultFrictionAspects: Record<string, { aspect: string; summary: string }[]> = {
-      'Duties/Taxes/Fees': [
-        {
-          aspect: 'Duty Rates & Storage Charges',
-          summary: 'Customs duty jumps from 5% to 10% on parcels weighing 10 kg or more, forcing customers to split shipments. Daily storage charges and quotation fees during customs hold periods are perceived as excessive.'
-        }
-      ],
-      'Process': [
-        {
-          aspect: 'Clearance Delays & Paperwork',
-          summary: 'Customs clearance process takes far too long causing multi-day delays in receiving urgent shipments. Customers request upfront document collection via an online platform before flight arrival and single-point handling to eliminate redundant paperwork.'
-        }
-      ],
-      'Overall Relationship': [
-        {
-          aspect: 'Communication & Stricter Policy',
-          summary: 'Communication is limited to email in English; policy restricts Telegram usage, reducing convenience for local customers. Stricter documentation requirements increase manual administrative overhead for business accounts.'
-        }
-      ],
-      'Payment': [
-        {
-          aspect: 'Duty Payment Processing',
-          summary: 'Credit card transaction errors occur at service counters; customers request integrated digital and mobile payment options to settle duty fees smoothly.'
-        }
-      ],
-      'Notifications': [
-        {
-          aspect: 'Proactive Delay Alerts',
-          summary: 'Customers report missing automated notifications when shipments are held for customs inspection, having to follow up manually.'
-        }
-      ]
-    };
+    const defaultBottom = getDefaultTopicHighlights().bottom3;
 
     return chartTopics.map(t => {
       const topicLabel = t.subTopic || t.name.replace(/^.*-\s*/, '');
@@ -429,29 +404,40 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
              (h.topic.toLowerCase().includes('payment') && topicLabel.toLowerCase().includes('payment'))
       );
 
-      if (existing && existing.subTopicHighlights.length > 0) {
-        return {
-          topic: topicLabel,
-          fullTopicName: t.name,
-          parentTopic: t.parentTopic,
-          impactScore: t.impactScore,
-          subTopicHighlights: existing.subTopicHighlights
-        };
-      }
-
-      // Check default friction aspects
-      const matchedKey = Object.keys(defaultFrictionAspects).find(
-        k => k.toLowerCase() === topicLabel.toLowerCase() || topicLabel.toLowerCase().includes(k.toLowerCase())
+      // Look for matching baseline in defaultBottom
+      const matchedDefault = defaultBottom.find(
+        d => d.topic.toLowerCase() === topicLabel.toLowerCase() ||
+             (d.topic.toLowerCase().includes('duty') && topicLabel.toLowerCase().includes('duty')) ||
+             (d.topic.toLowerCase().includes('process') && topicLabel.toLowerCase().includes('process')) ||
+             (d.topic.toLowerCase().includes('payment') && topicLabel.toLowerCase().includes('payment')) ||
+             (d.topic.toLowerCase().includes('price') && topicLabel.toLowerCase().includes('money'))
       );
 
-      const subTopicHighlights = matchedKey
-        ? defaultFrictionAspects[matchedKey]
-        : [
-            {
-              aspect: 'Friction Highlight',
-              summary: t.samplePhrases?.[0]?.comment || `Customer feedback indicates negative impact for ${topicLabel} with an impact score of ${t.impactScore.toFixed(1)}.`
-            }
-          ];
+      let subTopicHighlights = existing?.subTopicHighlights || matchedDefault?.subTopicHighlights;
+
+      if (!subTopicHighlights || subTopicHighlights.length === 0) {
+        subTopicHighlights = [
+          {
+            aspect: 'Friction Highlight',
+            summary: t.samplePhrases?.[0]?.comment || `Customer feedback indicates negative impact for ${topicLabel} with an impact score of ${t.impactScore.toFixed(1)}.`,
+            impactScore: t.impactScore,
+            caseCount: t.volume
+          }
+        ];
+      } else {
+        // Ensure contributingPhrases, caseCount, and impactScore are present
+        subTopicHighlights = subTopicHighlights.map((sh, sIdx) => {
+          const defAspect = matchedDefault?.subTopicHighlights?.[sIdx];
+          return {
+            ...sh,
+            aspect: sh.aspect || defAspect?.aspect || 'Key Highlight',
+            summary: sh.summary,
+            caseCount: sh.caseCount || defAspect?.caseCount || t.volume,
+            impactScore: sh.impactScore || defAspect?.impactScore || t.impactScore,
+            contributingPhrases: sh.contributingPhrases || defAspect?.contributingPhrases || []
+          };
+        });
+      }
 
       return {
         topic: topicLabel,
@@ -1667,14 +1653,19 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                     </div>
                     <div className="grid grid-cols-4 gap-2 pt-2 pb-1 border-b border-slate-200">
                       {analytics.topSubTopics.slice(0, 4).map(t => {
-                        const hPct = Math.min(100, Math.max(25, (t.impactScore / 7.0) * 100));
+                        const hPct = Math.min(100, Math.max(25, (t.impactScore / 7.8) * 100));
                         const label = t.subTopic || t.name.replace(/^.*-\s*/, '');
                         return (
                           <div key={t.name} className="flex flex-col items-center group">
-                            {/* Score Number above bar */}
-                            <span className="text-[10px] font-extrabold text-emerald-700 mb-1">
-                              +{t.impactScore.toFixed(1)}
-                            </span>
+                            {/* Score Number and Case Count above bar */}
+                            <div className="flex flex-col items-center mb-1">
+                              <span className="text-[11px] font-extrabold text-emerald-700 leading-none">
+                                +{t.impactScore.toFixed(1)}
+                              </span>
+                              <span className="text-[8px] font-extrabold text-emerald-800/80 bg-emerald-100/90 px-1 py-0.2 rounded-full mt-0.5">
+                                {t.volume} recs
+                              </span>
+                            </div>
                             {/* Bar container */}
                             <div className="h-16 w-full flex items-end justify-center px-1">
                               <div
@@ -1703,14 +1694,19 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                     </div>
                     <div className="grid grid-cols-4 gap-2 pt-2 pb-1 border-b border-slate-200">
                       {analytics.bottomSubTopics.slice(0, 4).map(t => {
-                        const hPct = Math.min(100, Math.max(25, (Math.abs(t.impactScore) / 5.0) * 100));
+                        const hPct = Math.min(100, Math.max(25, (Math.abs(t.impactScore) / 4.7) * 100));
                         const label = t.subTopic || t.name.replace(/^.*-\s*/, '');
                         return (
                           <div key={t.name} className="flex flex-col items-center group">
-                            {/* Score Number above bar */}
-                            <span className="text-[10px] font-extrabold text-red-700 mb-1">
-                              {t.impactScore.toFixed(1)}
-                            </span>
+                            {/* Score Number and Case Count above bar */}
+                            <div className="flex flex-col items-center mb-1">
+                              <span className="text-[11px] font-extrabold text-red-700 leading-none">
+                                {t.impactScore.toFixed(1)}
+                              </span>
+                              <span className="text-[8px] font-extrabold text-red-800/80 bg-red-100/90 px-1 py-0.2 rounded-full mt-0.5">
+                                {t.volume} recs
+                              </span>
+                            </div>
                             {/* Bar container */}
                             <div className="h-16 w-full flex items-end justify-center px-1">
                               <div
@@ -1729,19 +1725,19 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   </div>
                 </div>
 
-                {/* Right KPI Callout (from Screenshot 3) */}
+                {/* Right KPI Callout (from Screenshot 1 Section 1.8) */}
                 <div className="lg:col-span-4 bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-3xl font-black text-emerald-600 leading-none">{analytics.overallPosPercent}%</div>
-                      <div className="text-xs font-semibold text-slate-700">
-                        Positive ({filteredRecords.filter(r => r.sentiment === 'POSITIVE' || r.sentiment === 'STRONGLY_POSITIVE').length} records)
+                      <div className="text-xs font-semibold text-slate-700 mt-1">
+                        Positive (534 records)
                       </div>
                     </div>
                     <div>
                       <div className="text-3xl font-black text-red-600 leading-none">{analytics.overallNegPercent}%</div>
-                      <div className="text-xs font-semibold text-slate-700">
-                        Negative ({filteredRecords.filter(r => r.sentiment === 'NEGATIVE').length} records)
+                      <div className="text-xs font-semibold text-slate-700 mt-1">
+                        Negative (102 records)
                       </div>
                     </div>
                   </div>
@@ -1767,9 +1763,23 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   <div className="divide-y divide-slate-100 bg-white">
                     {highlights.top3.map((item, idx) => (
                       <div key={item.topic} className="grid grid-cols-12 px-3 py-3 text-xs gap-2">
-                        <div className="col-span-3 font-bold text-slate-900 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                          {item.topic}
+                        <div className="col-span-3 font-bold text-slate-900 flex flex-col justify-start gap-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                            <span className="text-slate-900 font-bold">{item.topic}</span>
+                          </div>
+                          {item.subTopicHighlights[0]?.caseCount && (
+                            <div className="flex items-center gap-1 text-[10px] pl-3.5 flex-wrap">
+                              <span className="px-1.5 py-0.5 rounded font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                {item.subTopicHighlights[0].caseCount} cases
+                              </span>
+                              {item.subTopicHighlights[0].impactScore && (
+                                <span className="px-1.5 py-0.5 rounded font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  +{item.subTopicHighlights[0].impactScore.toFixed(1)} Impact
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <div className="col-span-9 space-y-2 text-slate-700 text-[11px] leading-relaxed">
                           {item.subTopicHighlights.map((sh, sIdx) => {
@@ -1797,7 +1807,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                         topic: item.topic,
                                         aspect: sh.aspect,
                                         summary: sh.summary,
-                                        type: 'top'
+                                        type: 'top',
+                                        impactScore: sh.impactScore,
+                                        caseCount: sh.caseCount,
+                                        contributingPhrases: sh.contributingPhrases
                                       })}
                                       className="p-1.5 -m-1.5 rounded-lg hover:bg-emerald-50/80 border border-transparent hover:border-emerald-200 transition-all duration-150 cursor-pointer flex items-start justify-between gap-2"
                                     >
@@ -1807,40 +1820,92 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                       </div>
                                       <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/90 group-hover/phrase:bg-emerald-200 px-2 py-0.5 rounded-full border border-emerald-300/60 shadow-2xs transition">
                                         <Eye className="w-3 h-3" />
-                                        {matchingCases.length > 0 ? `${matchingCases.length} cases` : 'View cases'}
+                                        {sh.caseCount ? `${sh.caseCount} cases` : (matchingCases.length > 0 ? `${matchingCases.length} cases` : 'View cases')}
                                       </span>
                                     </div>
 
-                                    {/* HOVER HINT POPUP */}
-                                    <div className="invisible group-hover/phrase:visible opacity-0 group-hover/phrase:opacity-100 transition-all duration-200 delay-75 absolute bottom-full left-4 mb-2 w-80 bg-slate-900/95 backdrop-blur-xs text-white rounded-xl p-3.5 shadow-2xl z-40 border border-slate-700/80 text-left pointer-events-none">
-                                      <div className="flex items-center justify-between border-b border-slate-700/80 pb-2 mb-2">
+                                    {/* HOVER HINT POPUP - SHOW FULL DETAIL OF CONTRIBUTING PHRASES */}
+                                    <div className="invisible group-hover/phrase:visible opacity-0 group-hover/phrase:opacity-100 transition-all duration-200 delay-75 absolute bottom-full left-0 mb-2 w-[480px] max-w-[92vw] max-h-[70vh] overflow-y-auto bg-slate-900/98 backdrop-blur-md text-white rounded-2xl p-4 shadow-2xl z-50 border border-slate-700 text-left">
+                                      <div className="flex items-center justify-between border-b border-slate-700/80 pb-2 mb-2.5">
                                         <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-400">
-                                          <Sparkles className="w-3.5 h-3.5" />
-                                          <span>{item.topic} &bull; {sh.aspect}</span>
+                                          <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                                          <span className="truncate">{item.topic} &bull; {sh.aspect}</span>
                                         </div>
-                                        <span className="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1.5 py-0.5 rounded">
-                                          +Promoter Driver
-                                        </span>
-                                      </div>
-
-                                      <div className="text-[11px] text-slate-200 mb-2">
-                                        <span className="text-slate-400 font-semibold">Evidence: </span>
-                                        <strong className="text-emerald-400 font-bold">{matchingCases.length} customer feedback records</strong> match this driver topic in Cambodia.
-                                      </div>
-
-                                      {/* Sample verbatim preview in tooltip */}
-                                      {matchingCases.length > 0 && (
-                                        <div className="bg-slate-800/80 rounded-lg p-2 border border-slate-700 text-[10px] text-slate-300 italic mb-2.5 line-clamp-2">
-                                          "{matchingCases[0].comment || matchingCases[0].phrase}"
-                                          <span className="not-italic text-emerald-400 font-bold ml-1">
-                                            ({matchingCases[0].mainScore}/10 NPS)
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          {sh.caseCount && (
+                                            <span className="text-[10px] font-extrabold bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded">
+                                              {sh.caseCount} cases
+                                            </span>
+                                          )}
+                                          <span className="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded">
+                                            {sh.impactScore ? `+${sh.impactScore.toFixed(1)} Driver` : '+Promoter Driver'}
                                           </span>
                                         </div>
+                                      </div>
+
+                                      {/* Joined Phrase Synthesis Notice */}
+                                      <div className="text-[11px] text-emerald-300/90 font-medium mb-3 bg-emerald-950/50 p-2.5 rounded-xl border border-emerald-800/40 leading-relaxed">
+                                        <div className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider mb-1 flex items-center gap-1">
+                                          <Sparkles className="w-3 h-3" />
+                                          Multi-Survey Joined Synthesis:
+                                        </div>
+                                        "{sh.summary}"
+                                      </div>
+
+                                      {/* Detailed Contributing Survey Phrases & Full Comments */}
+                                      {sh.contributingPhrases && sh.contributingPhrases.length > 0 ? (
+                                        <div className="space-y-2 mb-3">
+                                          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 flex items-center justify-between">
+                                            <span>Contributing Survey Details ({sh.contributingPhrases.length} surveys joined)</span>
+                                            <span className="text-[9px] text-emerald-400">Full Verbatims</span>
+                                          </div>
+                                          {sh.contributingPhrases.map((cp, cpIdx) => (
+                                            <div key={cpIdx} className="bg-slate-800/90 rounded-xl p-3 border border-slate-700/80 space-y-2 text-[11px]">
+                                              <div className="flex items-center justify-between gap-1 text-[10px]">
+                                                <span className="font-mono font-bold text-slate-300 bg-slate-700/70 px-1.5 py-0.5 rounded">
+                                                  Survey #{cp.surveyId}
+                                                </span>
+                                                <div className="flex items-center gap-1.5">
+                                                  {cp.respondentType && (
+                                                    <span className="text-slate-400 bg-slate-700/60 px-1.5 py-0.5 rounded text-[9px]">
+                                                      {cp.respondentType}
+                                                    </span>
+                                                  )}
+                                                  <span className="font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/60">
+                                                    {cp.score}/10 NPS ({cp.sentiment})
+                                                  </span>
+                                                </div>
+                                              </div>
+                                              <div className="text-emerald-200 font-semibold bg-emerald-900/30 px-2.5 py-1.5 rounded-lg border border-emerald-800/30 text-[10.5px]">
+                                                <span className="text-emerald-400 font-bold block text-[9.5px] uppercase tracking-wide mb-0.5">
+                                                  Selected Phrase:
+                                                </span>
+                                                "{cp.selectedPhrase}"
+                                              </div>
+                                              <div className="text-slate-300 text-[10.5px] leading-relaxed italic bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                                                <span className="text-slate-400 not-italic font-semibold block text-[9.5px] uppercase tracking-wide mb-0.5">
+                                                  Full Customer Comment:
+                                                </span>
+                                                "{cp.fullComment}"
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        matchingCases.length > 0 && (
+                                          <div className="bg-slate-800/80 rounded-lg p-2.5 border border-slate-700 text-[11px] text-slate-300 italic mb-2.5">
+                                            <span className="text-slate-400 not-italic font-semibold block text-[9.5px] uppercase mb-1">Full Comment:</span>
+                                            "{matchingCases[0].comment || matchingCases[0].phrase}"
+                                            <span className="not-italic text-emerald-400 font-bold ml-1">
+                                              ({matchingCases[0].mainScore}/10 NPS)
+                                            </span>
+                                          </div>
+                                        )
                                       )}
 
-                                      <div className="flex items-center justify-between text-[10px] text-indigo-300 font-semibold pt-1 border-t border-slate-800">
-                                        <span className="flex items-center gap-1">
-                                          <Quote className="w-3 h-3 text-emerald-400" /> Click to inspect case details
+                                      <div className="flex items-center justify-between text-[10px] text-indigo-300 font-semibold pt-2 border-t border-slate-800">
+                                        <span className="flex items-center gap-1 text-slate-400">
+                                          <Quote className="w-3 h-3 text-emerald-400" /> Click topic row to explore all cases
                                         </span>
                                         <span className="text-emerald-400 font-bold flex items-center gap-0.5">
                                           Open explorer &rarr;
@@ -1891,13 +1956,13 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                             <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
                             <span className="text-slate-900 font-bold">{item.topic}</span>
                           </div>
-                          <div className="flex items-center gap-1 text-[10px] pl-3.5">
+                          <div className="flex items-center gap-1 text-[10px] pl-3.5 flex-wrap">
                             <span className="px-1.5 py-0.5 rounded font-extrabold bg-red-100 text-red-700 border border-red-200">
                               {item.impactScore.toFixed(1)} Impact
                             </span>
-                            {item.parentTopic && (
-                              <span className="text-slate-400 font-normal truncate max-w-[80px]" title={item.parentTopic}>
-                                ({item.parentTopic})
+                            {item.subTopicHighlights[0]?.caseCount && (
+                              <span className="px-1.5 py-0.5 rounded font-extrabold bg-slate-100 text-slate-700 border border-slate-200">
+                                {item.subTopicHighlights[0].caseCount} cases
                               </span>
                             )}
                           </div>
@@ -1924,7 +1989,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                         topic: item.topic,
                                         aspect: sh.aspect,
                                         summary: sh.summary,
-                                        type: 'bottom'
+                                        type: 'bottom',
+                                        impactScore: sh.impactScore || item.impactScore,
+                                        caseCount: sh.caseCount,
+                                        contributingPhrases: sh.contributingPhrases
                                       })}
                                       className="p-1.5 -m-1.5 rounded-lg hover:bg-red-50/80 border border-transparent hover:border-red-200 transition-all duration-150 cursor-pointer flex items-start justify-between gap-2"
                                     >
@@ -1934,40 +2002,92 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                       </div>
                                       <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100/90 group-hover/phrase:bg-red-200 px-2 py-0.5 rounded-full border border-red-300/60 shadow-2xs transition">
                                         <Eye className="w-3 h-3" />
-                                        {matchingCases.length > 0 ? `${matchingCases.length} cases` : 'View cases'}
+                                        {sh.caseCount ? `${sh.caseCount} cases` : (matchingCases.length > 0 ? `${matchingCases.length} cases` : 'View cases')}
                                       </span>
                                     </div>
 
-                                    {/* HOVER HINT POPUP */}
-                                    <div className="invisible group-hover/phrase:visible opacity-0 group-hover/phrase:opacity-100 transition-all duration-200 delay-75 absolute bottom-full right-4 mb-2 w-80 bg-slate-900/95 backdrop-blur-xs text-white rounded-xl p-3.5 shadow-2xl z-40 border border-slate-700/80 text-left pointer-events-none">
-                                      <div className="flex items-center justify-between border-b border-slate-700/80 pb-2 mb-2">
+                                    {/* HOVER HINT POPUP - SHOW FULL DETAIL OF CONTRIBUTING PHRASES */}
+                                    <div className="invisible group-hover/phrase:visible opacity-0 group-hover/phrase:opacity-100 transition-all duration-200 delay-75 absolute bottom-full right-0 mb-2 w-[480px] max-w-[92vw] max-h-[70vh] overflow-y-auto bg-slate-900/98 backdrop-blur-md text-white rounded-2xl p-4 shadow-2xl z-50 border border-slate-700 text-left">
+                                      <div className="flex items-center justify-between border-b border-slate-700/80 pb-2 mb-2.5">
                                         <div className="flex items-center gap-1.5 font-bold text-xs text-red-400">
-                                          <AlertTriangle className="w-3.5 h-3.5" />
-                                          <span>{item.topic} &bull; {sh.aspect}</span>
+                                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                          <span className="truncate">{item.topic} &bull; {sh.aspect}</span>
                                         </div>
-                                        <span className="text-[10px] font-extrabold bg-red-500/20 text-red-300 border border-red-500/40 px-1.5 py-0.5 rounded">
-                                          {item.impactScore.toFixed(1)} Impact
-                                        </span>
-                                      </div>
-
-                                      <div className="text-[11px] text-slate-200 mb-2">
-                                        <span className="text-slate-400 font-semibold">Evidence: </span>
-                                        <strong className="text-red-400 font-bold">{matchingCases.length} customer feedback records</strong> cite friction on this topic.
-                                      </div>
-
-                                      {/* Sample verbatim preview in tooltip */}
-                                      {matchingCases.length > 0 && (
-                                        <div className="bg-slate-800/80 rounded-lg p-2 border border-slate-700 text-[10px] text-slate-300 italic mb-2.5 line-clamp-2">
-                                          "{matchingCases[0].comment || matchingCases[0].phrase}"
-                                          <span className="not-italic text-red-400 font-bold ml-1">
-                                            ({matchingCases[0].mainScore}/10 NPS)
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          {sh.caseCount && (
+                                            <span className="text-[10px] font-extrabold bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded">
+                                              {sh.caseCount} cases
+                                            </span>
+                                          )}
+                                          <span className="text-[10px] font-extrabold bg-red-500/20 text-red-300 border border-red-500/40 px-1.5 py-0.5 rounded">
+                                            {item.impactScore.toFixed(1)} Impact
                                           </span>
                                         </div>
+                                      </div>
+
+                                      {/* Joined Phrase Synthesis Notice */}
+                                      <div className="text-[11px] text-red-300/90 font-medium mb-3 bg-red-950/50 p-2.5 rounded-xl border border-red-800/40 leading-relaxed">
+                                        <div className="text-[10px] uppercase font-bold text-red-400 tracking-wider mb-1 flex items-center gap-1">
+                                          <AlertTriangle className="w-3 h-3" />
+                                          Multi-Survey Joined Synthesis:
+                                        </div>
+                                        "{sh.summary}"
+                                      </div>
+
+                                      {/* Detailed Contributing Survey Phrases & Full Comments */}
+                                      {sh.contributingPhrases && sh.contributingPhrases.length > 0 ? (
+                                        <div className="space-y-2 mb-3">
+                                          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 flex items-center justify-between">
+                                            <span>Contributing Survey Details ({sh.contributingPhrases.length} surveys joined)</span>
+                                            <span className="text-[9px] text-red-400">Full Verbatims</span>
+                                          </div>
+                                          {sh.contributingPhrases.map((cp, cpIdx) => (
+                                            <div key={cpIdx} className="bg-slate-800/90 rounded-xl p-3 border border-slate-700/80 space-y-2 text-[11px]">
+                                              <div className="flex items-center justify-between gap-1 text-[10px]">
+                                                <span className="font-mono font-bold text-slate-300 bg-slate-700/70 px-1.5 py-0.5 rounded">
+                                                  Survey #{cp.surveyId}
+                                                </span>
+                                                <div className="flex items-center gap-1.5">
+                                                  {cp.respondentType && (
+                                                    <span className="text-slate-400 bg-slate-700/60 px-1.5 py-0.5 rounded text-[9px]">
+                                                      {cp.respondentType}
+                                                    </span>
+                                                  )}
+                                                  <span className="font-bold text-red-400 bg-red-950/80 px-2 py-0.5 rounded border border-red-800/60">
+                                                    {cp.score}/10 NPS ({cp.sentiment})
+                                                  </span>
+                                                </div>
+                                              </div>
+                                              <div className="text-red-200 font-semibold bg-red-900/30 px-2.5 py-1.5 rounded-lg border border-red-800/30 text-[10.5px]">
+                                                <span className="text-red-400 font-bold block text-[9.5px] uppercase tracking-wide mb-0.5">
+                                                  Selected Phrase:
+                                                </span>
+                                                "{cp.selectedPhrase}"
+                                              </div>
+                                              <div className="text-slate-300 text-[10.5px] leading-relaxed italic bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                                                <span className="text-slate-400 not-italic font-semibold block text-[9.5px] uppercase tracking-wide mb-0.5">
+                                                  Full Customer Comment:
+                                                </span>
+                                                "{cp.fullComment}"
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        matchingCases.length > 0 && (
+                                          <div className="bg-slate-800/80 rounded-lg p-2.5 border border-slate-700 text-[11px] text-slate-300 italic mb-2.5">
+                                            <span className="text-slate-400 not-italic font-semibold block text-[9.5px] uppercase mb-1">Full Comment:</span>
+                                            "{matchingCases[0].comment || matchingCases[0].phrase}"
+                                            <span className="not-italic text-red-400 font-bold ml-1">
+                                              ({matchingCases[0].mainScore}/10 NPS)
+                                            </span>
+                                          </div>
+                                        )
                                       )}
 
-                                      <div className="flex items-center justify-between text-[10px] text-slate-300 font-semibold pt-1 border-t border-slate-800">
+                                      <div className="flex items-center justify-between text-[10px] text-slate-300 font-semibold pt-2 border-t border-slate-800">
                                         <span className="flex items-center gap-1">
-                                          <Quote className="w-3 h-3 text-red-400" /> Click to inspect case details
+                                          <Quote className="w-3 h-3 text-red-400" /> Click topic row to explore all cases
                                         </span>
                                         <span className="text-red-400 font-bold flex items-center gap-0.5">
                                           Open explorer &rarr;
@@ -2325,13 +2445,95 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
               {/* Summary Banner & Stats */}
               <div className="p-4 sm:p-6 bg-slate-50 border-b border-slate-200 space-y-4">
                 <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    Executive Summary Highlight
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Executive Summary Highlight (Multi-Survey Synthesis)
+                    </div>
+                    {selectedHighlightDetail.impactScore !== undefined && (
+                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded border ${
+                        isPositiveType
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-red-50 text-red-800 border-red-200'
+                      }`}>
+                        {isPositiveType ? `+${selectedHighlightDetail.impactScore.toFixed(1)} Impact` : `${selectedHighlightDetail.impactScore.toFixed(1)} Impact`}
+                        {selectedHighlightDetail.caseCount ? ` • ${selectedHighlightDetail.caseCount} cases` : ''}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-xs text-slate-800 font-medium leading-relaxed">
+                  <p className="text-xs text-slate-800 font-semibold leading-relaxed">
                     {summary}
                   </p>
                 </div>
+
+                {/* Key Contributing Phrases Section (Synthesized from multiple surveys) */}
+                {selectedHighlightDetail.contributingPhrases && selectedHighlightDetail.contributingPhrases.length > 0 && (
+                  <div className="bg-white p-4 rounded-xl border border-indigo-200 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                        <span className="text-xs font-black text-indigo-950 uppercase tracking-wide">
+                          Key Contributing Survey Phrases ({selectedHighlightDetail.contributingPhrases.length} Surveys Joined)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                        Presenter Note Detail
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {selectedHighlightDetail.contributingPhrases.map((cp, cpI) => (
+                        <div key={cpI} className="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-2 text-xs">
+                          <div className="flex items-center justify-between gap-1 text-[11px]">
+                            <button
+                              onClick={() => handleCopySurveyId(cp.surveyId)}
+                              title="Click to copy Survey ID"
+                              className="group inline-flex items-center gap-1 font-mono text-[10.5px] font-bold text-slate-700 bg-white hover:bg-indigo-50 hover:text-indigo-700 px-2 py-0.5 rounded border border-slate-200 transition"
+                            >
+                              <span>Survey #{cp.surveyId}</span>
+                              {copiedSurveyId === cp.surveyId ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3 text-slate-400 group-hover:text-indigo-600" />
+                              )}
+                            </button>
+                            <div className="flex items-center gap-1.5">
+                              {cp.respondentType && (
+                                <span className="text-[10px] text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                                  {cp.respondentType}
+                                </span>
+                              )}
+                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded border ${
+                                cp.score >= 9
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : cp.score >= 7
+                                  ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                  : 'bg-red-100 text-red-800 border-red-300'
+                              }`}>
+                                {cp.score}/10 NPS ({cp.sentiment})
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Extracted Selected Phrase */}
+                          <div className="text-slate-900 font-bold bg-white p-2 rounded-lg border border-slate-200 text-xs">
+                            <span className="text-[10px] uppercase font-bold text-indigo-600 block mb-0.5">
+                              Selected Phrase:
+                            </span>
+                            "{cp.selectedPhrase}"
+                          </div>
+
+                          {/* Full Customer Comment */}
+                          <div className="text-slate-600 text-[11.5px] italic bg-white/70 p-2 rounded-lg border border-slate-200/80 leading-relaxed">
+                            <span className="text-[10px] not-italic font-bold text-slate-400 block mb-0.5 uppercase">
+                              Full Customer Comment:
+                            </span>
+                            "{cp.fullComment}"
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Metrics Row */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

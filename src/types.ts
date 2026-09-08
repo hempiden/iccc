@@ -123,11 +123,27 @@ export interface TopicAnalyticsItem {
   }[];
 }
 
+export interface ContributingSurveyPhrase {
+  surveyId: string;
+  score: number;
+  sentiment: SentimentType;
+  selectedPhrase: string;
+  fullComment: string;
+  respondentType?: string;
+}
+
+export interface TopicAspectHighlight {
+  aspect: string; // e.g. "Overall Satisfaction", "Politeness", "Helpfulness", "Timeliness"
+  summary: string; // concise AI synthesis of customer feedback joining the selected phrases
+  caseCount?: number;
+  impactScore?: number;
+  parentTopic?: string;
+  contributingPhrases?: ContributingSurveyPhrase[];
+}
+
 export interface TopicHighlightSummary {
   topic: string;
-  subTopicHighlights: {
-    aspect: string; // e.g. "Overall Satisfaction", "Politeness", "Helpfulness", "Timeliness"
-    summary: string; // concise AI synthesis of customer feedback
-  }[];
+  subTopicHighlights: TopicAspectHighlight[];
 }
+
 

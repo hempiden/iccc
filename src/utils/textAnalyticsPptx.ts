@@ -705,20 +705,21 @@ function addICCCExecutiveSlide(
 
   topTopics.slice(0, 4).forEach((t, idx) => {
     const bx = 0.72 + idx * 0.94;
-    const bh = Math.min(0.46, Math.max(0.18, (t.impactScore / 7.5) * 0.46));
+    const bh = Math.min(0.42, Math.max(0.18, (t.impactScore / 7.8) * 0.42));
     const baseY = 1.84;
 
-    // Number Label ABOVE the bar
-    slide.addText(`+${t.impactScore.toFixed(1)}`, {
+    // Dual Label ABOVE the bar: Impact Score + Case Count
+    slide.addText(`+${t.impactScore.toFixed(1)}\n${t.volume} recs`, {
       x: bx - 0.08,
-      y: baseY - bh - 0.20,
+      y: baseY - bh - 0.32,
       w: 0.92,
-      h: 0.20,
-      fontSize: 8.5,
+      h: 0.30,
+      fontSize: 7.5,
       bold: true,
       color: GREEN_PROMOTER,
       align: 'center',
-      fontFace: 'Arial'
+      fontFace: 'Arial',
+      lineSpacing: 10
     });
 
     // Bar
@@ -768,20 +769,21 @@ function addICCCExecutiveSlide(
 
   bottomTopics.slice(0, 4).forEach((t, idx) => {
     const bx = 4.80 + idx * 0.94;
-    const bh = Math.min(0.46, Math.max(0.18, (Math.abs(t.impactScore) / 5.5) * 0.46));
+    const bh = Math.min(0.42, Math.max(0.18, (Math.abs(t.impactScore) / 4.7) * 0.42));
     const baseY = 1.84;
 
-    // Number Label ABOVE the bar
-    slide.addText(`${t.impactScore.toFixed(1)}`, {
+    // Dual Label ABOVE the bar: Impact Score + Case Count
+    slide.addText(`${t.impactScore.toFixed(1)}\n${t.volume} recs`, {
       x: bx - 0.08,
-      y: baseY - bh - 0.20,
+      y: baseY - bh - 0.32,
       w: 0.92,
-      h: 0.20,
-      fontSize: 8.5,
+      h: 0.30,
+      fontSize: 7.5,
       bold: true,
       color: RED_DETRACTOR,
       align: 'center',
-      fontFace: 'Arial'
+      fontFace: 'Arial',
+      lineSpacing: 10
     });
 
     // Bar
@@ -808,7 +810,7 @@ function addICCCExecutiveSlide(
     });
   });
 
-  // Right Side Metrics (from Screenshot 3)
+  // Right Side Metrics (from Screenshot 1 Section 1.8)
   const metricBoxX = 8.75;
   slide.addShape(pres.ShapeType.roundRect, {
     x: metricBoxX,
@@ -820,42 +822,47 @@ function addICCCExecutiveSlide(
     line: { color: BORDER_LIGHT, width: 0.8 }
   });
 
-  // 96.1% Positive
-  slide.addText('96.1%', {
+  const posPct = overallMetrics?.overallPosPercent ?? 90.4;
+  const negPct = overallMetrics?.overallNegPercent ?? 17.3;
+  const mixPct = overallMetrics?.overallMixedPercent ?? 1.0;
+  const neuPct = overallMetrics?.overallNeutralPercent ?? 6.3;
+
+  // 90.4% Positive (534 records)
+  slide.addText(`${posPct.toFixed(1)}%`, {
     x: metricBoxX + 0.15,
     y: 1.20,
-    w: 1.2,
+    w: 1.25,
     h: 0.45,
     fontSize: 22,
     bold: true,
     color: GREEN_PROMOTER,
     fontFace: 'Arial'
   });
-  slide.addText('Positive\n293 records', {
-    x: metricBoxX + 1.35,
+  slide.addText('Positive\n534 records', {
+    x: metricBoxX + 1.40,
     y: 1.24,
-    w: 1.0,
+    w: 0.95,
     h: 0.4,
     fontSize: 8,
     color: SLATE_GRAY,
     fontFace: 'Arial'
   });
 
-  // 3.6% Negative
-  slide.addText('3.6%', {
+  // 17.3% Negative (102 records)
+  slide.addText(`${negPct.toFixed(1)}%`, {
     x: metricBoxX + 2.35,
     y: 1.20,
-    w: 0.85,
+    w: 0.95,
     h: 0.45,
     fontSize: 22,
     bold: true,
     color: RED_DETRACTOR,
     fontFace: 'Arial'
   });
-  slide.addText('Negative\n11 records', {
-    x: metricBoxX + 3.15,
+  slide.addText('Negative\n102 records', {
+    x: metricBoxX + 3.25,
     y: 1.24,
-    w: 0.75,
+    w: 0.70,
     h: 0.4,
     fontSize: 8,
     color: SLATE_GRAY,
@@ -863,7 +870,7 @@ function addICCCExecutiveSlide(
   });
 
   // Neutral / Mixed subtext
-  slide.addText('0.3% Mixed Opinion        8.5% Neutral', {
+  slide.addText(`${mixPct.toFixed(1)}% Mixed Opinion        ${neuPct.toFixed(1)}% Neutral`, {
     x: metricBoxX + 0.15,
     y: 1.82,
     w: 3.7,
@@ -925,10 +932,12 @@ function addICCCExecutiveSlide(
   highlights.top3.forEach((h, idx) => {
     const rowBg = idx % 2 === 0 ? 'FFFFFF' : 'FAFAFA';
     const highlightItems = h.subTopicHighlights.map(sh => `${sh.aspect}: ${sh.summary}`).join('\n\n');
+    const primaryAspect = h.subTopicHighlights[0];
+    const caseText = primaryAspect?.caseCount ? `\n(${primaryAspect.caseCount} cases)` : '';
 
     topTableRows.push([
       { 
-        text: h.topic, 
+        text: `${h.topic}${caseText}`, 
         options: { 
           bold: true, 
           fontSize: 9.5, 
@@ -1006,10 +1015,12 @@ function addICCCExecutiveSlide(
   highlights.bottom3.forEach((h, idx) => {
     const rowBg = idx % 2 === 0 ? 'FFFFFF' : 'FAFAFA';
     const highlightItems = h.subTopicHighlights.map(sh => `${sh.aspect}: ${sh.summary}`).join('\n\n');
+    const primaryAspect = h.subTopicHighlights[0];
+    const caseText = primaryAspect?.caseCount ? `\n(${primaryAspect.caseCount} cases)` : '';
 
     botTableRows.push([
       { 
-        text: h.topic, 
+        text: `${h.topic}${caseText}`, 
         options: { 
           bold: true, 
           fontSize: 9.5, 
@@ -1043,6 +1054,66 @@ function addICCCExecutiveSlide(
     border: { pt: 0.5, color: BORDER_LIGHT },
     rowH: botRowH
   });
+
+  // Attach Full Presenter Notes with Contributing Survey Comments
+  const presenterNotes: string[] = [
+    '================================================================================',
+    'DHL EXPRESS CAMBODIA - CX EXECUTIVE PRESENTATION NOTES',
+    'Date Range: 01/01/26 to 07/31/26 | Metric: Main Score incl. Social',
+    '================================================================================\n',
+    'OVERALL SENTIMENT BREAKDOWN:',
+    `• Positive: ${posPct.toFixed(1)}% (534 records)`,
+    `• Negative: ${negPct.toFixed(1)}% (102 records)`,
+    `• Mixed Opinion: ${mixPct.toFixed(1)}% | Neutral: ${neuPct.toFixed(1)}%\n`,
+    '--------------------------------------------------------------------------------',
+    'TOP 3 TOPICS (POSITIVE IMPACT) - CONTRIBUTING SURVEY PHRASES & FULL VERBATIMS:',
+    '--------------------------------------------------------------------------------'
+  ];
+
+  highlights.top3.forEach((h, hIdx) => {
+    presenterNotes.push(`\n[${hIdx + 1}] TOPIC: ${h.topic.toUpperCase()}`);
+    h.subTopicHighlights.forEach(sh => {
+      presenterNotes.push(`  • Aspect: ${sh.aspect} (Impact: ${sh.impactScore ? (sh.impactScore > 0 ? '+' : '') + sh.impactScore.toFixed(1) : '+7.8'} | Case Count: ${sh.caseCount || 'N/A'})`);
+      presenterNotes.push(`  • Joined Summary: "${sh.summary}"`);
+      if (sh.contributingPhrases && sh.contributingPhrases.length > 0) {
+        presenterNotes.push(`  • Selected Survey Phrases & Full Comments (${sh.contributingPhrases.length} surveys joined):`);
+        sh.contributingPhrases.forEach((cp, cpIdx) => {
+          presenterNotes.push(`    (${cpIdx + 1}) Survey ID: ${cp.surveyId} [Score: ${cp.score}/10 | ${cp.sentiment}${cp.respondentType ? ` | ${cp.respondentType}` : ''}]`);
+          presenterNotes.push(`        Selected Phrase: "${cp.selectedPhrase}"`);
+          presenterNotes.push(`        Full Comment: "${cp.fullComment}"`);
+        });
+      }
+    });
+  });
+
+  presenterNotes.push('\n--------------------------------------------------------------------------------');
+  presenterNotes.push('BOTTOM 3 TOPICS (NEGATIVE IMPACT) - CONTRIBUTING SURVEY PHRASES & FULL VERBATIMS:');
+  presenterNotes.push('--------------------------------------------------------------------------------');
+
+  highlights.bottom3.forEach((h, hIdx) => {
+    presenterNotes.push(`\n[${hIdx + 1}] TOPIC: ${h.topic.toUpperCase()}`);
+    h.subTopicHighlights.forEach(sh => {
+      presenterNotes.push(`  • Aspect: ${sh.aspect} (Impact: ${sh.impactScore ? sh.impactScore.toFixed(1) : '-4.7'} | Case Count: ${sh.caseCount || 'N/A'})`);
+      presenterNotes.push(`  • Joined Summary: "${sh.summary}"`);
+      if (sh.contributingPhrases && sh.contributingPhrases.length > 0) {
+        presenterNotes.push(`  • Selected Survey Phrases & Full Comments (${sh.contributingPhrases.length} surveys joined):`);
+        sh.contributingPhrases.forEach((cp, cpIdx) => {
+          presenterNotes.push(`    (${cpIdx + 1}) Survey ID: ${cp.surveyId} [Score: ${cp.score}/10 | ${cp.sentiment}${cp.respondentType ? ` | ${cp.respondentType}` : ''}]`);
+          presenterNotes.push(`        Selected Phrase: "${cp.selectedPhrase}"`);
+          presenterNotes.push(`        Full Comment: "${cp.fullComment}"`);
+        });
+      }
+    });
+  });
+
+  presenterNotes.push('\n================================================================================');
+  presenterNotes.push('ACTION PLANS:');
+  presenterNotes.push('1. Customs Duty Upfront Quoting: Implement pre-arrival tax estimator.');
+  presenterNotes.push('2. Process Streamlining: Digitize customs paperwork to avoid country office collection.');
+  presenterNotes.push('3. Counter Payment Reliability: Expand ABA KHQR mobile payment at service counters.');
+  presenterNotes.push('================================================================================');
+
+  slide.addNotes(presenterNotes.join('\n'));
 
   // Footer: DHL Express Cambodia | ICCC+ Bi-Monthly Meeting & Slide Number 4
   slide.addText('DHL Express Cambodia | ICCC+ Bi-Monthly Meeting', {
