@@ -144,6 +144,9 @@ export interface TopicAspectHighlight {
 
 export interface TopicHighlightSummary {
   topic: string;
+  parentTopic?: string;
+  fullTopicName?: string;
+  impactScore?: number;
   subTopicHighlights: TopicAspectHighlight[];
 }
 

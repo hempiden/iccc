@@ -378,23 +378,15 @@ export function parseCSV(csvText: string): TopicSentimentRecord[] {
 
   const header = parseRow(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
   
-  const getIdx = (keys: string[]) => {
-    for (const k of keys) {
-      const idx = header.findIndex(h => h.includes(k));
-      if (idx !== -1) return idx;
-    }
-    return -1;
-  };
-
-  const surveyIdIdx = getIdx(['surveyid', 'id', 'interaction']);
-  const commentFieldIdx = getIdx(['commentfield', 'field', 'type']);
-  const commentIdx = getIdx(['comment', 'feedback', 'text']);
-  const phraseIdx = getIdx(['phrase', 'quote', 'sentence']);
-  const topicThemeIdx = getIdx(['topictheme', 'topic', 'theme', 'subtopic']);
-  const sentimentIdx = getIdx(['sentiment', 'polarity']);
-  const scoreIdx = getIdx(['mainscore', 'score', 'likelihood', 'nps']);
-  const countryIdx = getIdx(['country', 'unit']);
-  const dateIdx = getIdx(['responsedate', 'response date', 'date', 'created', 'time', 'timestamp', 'period']);
+  const surveyIdIdx = header.findIndex(h => h === 'surveyid' || h.includes('surveyid') || h === 'id');
+  const commentFieldIdx = header.findIndex(h => h.includes('commentfield') || (h.includes('field') && !h.includes('comment')) || h === 'comment field');
+  const commentIdx = header.findIndex((h, idx) => idx !== commentFieldIdx && (h === 'comment' || (h.includes('comment') && !h.includes('field')) || h.includes('feedback') || h.includes('text')));
+  const phraseIdx = header.findIndex(h => h.includes('phrase') || h.includes('quote') || h.includes('sentence'));
+  const topicThemeIdx = header.findIndex(h => h.includes('topictheme') || h.includes('topic') || h.includes('theme') || h.includes('subtopic'));
+  const sentimentIdx = header.findIndex(h => h.includes('sentiment') || h.includes('polarity'));
+  const scoreIdx = header.findIndex(h => h.includes('mainscore') || h.includes('score') || h.includes('likelihood') || h.includes('nps'));
+  const countryIdx = header.findIndex(h => h.includes('country') || h.includes('unit'));
+  const dateIdx = header.findIndex(h => (h.includes('date') || h.includes('timestamp') || h.includes('period')) && !h.includes('sentiment'));
 
   const seenKeys = new Set<string>();
 
@@ -427,9 +419,11 @@ export function parseCSV(csvText: string): TopicSentimentRecord[] {
       ? (cells.length >= 6 ? String(cells[cells.length - 5]).trim() : '') 
       : ((phraseIdx !== -1 && cells[phraseIdx]) ? String(cells[phraseIdx]).trim() : '');
       
-    const comment = isTailAligned 
+    const rawComment = isTailAligned 
       ? cells.slice(2, Math.max(2, cells.length - 5)).join(', ').trim() 
       : ((commentIdx !== -1 && cells[commentIdx]) ? String(cells[commentIdx]).trim() : phrase);
+
+    const comment = (rawComment && rawComment !== 'Invitation survey comment') ? rawComment : phrase;
 
     // Unique phrase key concatenated from surveyID, theme/topic, and phrase as requested
     const normPhrase = (phrase || comment).trim().toLowerCase().replace(/\s+/g, ' ');
@@ -695,6 +689,46 @@ export const TOPIC_AI_SUMMARIES: Record<string, { summary: string; keyQuotes: st
       'Payment process for duty charges should be smoother online.'
     ],
     sentiment: '80.0% Negative'
+  },
+  'Price - Value for money': {
+    summary: 'Customer sensitivity to premium shipping rates, fuel surcharges, and customs processing fees, requesting volume discounts for frequent business shipments.',
+    keyQuotes: [
+      'Rate is quite high compared to local alternatives.',
+      'Would appreciate better discounts for regular corporate shipments.'
+    ],
+    sentiment: '72.0% Negative'
+  },
+  'Delivery - Delivery Location': {
+    summary: 'Customer feedback regarding route navigation to specific remote, rural, or newly developed commercial office locations.',
+    keyQuotes: [
+      'Courier had difficulty finding our new office address.',
+      'Clearer location coordination needed for remote industrial zones.'
+    ],
+    sentiment: '65.0% Negative'
+  },
+  'Delivery - Home delivery': {
+    summary: 'Feedback regarding residential consignee delivery timing coordination, pre-delivery notification calls, and handover preferences.',
+    keyQuotes: [
+      'Please ensure courier calls at least 30 minutes before arriving at home.',
+      'Coordinate delivery time window for residential addresses.'
+    ],
+    sentiment: '60.0% Negative'
+  },
+  'Support - Resolution Efficiency': {
+    summary: 'Responsive customer support resolution, quick follow-up on inquiries, and helpful communication regarding shipment tracking and issue escalation.',
+    keyQuotes: [
+      'Customer service team was very quick in following up with the station.',
+      'Support resolved our customs documentation question promptly.'
+    ],
+    sentiment: '91.0% Positive'
+  },
+  'Customs clearance handled by DHL is efficient': {
+    summary: 'Commendations for DHL Express Cambodia for proactive customs documentation clearance, rapid inspection processing, and fast parcel release.',
+    keyQuotes: [
+      'Customs clearance handled by DHL is efficient, ensuring a smooth and fast process.',
+      'DHL handled the customs clearance efficiently.'
+    ],
+    sentiment: '96.0% Positive'
   }
 };
 

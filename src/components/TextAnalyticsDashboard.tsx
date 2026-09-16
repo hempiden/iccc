@@ -262,6 +262,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     impactScore?: number;
     caseCount?: number;
     benchmarkCount?: number;
+    parentTopic?: string;
+    fullTopicName?: string;
     contributingPhrases?: ContributingSurveyPhrase[];
   } | null>(null);
   const [caseModalSearch, setCaseModalSearch] = useState('');
@@ -269,9 +271,41 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
   const [copiedSurveyId, setCopiedSurveyId] = useState<string | null>(null);
 
   // Helper to extract matching cases for any (topic, aspect)
-  const getMatchingCasesForAspect = (topic: string, aspect: string, summary?: string) => {
-    const normTopic = (topic || '').toLowerCase();
-    const normAspect = (aspect || '').toLowerCase();
+  const getMatchingCasesForAspect = (
+    topic: string,
+    aspect?: string,
+    summary?: string,
+    parentTopic?: string,
+    fullTopicName?: string
+  ) => {
+    const normFull = (fullTopicName || '').toLowerCase().trim();
+    const normTopic = (topic || '').toLowerCase().trim();
+    const normAspect = (aspect || '').toLowerCase().trim();
+    const normParent = (parentTopic || '').toLowerCase().trim();
+
+    // 1. Direct exact match by fullTopicName or exact topicTheme
+    if (normFull) {
+      const direct = filteredRecords.filter(r => (r.topicTheme || '').toLowerCase().trim() === normFull);
+      if (direct.length > 0) return direct;
+    }
+
+    // 2. Direct match by parentTopic + subTopic
+    if (normParent && normTopic) {
+      const parentSub = filteredRecords.filter(r => 
+        (r.parentTopic || '').toLowerCase().trim() === normParent &&
+        ((r.subTopic || '').toLowerCase().trim() === normTopic || (r.topicTheme || '').toLowerCase().trim().includes(normTopic))
+      );
+      if (parentSub.length > 0) return parentSub;
+    }
+
+    // 3. Exact match by topicTheme or subTopic
+    if (normTopic) {
+      const exactTheme = filteredRecords.filter(r => 
+        (r.topicTheme || '').toLowerCase().trim() === normTopic ||
+        (r.subTopic || '').toLowerCase().trim() === normTopic
+      );
+      if (exactTheme.length > 0) return exactTheme;
+    }
 
     // 1. Customs Clearance - Duties/Taxes/Fees
     if (
@@ -516,18 +550,16 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
       // Look for user edited highlight in highlights.top3
       const existing = highlights.top3.find(
-        h => h.topic.toLowerCase() === topicLabel.toLowerCase() ||
-             h.topic.toLowerCase() === t.name.toLowerCase() ||
-             h.topic.toLowerCase() === parentLabel.toLowerCase() ||
-             h.subTopicHighlights?.some(sh => sh.aspect.toLowerCase() === topicLabel.toLowerCase())
+        h => (h.fullTopicName && h.fullTopicName.toLowerCase() === t.name.toLowerCase()) ||
+             (h.parentTopic && h.parentTopic.toLowerCase() === parentLabel.toLowerCase() && h.topic.toLowerCase() === topicLabel.toLowerCase()) ||
+             h.topic.toLowerCase() === t.name.toLowerCase()
       );
 
       // Look for matching baseline in defaultTop
       const matchedDefault = defaultTop.find(
-        d => d.topic.toLowerCase() === topicLabel.toLowerCase() ||
-             d.topic.toLowerCase() === t.name.toLowerCase() ||
-             d.topic.toLowerCase() === parentLabel.toLowerCase() ||
-             d.subTopicHighlights?.some(sh => sh.aspect.toLowerCase() === topicLabel.toLowerCase())
+        d => (d.fullTopicName && d.fullTopicName.toLowerCase() === t.name.toLowerCase()) ||
+             (d.parentTopic && d.parentTopic.toLowerCase() === parentLabel.toLowerCase() && d.topic.toLowerCase() === topicLabel.toLowerCase()) ||
+             d.topic.toLowerCase() === t.name.toLowerCase()
       );
 
       const matchedDefaultAspect = matchedDefault?.subTopicHighlights?.find(
@@ -546,13 +578,17 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       let subTopicHighlights = existing?.subTopicHighlights;
 
       if (!subTopicHighlights || subTopicHighlights.length === 0) {
+        const cleanPhrases = (t.samplePhrases || []).filter(
+          sp => sp.phrase && sp.phrase !== 'Invitation survey comment' && sp.comment !== 'Invitation survey comment'
+        );
+
         const fallbackSummary = aiSummaryObj?.summary || 
-          (t.samplePhrases && t.samplePhrases.length > 0 
-            ? t.samplePhrases.slice(0, 2).map(sp => sp.phrase || sp.comment).join('. ') + '.'
+          (cleanPhrases.length > 0 
+            ? cleanPhrases.slice(0, 2).map(sp => sp.phrase || sp.comment).join('. ') + '.'
             : `Customer feedback highlights strong positive sentiment for ${topicLabel} with an impact score of +${t.impactScore.toFixed(1)}.`);
 
-        const contributingPhrases = (t.samplePhrases && t.samplePhrases.length > 0)
-          ? t.samplePhrases.slice(0, 5).map(sp => ({
+        const contributingPhrases = cleanPhrases.length > 0
+          ? cleanPhrases.slice(0, 5).map(sp => ({
               surveyId: sp.surveyId,
               score: sp.score,
               sentiment: (sp.sentiment || 'POSITIVE') as any,
@@ -562,7 +598,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
             }))
           : (matchedDefaultAspect?.contributingPhrases || []);
 
-        const matchedCases = getMatchingCasesForAspect(t.name, topicLabel, fallbackSummary);
+        const matchedCases = getMatchingCasesForAspect(topicLabel, topicLabel, fallbackSummary, parentLabel, t.name);
         const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
 
         subTopicHighlights = [
@@ -580,11 +616,15 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         // Ensure caseCount and impactScore follow live filtered records
         subTopicHighlights = subTopicHighlights.map((sh, sIdx) => {
           const defAspect = matchedDefaultAspect || matchedDefault?.subTopicHighlights?.[sIdx];
-          const matchedCases = getMatchingCasesForAspect(t.name, sh.aspect || topicLabel, sh.summary);
+          const matchedCases = getMatchingCasesForAspect(topicLabel, sh.aspect || topicLabel, sh.summary, parentLabel, t.name);
           const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
 
-          const dynamicPhrases = (t.samplePhrases && t.samplePhrases.length > 0)
-            ? t.samplePhrases.slice(0, 5).map(sp => ({
+          const cleanPhrases = (t.samplePhrases || []).filter(
+            sp => sp.phrase && sp.phrase !== 'Invitation survey comment' && sp.comment !== 'Invitation survey comment'
+          );
+
+          const dynamicPhrases = cleanPhrases.length > 0
+            ? cleanPhrases.slice(0, 5).map(sp => ({
                 surveyId: sp.surveyId,
                 score: sp.score,
                 sentiment: (sp.sentiment || 'POSITIVE') as any,
@@ -647,35 +687,43 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
     return chartTopics.map(t => {
       const topicLabel = t.subTopic || t.name.replace(/^.*-\s*/, '');
+      const parentLabel = t.parentTopic || 'General';
 
       // Look for user edited highlight in highlights.bottom3
       const existing = highlights.bottom3.find(
-        h => h.topic.toLowerCase() === topicLabel.toLowerCase() ||
-             h.topic.toLowerCase() === t.name.toLowerCase() ||
-             (h.topic.toLowerCase().includes('duty') && topicLabel.toLowerCase().includes('duty')) ||
-             (h.topic.toLowerCase().includes('process') && topicLabel.toLowerCase().includes('process')) ||
-             (h.topic.toLowerCase().includes('relationship') && topicLabel.toLowerCase().includes('relationship')) ||
-             (h.topic.toLowerCase().includes('payment') && topicLabel.toLowerCase().includes('payment'))
+        h => (h.fullTopicName && h.fullTopicName.toLowerCase() === t.name.toLowerCase()) ||
+             (h.parentTopic && h.parentTopic.toLowerCase() === parentLabel.toLowerCase() && h.topic.toLowerCase() === topicLabel.toLowerCase()) ||
+             h.topic.toLowerCase() === t.name.toLowerCase()
       );
 
       // Look for matching baseline in defaultBottom
       const matchedDefault = defaultBottom.find(
-        d => d.topic.toLowerCase() === topicLabel.toLowerCase() ||
-             (d.topic.toLowerCase().includes('duty') && topicLabel.toLowerCase().includes('duty')) ||
-             (d.topic.toLowerCase().includes('process') && topicLabel.toLowerCase().includes('process')) ||
-             (d.topic.toLowerCase().includes('payment') && topicLabel.toLowerCase().includes('payment')) ||
-             (d.topic.toLowerCase().includes('price') && topicLabel.toLowerCase().includes('money'))
+        d => (d.fullTopicName && d.fullTopicName.toLowerCase() === t.name.toLowerCase()) ||
+             (d.parentTopic && d.parentTopic.toLowerCase() === parentLabel.toLowerCase() && d.topic.toLowerCase() === topicLabel.toLowerCase()) ||
+             d.topic.toLowerCase() === t.name.toLowerCase()
       );
+
+      // Look in TOPIC_AI_SUMMARIES
+      const aiSummaryObj = TOPIC_AI_SUMMARIES[t.name] || 
+        Object.entries(TOPIC_AI_SUMMARIES).find(([k]) => 
+          k.toLowerCase().includes(topicLabel.toLowerCase()) || 
+          topicLabel.toLowerCase().includes(k.toLowerCase())
+        )?.[1];
 
       let subTopicHighlights = existing?.subTopicHighlights || matchedDefault?.subTopicHighlights;
 
       if (!subTopicHighlights || subTopicHighlights.length === 0) {
-        const matchedCases = getMatchingCasesForAspect(t.name, 'Friction Highlight');
+        const cleanPhrases = (t.samplePhrases || []).filter(
+          sp => sp.phrase && sp.phrase !== 'Invitation survey comment' && sp.comment !== 'Invitation survey comment'
+        );
+        const sampleText = cleanPhrases[0]?.comment || cleanPhrases[0]?.phrase;
+
+        const matchedCases = getMatchingCasesForAspect(topicLabel, 'Friction Highlight', undefined, parentLabel, t.name);
         const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
         subTopicHighlights = [
           {
             aspect: 'Friction Highlight',
-            summary: t.samplePhrases?.[0]?.comment || `Customer feedback indicates negative impact for ${topicLabel} with an impact score of ${t.impactScore.toFixed(1)}.`,
+            summary: aiSummaryObj?.summary || sampleText || `Customer feedback indicates negative impact for ${topicLabel} with an impact score of ${t.impactScore.toFixed(1)}.`,
             impactScore: t.impactScore,
             caseCount: dynamicCount,
             benchmarkCount: matchedDefault?.subTopicHighlights?.[0]?.caseCount
@@ -685,13 +733,13 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         // Ensure contributingPhrases, caseCount, and impactScore dynamically follow filtered dataset
         subTopicHighlights = subTopicHighlights.map((sh, sIdx) => {
           const defAspect = matchedDefault?.subTopicHighlights?.[sIdx];
-          const matchedCases = getMatchingCasesForAspect(t.name, sh.aspect || defAspect?.aspect || 'Key Highlight', sh.summary);
+          const matchedCases = getMatchingCasesForAspect(topicLabel, sh.aspect || defAspect?.aspect || 'Key Highlight', sh.summary, parentLabel, t.name);
           const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
 
           return {
             ...sh,
             aspect: sh.aspect || defAspect?.aspect || 'Key Highlight',
-            summary: sh.summary,
+            summary: sh.summary || aiSummaryObj?.summary || 'Customer feedback indicates friction in this operational aspect.',
             caseCount: dynamicCount,
             benchmarkCount: defAspect?.caseCount,
             impactScore: isAllTime ? (defAspect?.impactScore ?? t.impactScore) : t.impactScore,
@@ -703,7 +751,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       return {
         topic: topicLabel,
         fullTopicName: t.name,
-        parentTopic: t.parentTopic,
+        parentTopic: parentLabel,
         impactScore: t.impactScore,
         subTopicHighlights
       };
@@ -1990,8 +2038,11 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                               <span className="text-[11px] font-extrabold text-emerald-700 leading-none">
                                 +{t.impactScore.toFixed(1)}
                               </span>
-                              <span className="text-[8px] font-extrabold text-emerald-800/80 bg-emerald-100/90 px-1 py-0.2 rounded-full mt-0.5">
-                                {t.volume} recs
+                              <span
+                                className="text-[8px] font-extrabold text-emerald-800/80 bg-emerald-100/90 px-1.5 py-0.5 rounded-full mt-0.5"
+                                title={`${t.volume} verbatim ${t.volume === 1 ? 'phrase' : 'phrases'} (${t.volume} survey ${t.volume === 1 ? 'record' : 'records'})`}
+                              >
+                                {t.volume} {t.volume === 1 ? 'phrase' : 'phrases'}
                               </span>
                             </div>
                             {/* Bar container */}
@@ -2031,8 +2082,11 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                               <span className="text-[11px] font-extrabold text-red-700 leading-none">
                                 {t.impactScore.toFixed(1)}
                               </span>
-                              <span className="text-[8px] font-extrabold text-red-800/80 bg-red-100/90 px-1 py-0.2 rounded-full mt-0.5">
-                                {t.volume} recs
+                              <span
+                                className="text-[8px] font-extrabold text-red-800/80 bg-red-100/90 px-1.5 py-0.5 rounded-full mt-0.5"
+                                title={`${t.volume} verbatim ${t.volume === 1 ? 'phrase' : 'phrases'} (${t.volume} survey ${t.volume === 1 ? 'record' : 'records'})`}
+                              >
+                                {t.volume} {t.volume === 1 ? 'phrase' : 'phrases'}
                               </span>
                             </div>
                             {/* Bar container */}
@@ -2059,19 +2113,19 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                     <div>
                       <div className="text-3xl font-black text-emerald-600 leading-none">{analytics.overallPosPercent}%</div>
                       <div className="text-xs font-semibold text-slate-700 mt-1">
-                        Positive (534 records)
+                        Positive ({analytics.totalPos} {analytics.totalPos === 1 ? 'phrase' : 'phrases'})
                       </div>
                     </div>
                     <div>
                       <div className="text-3xl font-black text-red-600 leading-none">{analytics.overallNegPercent}%</div>
                       <div className="text-xs font-semibold text-slate-700 mt-1">
-                        Negative (102 records)
+                        Negative ({analytics.totalNeg} {analytics.totalNeg === 1 ? 'phrase' : 'phrases'})
                       </div>
                     </div>
                   </div>
                   <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600 font-medium">
-                    <span>{analytics.overallMixedPercent}% Mixed Opinion</span>
-                    <span>{analytics.overallNeutralPercent}% Neutral</span>
+                    <span>{analytics.overallMixedPercent}% Mixed ({analytics.totalMix})</span>
+                    <span>{analytics.overallNeutralPercent}% Neutral ({analytics.totalNeu})</span>
                   </div>
                 </div>
               </div>
@@ -2102,7 +2156,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                         </div>
                         <div className="col-span-9 space-y-2 text-slate-700 text-[11px] leading-relaxed">
                           {item.subTopicHighlights.map((sh, sIdx) => {
-                            const matchingCases = getMatchingCasesForAspect(item.topic, sh.aspect, sh.summary);
+                            const matchingCases = getMatchingCasesForAspect(item.topic, sh.aspect, sh.summary, item.parentTopic, item.fullTopicName);
                             return (
                               <div key={sIdx}>
                                 {isEditingHighlights ? (
@@ -2126,6 +2180,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                         impactScore: sh.impactScore,
                                         caseCount: matchingCases.length > 0 ? matchingCases.length : (sh.caseCount || 0),
                                         benchmarkCount: sh.benchmarkCount,
+                                        parentTopic: item.parentTopic,
+                                        fullTopicName: item.fullTopicName,
                                         contributingPhrases: sh.contributingPhrases
                                       })}
                                       className="p-1.5 -m-1.5 rounded-lg hover:bg-emerald-50/80 border border-transparent hover:border-emerald-200 transition-all duration-150 cursor-pointer flex items-start justify-between gap-2"
@@ -2264,7 +2320,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                         </div>
                         <div className="col-span-9 space-y-2 text-slate-700 text-[11px] leading-relaxed">
                           {item.subTopicHighlights.map((sh, sIdx) => {
-                            const matchingCases = getMatchingCasesForAspect(item.topic, sh.aspect, sh.summary);
+                            const matchingCases = getMatchingCasesForAspect(item.topic, sh.aspect, sh.summary, item.parentTopic, item.fullTopicName);
                             return (
                               <div key={sIdx}>
                                 {isEditingHighlights ? (
@@ -2288,6 +2344,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                         impactScore: sh.impactScore || item.impactScore,
                                         caseCount: matchingCases.length > 0 ? matchingCases.length : (sh.caseCount || 0),
                                         benchmarkCount: sh.benchmarkCount,
+                                        parentTopic: item.parentTopic,
+                                        fullTopicName: item.fullTopicName,
                                         contributingPhrases: sh.contributingPhrases
                                       })}
                                       className="p-1.5 -m-1.5 rounded-lg hover:bg-red-50/80 border border-transparent hover:border-red-200 transition-all duration-150 cursor-pointer flex items-start justify-between gap-2"
@@ -2666,8 +2724,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
       {/* CASE DETAIL & VERBATIM EXPLORER MODAL (WHEN USER CLICKS ON ANY HIGHLIGHT PHRASE) */}
       {selectedHighlightDetail && (() => {
-        const { topic, aspect, summary, type } = selectedHighlightDetail;
-        const allMatchedCases = getMatchingCasesForAspect(topic, aspect, summary);
+        const { topic, aspect, summary, type, parentTopic, fullTopicName } = selectedHighlightDetail;
+        const allMatchedCases = getMatchingCasesForAspect(topic, aspect, summary, parentTopic, fullTopicName);
 
         // Filter inside modal
         const filteredModalCases = allMatchedCases.filter(c => {
