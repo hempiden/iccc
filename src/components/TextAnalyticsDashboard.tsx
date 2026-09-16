@@ -253,6 +253,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     type: 'top' | 'bottom';
     impactScore?: number;
     caseCount?: number;
+    benchmarkCount?: number;
     contributingPhrases?: ContributingSurveyPhrase[];
   } | null>(null);
   const [caseModalSearch, setCaseModalSearch] = useState('');
@@ -274,15 +275,32 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       normAspect.includes('storage charge') ||
       normAspect.includes('ppwk')
     ) {
-      return filteredRecords.filter(r =>
-        (r.topicTheme || '').includes('Customs Clearance - Duties/Taxes/Fees') ||
-        (r.subTopic || '').includes('Duties/Taxes/Fees') ||
-        (r.parentTopic === 'Customs Clearance' && (
-          (r.subTopic || '').toLowerCase().includes('dut') ||
-          (r.subTopic || '').toLowerCase().includes('tax') ||
-          (r.subTopic || '').toLowerCase().includes('fee')
-        ))
-      );
+      return filteredRecords.filter(r => {
+        const theme = r.topicTheme || '';
+        const sub = (r.subTopic || '').toLowerCase();
+        const phrase = (r.phrase || '').toLowerCase();
+        const comment = (r.comment || '').toLowerCase();
+        const parent = r.parentTopic || '';
+
+        return (
+          theme.includes('Customs Clearance - Duties/Taxes/Fees') ||
+          sub.includes('duties/taxes/fees') ||
+          (parent === 'Customs Clearance' && (
+            sub.includes('dut') ||
+            sub.includes('tax') ||
+            sub.includes('fee') ||
+            phrase.includes('duty') ||
+            phrase.includes('tax') ||
+            phrase.includes('storage') ||
+            phrase.includes('ppwk') ||
+            phrase.includes('fee') ||
+            comment.includes('duty and tax') ||
+            comment.includes('customs duty') ||
+            comment.includes('storage charge') ||
+            comment.includes('ppwk fee')
+          ))
+        );
+      });
     }
 
     // 2. Customs Clearance - Process
@@ -499,20 +517,27 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
             }))
           : (matchedDefaultAspect?.contributingPhrases || []);
 
+        const matchedCases = getMatchingCasesForAspect(topicLabel, topicLabel, fallbackSummary);
+        const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
+
         subTopicHighlights = [
           {
             aspect: topicLabel,
             parentTopic: parentLabel,
             summary: fallbackSummary,
             impactScore: t.impactScore,
-            caseCount: t.volume,
+            caseCount: dynamicCount,
+            benchmarkCount: matchedDefaultAspect?.caseCount,
             contributingPhrases
           }
         ];
       } else {
-        // Ensure caseCount and impactScore follow the chart
+        // Ensure caseCount and impactScore follow live filtered records
         subTopicHighlights = subTopicHighlights.map((sh, sIdx) => {
           const defAspect = matchedDefaultAspect || matchedDefault?.subTopicHighlights?.[sIdx];
+          const matchedCases = getMatchingCasesForAspect(topicLabel, sh.aspect || topicLabel, sh.summary);
+          const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
+
           const dynamicPhrases = (t.samplePhrases && t.samplePhrases.length > 0)
             ? t.samplePhrases.slice(0, 5).map(sp => ({
                 surveyId: sp.surveyId,
@@ -528,7 +553,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
             ...sh,
             aspect: sh.aspect || topicLabel,
             summary: sh.summary || aiSummaryObj?.summary || defAspect?.summary || 'Consistent positive customer feedback.',
-            caseCount: isAllTime ? (defAspect?.caseCount ?? t.volume) : t.volume,
+            caseCount: dynamicCount,
+            benchmarkCount: defAspect?.caseCount,
             impactScore: isAllTime ? (defAspect?.impactScore ?? t.impactScore) : t.impactScore,
             contributingPhrases: dynamicPhrases
           };
@@ -543,7 +569,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         subTopicHighlights
       };
     });
-  }, [analytics.topSubTopics, highlights.top3, isAllTime]);
+  }, [analytics.topSubTopics, highlights.top3, isAllTime, filteredRecords]);
 
   // Update top highlights when edited in UI
   const handleUpdateTopHighlight = (topicLabel: string, sIdx: number, newSummary: string) => {
@@ -599,23 +625,30 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       let subTopicHighlights = existing?.subTopicHighlights || matchedDefault?.subTopicHighlights;
 
       if (!subTopicHighlights || subTopicHighlights.length === 0) {
+        const matchedCases = getMatchingCasesForAspect(topicLabel, 'Friction Highlight');
+        const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
         subTopicHighlights = [
           {
             aspect: 'Friction Highlight',
             summary: t.samplePhrases?.[0]?.comment || `Customer feedback indicates negative impact for ${topicLabel} with an impact score of ${t.impactScore.toFixed(1)}.`,
             impactScore: t.impactScore,
-            caseCount: t.volume
+            caseCount: dynamicCount,
+            benchmarkCount: matchedDefault?.subTopicHighlights?.[0]?.caseCount
           }
         ];
       } else {
-        // Ensure contributingPhrases, caseCount, and impactScore are present
+        // Ensure contributingPhrases, caseCount, and impactScore dynamically follow filtered dataset
         subTopicHighlights = subTopicHighlights.map((sh, sIdx) => {
           const defAspect = matchedDefault?.subTopicHighlights?.[sIdx];
+          const matchedCases = getMatchingCasesForAspect(topicLabel, sh.aspect || defAspect?.aspect || 'Key Highlight', sh.summary);
+          const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
+
           return {
             ...sh,
             aspect: sh.aspect || defAspect?.aspect || 'Key Highlight',
             summary: sh.summary,
-            caseCount: isAllTime ? (defAspect?.caseCount ?? t.volume) : t.volume,
+            caseCount: dynamicCount,
+            benchmarkCount: defAspect?.caseCount,
             impactScore: isAllTime ? (defAspect?.impactScore ?? t.impactScore) : t.impactScore,
             contributingPhrases: (defAspect?.contributingPhrases && defAspect.contributingPhrases.length > 0) ? defAspect.contributingPhrases : (sh.contributingPhrases || [])
           };
@@ -630,7 +663,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         subTopicHighlights
       };
     });
-  }, [analytics.bottomSubTopics, highlights.bottom3, showAllChartFrictionTopics, isAllTime]);
+  }, [analytics.bottomSubTopics, highlights.bottom3, showAllChartFrictionTopics, isAllTime, filteredRecords]);
 
   // Update bottom highlights when edited in UI
   const handleUpdateBottomHighlight = (topicLabel: string, sIdx: number, newSummary: string) => {
@@ -2040,7 +2073,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                         summary: sh.summary,
                                         type: 'top',
                                         impactScore: sh.impactScore,
-                                        caseCount: sh.caseCount,
+                                        caseCount: matchingCases.length > 0 ? matchingCases.length : (sh.caseCount || 0),
+                                        benchmarkCount: sh.benchmarkCount,
                                         contributingPhrases: sh.contributingPhrases
                                       })}
                                       className="p-1.5 -m-1.5 rounded-lg hover:bg-emerald-50/80 border border-transparent hover:border-emerald-200 transition-all duration-150 cursor-pointer flex items-start justify-between gap-2"
@@ -2051,7 +2085,9 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                       </div>
                                       <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/90 group-hover/phrase:bg-emerald-200 px-2 py-0.5 rounded-full border border-emerald-300/60 shadow-2xs transition">
                                         <Eye className="w-3 h-3" />
-                                        {sh.caseCount ? `${sh.caseCount} phrases` : (matchingCases.length > 0 ? `${matchingCases.length} phrases` : 'View phrases')}
+                                        {matchingCases.length > 0
+                                          ? `${matchingCases.length} ${matchingCases.length === 1 ? 'phrase' : 'phrases'}`
+                                          : (sh.caseCount ? `${sh.caseCount} phrases` : 'View phrases')}
                                       </span>
                                     </div>
 
@@ -2063,11 +2099,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                           <span className="truncate">{item.topic} &bull; {sh.aspect}</span>
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0">
-                                          {sh.caseCount && (
-                                            <span className="text-[10px] font-extrabold bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded">
-                                              {sh.caseCount} phrases
-                                            </span>
-                                          )}
+                                          <span className="text-[10px] font-extrabold bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded">
+                                            {matchingCases.length} {matchingCases.length === 1 ? 'phrase' : 'phrases'}
+                                            {sh.benchmarkCount && sh.benchmarkCount !== matchingCases.length ? ` (Benchmark: ${sh.benchmarkCount})` : ''}
+                                          </span>
                                           <span className="text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded">
                                             {sh.impactScore ? `+${sh.impactScore.toFixed(1)} Driver` : '+Promoter Driver'}
                                           </span>
@@ -2200,7 +2235,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                         summary: sh.summary,
                                         type: 'bottom',
                                         impactScore: sh.impactScore || item.impactScore,
-                                        caseCount: sh.caseCount,
+                                        caseCount: matchingCases.length > 0 ? matchingCases.length : (sh.caseCount || 0),
+                                        benchmarkCount: sh.benchmarkCount,
                                         contributingPhrases: sh.contributingPhrases
                                       })}
                                       className="p-1.5 -m-1.5 rounded-lg hover:bg-red-50/80 border border-transparent hover:border-red-200 transition-all duration-150 cursor-pointer flex items-start justify-between gap-2"
@@ -2211,7 +2247,9 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                       </div>
                                       <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100/90 group-hover/phrase:bg-red-200 px-2 py-0.5 rounded-full border border-red-300/60 shadow-2xs transition">
                                         <Eye className="w-3 h-3" />
-                                        {sh.caseCount ? `${sh.caseCount} phrases` : (matchingCases.length > 0 ? `${matchingCases.length} phrases` : 'View phrases')}
+                                        {matchingCases.length > 0
+                                          ? `${matchingCases.length} ${matchingCases.length === 1 ? 'phrase' : 'phrases'}`
+                                          : (sh.caseCount ? `${sh.caseCount} phrases` : 'View phrases')}
                                       </span>
                                     </div>
 
@@ -2223,11 +2261,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                                           <span className="truncate">{item.topic} &bull; {sh.aspect}</span>
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0">
-                                          {sh.caseCount && (
-                                            <span className="text-[10px] font-extrabold bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded">
-                                              {sh.caseCount} phrases
-                                            </span>
-                                          )}
+                                          <span className="text-[10px] font-extrabold bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded">
+                                            {matchingCases.length} {matchingCases.length === 1 ? 'phrase' : 'phrases'}
+                                            {sh.benchmarkCount && sh.benchmarkCount !== matchingCases.length ? ` (Benchmark: ${sh.benchmarkCount})` : ''}
+                                          </span>
                                           <span className="text-[10px] font-extrabold bg-red-500/20 text-red-300 border border-red-500/40 px-1.5 py-0.5 rounded">
                                             {item.impactScore.toFixed(1)} Impact
                                           </span>
@@ -2600,10 +2637,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
           return true;
         });
 
-        const posCount = allMatchedCases.filter(c => c.sentiment === 'POSITIVE' || c.sentiment === 'STRONGLY_POSITIVE').length;
-        const negCount = allMatchedCases.filter(c => c.sentiment === 'NEGATIVE').length;
-        const avgScore = allMatchedCases.length > 0
-          ? (allMatchedCases.reduce((acc, c) => acc + c.mainScore, 0) / allMatchedCases.length).toFixed(1)
+        const posCount = filteredModalCases.filter(c => c.sentiment === 'POSITIVE' || c.sentiment === 'STRONGLY_POSITIVE').length;
+        const negCount = filteredModalCases.filter(c => c.sentiment === 'NEGATIVE').length;
+        const avgScore = filteredModalCases.length > 0
+          ? (filteredModalCases.reduce((acc, c) => acc + c.mainScore, 0) / filteredModalCases.length).toFixed(1)
           : 'N/A';
 
         const isPositiveType = type === 'top';
@@ -2665,7 +2702,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                           : 'bg-red-50 text-red-800 border-red-200'
                       }`}>
                         {isPositiveType ? `+${selectedHighlightDetail.impactScore.toFixed(1)} Impact` : `${selectedHighlightDetail.impactScore.toFixed(1)} Impact`}
-                        {selectedHighlightDetail.caseCount ? ` • ${selectedHighlightDetail.caseCount} phrases` : ''}
+                        {' • '}
+                        {filteredModalCases.length !== allMatchedCases.length
+                          ? `${filteredModalCases.length} of ${allMatchedCases.length} phrases`
+                          : `${allMatchedCases.length} ${allMatchedCases.length === 1 ? 'phrase' : 'phrases'}`}
                       </span>
                     )}
                   </div>
@@ -2679,15 +2719,21 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold text-slate-400 uppercase">Phrase & Survey Count</span>
-                      {selectedHighlightDetail.caseCount && (
-                        <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          Medallia: {selectedHighlightDetail.caseCount}
+                      {selectedHighlightDetail.benchmarkCount && selectedHighlightDetail.benchmarkCount !== allMatchedCases.length ? (
+                        <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200" title="Medallia Executive Benchmark Target">
+                          Benchmark: {selectedHighlightDetail.benchmarkCount}
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-semibold text-slate-400">
+                          Active Filter
                         </span>
                       )}
                     </div>
                     <div className="text-lg font-black text-slate-900 mt-0.5 flex items-baseline gap-1.5">
-                      <span>{new Set(allMatchedCases.map(c => c.surveyId)).size} surveys</span>
-                      <span className="text-xs font-normal text-slate-500">({allMatchedCases.length} phrases)</span>
+                      <span>{new Set(filteredModalCases.map(c => c.surveyId)).size} surveys</span>
+                      <span className="text-xs font-semibold text-slate-500">
+                        ({filteredModalCases.length} {filteredModalCases.length === 1 ? 'phrase' : 'phrases'})
+                      </span>
                     </div>
                   </div>
 
@@ -2701,14 +2747,14 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
                     <span className="text-[10px] font-bold text-emerald-600 uppercase">Positive Sentiment</span>
                     <div className="text-lg font-black text-emerald-600 mt-0.5">
-                      {posCount} <span className="text-xs font-semibold text-slate-500">({allMatchedCases.length > 0 ? Math.round((posCount / allMatchedCases.length) * 100) : 0}%)</span>
+                      {posCount} <span className="text-xs font-semibold text-slate-500">({filteredModalCases.length > 0 ? Math.round((posCount / filteredModalCases.length) * 100) : 0}%)</span>
                     </div>
                   </div>
 
                   <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
                     <span className="text-[10px] font-bold text-red-600 uppercase">Negative Sentiment</span>
                     <div className="text-lg font-black text-red-600 mt-0.5">
-                      {negCount} <span className="text-xs font-semibold text-slate-500">({allMatchedCases.length > 0 ? Math.round((negCount / allMatchedCases.length) * 100) : 0}%)</span>
+                      {negCount} <span className="text-xs font-semibold text-slate-500">({filteredModalCases.length > 0 ? Math.round((negCount / filteredModalCases.length) * 100) : 0}%)</span>
                     </div>
                   </div>
                 </div>
@@ -2746,6 +2792,23 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
               {/* Case Cards Verbatim List */}
               <div className="p-4 sm:p-6 overflow-y-auto space-y-3 max-h-[50vh] bg-slate-100/60">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-500 pb-1">
+                  <span>
+                    Showing {filteredModalCases.length} {filteredModalCases.length === 1 ? 'phrase' : 'phrases'}
+                    {filteredModalCases.length !== allMatchedCases.length ? ` (filtered from ${allMatchedCases.length})` : ''}
+                  </span>
+                  {(caseModalSearch.trim() || caseModalSentiment !== 'ALL') && (
+                    <button
+                      onClick={() => {
+                        setCaseModalSearch('');
+                        setCaseModalSentiment('ALL');
+                      }}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+                    >
+                      Reset filters
+                    </button>
+                  )}
+                </div>
                 {filteredModalCases.length > 0 ? (
                   filteredModalCases.map(c => {
                     const isPos = c.sentiment === 'POSITIVE' || c.sentiment === 'STRONGLY_POSITIVE';

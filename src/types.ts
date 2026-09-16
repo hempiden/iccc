@@ -136,6 +136,7 @@ export interface TopicAspectHighlight {
   aspect: string; // e.g. "Overall Satisfaction", "Politeness", "Helpfulness", "Timeliness"
   summary: string; // concise AI synthesis of customer feedback joining the selected phrases
   caseCount?: number;
+  benchmarkCount?: number;
   impactScore?: number;
   parentTopic?: string;
   contributingPhrases?: ContributingSurveyPhrase[];
