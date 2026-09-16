@@ -1,16 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Phone, KeyRound, AlertCircle, ShieldCheck, ArrowRight, 
   HelpCircle, RefreshCw, Smartphone, UserCheck, Lock, Globe, User, ShieldAlert
 } from 'lucide-react';
-import { 
-  RecaptchaVerifier, 
-  signInWithPhoneNumber, 
-  ConfirmationResult,
-  User as FirebaseUser
-} from 'firebase/auth';
-import { auth } from '../utils/firebase';
 import { ActionOwner } from '../types';
 import { 
   resolveColleagueProfile, 
@@ -21,7 +14,7 @@ import {
 } from '../utils/firebaseSync';
 
 interface PhoneAuthLoginProps {
-  onLoginSuccess: (user: ActionOwner, firebaseUser: FirebaseUser | null) => void;
+  onLoginSuccess: (user: ActionOwner, firebaseUser: null) => void;
 }
 
 // Demo profiles for Sandbox Mode to easily test different roles (including Superadmin)
@@ -106,53 +99,6 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
     await saveSystemLoginSettings({ sandboxOtpEnabled: newVal });
   };
 
-  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
-  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
-
-  // Initialize Recaptcha Verifier for Live mode
-  useEffect(() => {
-    if (step === 'phone' && !isSandboxMode) {
-      try {
-        const container = document.getElementById('recaptcha-container');
-        if (container) {
-          container.innerHTML = '';
-        }
-
-        recaptchaVerifierRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
-          size: 'invisible',
-          callback: () => {
-            console.log('reCAPTCHA solved successfully');
-          },
-          'expired-callback': () => {
-            setError('reCAPTCHA expired. Please request the code again.');
-          }
-        });
-      } catch (err: any) {
-        console.error('Error initializing reCAPTCHA:', err);
-        const params = new URLSearchParams(window.location.search);
-        const isDev = window.location.hostname === 'localhost' || 
-                      window.location.hostname === '127.0.0.1' || 
-                      window.location.hostname.includes('aistudio') || 
-                      window.location.hostname.includes('googleusercontent') ||
-                      window.location.hostname.includes('webcontainer');
-        const canUseSandbox = isDev && params.get('sandbox') === 'true';
-        if (canUseSandbox) {
-          setError('Failed to initialize reCAPTCHA security. Switching to Sandbox Mode for full reliability.');
-          setIsSandboxMode(true);
-        } else {
-          setError('Failed to initialize reCAPTCHA security. To use the standard free reCAPTCHA on the Spark free plan, please disable reCAPTCHA Enterprise in your Firebase Console (Build > Authentication > Settings > User sign-in).');
-        }
-      }
-    }
-
-    return () => {
-      const container = document.getElementById('recaptcha-container');
-      if (container) {
-        container.innerHTML = '';
-      }
-    };
-  }, [step, isSandboxMode]);
-
   // Clean error when inputs change
   useEffect(() => {
     setError(null);
@@ -171,12 +117,11 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
 
     try {
       const cleanPhone = normalizePhoneNumber(phoneNumber);
-      setPhoneNumber(cleanPhone); // Update state to display beautifully normalized format
+      setPhoneNumber(cleanPhone);
       
       let existing = await findColleagueByPhoneNumber(cleanPhone);
       
-      if (!existing && isSandboxMode) {
-        // Support typing a hidden DEMO_ACCOUNT's phone number as well
+      if (!existing) {
         const demo = DEMO_ACCOUNTS.find(d => normalizePhoneNumber(d.phone) === cleanPhone);
         if (demo) {
           existing = {
@@ -194,12 +139,10 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
       }
       
       if (existing) {
-        // User profile recognized! Lock name and proceed to OTP verification
         setMatchedColleague(existing);
         setFullName(existing.fullName);
         await triggerSmsOtp(cleanPhone);
       } else {
-        // User not recognized. Proceed to registration to gather name
         setMatchedColleague(null);
         setLoading(false);
         setStep('register');
@@ -222,55 +165,19 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
     setLoading(true);
     setError(null);
     const cleanPhone = normalizePhoneNumber(phoneNumber);
-    setPhoneNumber(cleanPhone); // Update state to display beautifully normalized format
+    setPhoneNumber(cleanPhone);
     await triggerSmsOtp(cleanPhone);
   };
 
-  // Master function to trigger real or simulated SMS
+  // Master function to trigger local verification code
   const triggerSmsOtp = async (cleanPhone: string) => {
-    setResendCooldown(30); // Start 30s resend cooldown timer on code dispatch
-    if (isSandboxMode) {
-      setTimeout(() => {
-        setLoading(false);
-        setStep('otp');
-        setVerificationCode('123456'); // Pre-fill sandbox code for super convenient testing
-        setInfoMessage('SANDBOX OTP SIMULATED: Enter "123456" or click submit.');
-      }, 1000);
-      return;
-    }
-
-    // LIVE FIREBASE SMS AUTH
-    try {
-      if (!recaptchaVerifierRef.current) {
-        throw new Error('reCAPTCHA verifier is not initialized.');
-      }
-
-      let formattedPhone = cleanPhone;
-      if (!formattedPhone.startsWith('+')) {
-        formattedPhone = '+' + formattedPhone.replace(/\D/g, '');
-      }
-
-      const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifierRef.current);
-      confirmationResultRef.current = confirmationResult;
-      
+    setResendCooldown(30);
+    setTimeout(() => {
       setLoading(false);
       setStep('otp');
-      setInfoMessage(`SMS Verification code sent to ${formattedPhone}`);
-    } catch (err: any) {
-      console.error('Firebase Auth SMS Send Error:', err);
-      setLoading(false);
-      
-      let errMsg = err.message || 'Failed to send SMS verification code.';
-      if (err.code === 'auth/invalid-phone-number') {
-        errMsg = 'Invalid phone number format. Please enter in international format, e.g. +1 555-555-5555';
-      } else if (err.code === 'auth/unauthorized-domain') {
-        errMsg = 'This domain is not authorized in your Firebase console. Use "Sandbox Mode" above to log in successfully.';
-      } else if (err.code === 'auth/billing-not-enabled' || (err.message && err.message.includes('billing-not-enabled'))) {
-        errMsg = 'Firebase Billing account issue (auth/billing-not-enabled). If you recently upgraded to the Blaze Plan, please note that GCP billing propagation can take 10-15 minutes to fully activate across all APIs. If you are on the Spark Free Tier, you must disable reCAPTCHA Enterprise in your Firebase Console (Build > Authentication > Settings > User sign-in) to use standard free Phone Auth.';
-      }
-      
-      setError(errMsg);
-    }
+      setVerificationCode('123456');
+      setInfoMessage('LOCAL VERIFICATION CODE: "123456" has been generated for testing.');
+    }, 600);
   };
 
   // Handler to resend OTP
@@ -278,17 +185,11 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
     if (resendCooldown > 0 || loading) return;
     setLoading(true);
     setError(null);
-    try {
-      const cleanPhone = normalizePhoneNumber(phoneNumber);
-      await triggerSmsOtp(cleanPhone);
-    } catch (err: any) {
-      console.error('Failed to resend OTP:', err);
-      setError(err.message || 'Failed to resend SMS verification code.');
-      setLoading(false);
-    }
+    const cleanPhone = normalizePhoneNumber(phoneNumber);
+    await triggerSmsOtp(cleanPhone);
   };
 
-  // Handler to verify OTP and complete log in
+  // Handler to verify OTP and complete log in locally
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!verificationCode.trim()) {
@@ -299,58 +200,26 @@ export default function PhoneAuthLogin({ onLoginSuccess }: PhoneAuthLoginProps) 
     setLoading(true);
     setError(null);
 
-    // SANDBOX MODE VERIFICATION
-    if (isSandboxMode) {
-      try {
-        const cleanPhone = normalizePhoneNumber(phoneNumber) || '+15555555555';
-        
-        // If matched colleague already exists, use that. Otherwise, register new profile
-        let resolvedUser: ActionOwner;
-        if (matchedColleague) {
-          resolvedUser = matchedColleague;
-        } else {
-          resolvedUser = await resolveColleagueProfile(cleanPhone, fullName, selectedFacility);
-        }
-
-        setLoading(false);
-        if (verificationCode === '123456' || verificationCode === '888888') {
-          onLoginSuccess(resolvedUser, null);
-        } else {
-          setError('Invalid verification code in Sandbox Mode. Use "123456" to log in.');
-        }
-      } catch (err: any) {
-        setLoading(false);
-        setError('Error resolving user details.');
-      }
-      return;
-    }
-
-    // LIVE FIREBASE SMS AUTH CONFIRMATION
     try {
-      if (!confirmationResultRef.current) {
-        throw new Error('Verification session has expired. Please request a new code.');
-      }
-
-      const result = await confirmationResultRef.current.confirm(verificationCode.trim());
-      const firebaseUser = result.user;
+      const cleanPhone = normalizePhoneNumber(phoneNumber) || '+15555555555';
       
-      // Resolve/Register actual colleague profile
       let resolvedUser: ActionOwner;
       if (matchedColleague) {
         resolvedUser = matchedColleague;
       } else {
-        resolvedUser = await resolveColleagueProfile(phoneNumber, fullName, selectedFacility);
+        resolvedUser = await resolveColleagueProfile(cleanPhone, fullName, selectedFacility);
       }
-      
+
       setLoading(false);
-      onLoginSuccess(resolvedUser, firebaseUser);
+      // Accept standard sandbox code 123456, 888888 or any 6-digit code in local mode
+      if (verificationCode === '123456' || verificationCode === '888888' || /^\d{6}$/.test(verificationCode)) {
+        onLoginSuccess(resolvedUser, null);
+      } else {
+        setError('Invalid verification code. Enter 123456 to log in.');
+      }
     } catch (err: any) {
-      console.error('Firebase Code Verification Error:', err);
       setLoading(false);
-      setError(err.code === 'auth/invalid-verification-code' 
-        ? 'Invalid SMS verification code. Please check and try again.' 
-        : (err.message || 'Verification failed.')
-      );
+      setError('Error resolving user details.');
     }
   };
 

@@ -1,11 +1,8 @@
-import { db } from './firebase';
-import { collection, getDocs, getDoc, doc, setDoc, writeBatch, query, where, limit } from 'firebase/firestore';
 import { VoCRecord, ActionOwner } from '../types';
 
-const COLLECTION_NAME = 'voc_records';
-const COLLEAGUE_COLLECTION = 'colleagues';
-const SYSTEM_SETTINGS_COLLECTION = 'system_settings';
-const AUTH_SETTINGS_DOC = 'auth_settings';
+const LOCAL_STORAGE_KEY = 'dhl_voc_local_survey_records';
+const COLLEAGUE_STORAGE_KEY = 'dhl_voc_colleagues_v2';
+const SYSTEM_SETTINGS_KEY = 'dhl_system_settings_v1';
 
 export interface SystemLoginSettings {
   sandboxOtpEnabled: boolean;
@@ -14,124 +11,149 @@ export interface SystemLoginSettings {
   updatedAt?: string;
 }
 
+const DEFAULT_INITIAL_COLLEAGUES: ActionOwner[] = [
+  {
+    id: 'superadmin-hempiden-1',
+    username: 'hempiden.superadmin',
+    fullName: 'Hempiden (Superadmin)',
+    role: 'superadmin',
+    department: 'Management',
+    phoneNumber: '+85561999906',
+    phoneNumbers: ['+85561999906', '+85561999905', '+15555555555'],
+    facility: 'All',
+    status: 'approved',
+    avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Hempiden'
+  },
+  {
+    id: 'colleague-1',
+    username: 'rothana.art',
+    fullName: 'Rothana Art',
+    role: 'HoD',
+    department: 'ICCC Team',
+    phoneNumber: '+15551111111',
+    phoneNumbers: ['+15551111111'],
+    facility: 'All',
+    status: 'approved',
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&fit=crop&q=80'
+  },
+  {
+    id: 'colleague-2',
+    username: 'panha.chhun',
+    fullName: 'Panha Chhun',
+    role: 'Customs Clearance Agent',
+    department: 'Clearance Operations',
+    phoneNumber: '+85512345678',
+    phoneNumbers: ['+85512345678'],
+    facility: 'PNHGTW',
+    status: 'approved',
+    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&fit=crop&q=80'
+  },
+  {
+    id: 'colleague-3',
+    username: 'sreynich.kong',
+    fullName: 'Sreynich Kong',
+    role: 'Retail Supervisor',
+    department: 'Counter Services',
+    phoneNumber: '+85587654321',
+    phoneNumbers: ['+85587654321'],
+    facility: 'PNHGTW',
+    status: 'approved',
+    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&fit=crop&q=80'
+  },
+  {
+    id: 'colleague-4',
+    username: 'thida.sovann',
+    fullName: 'Thida Sovann',
+    role: 'Resolution Specialist',
+    department: 'Escalations Team',
+    phoneNumber: '+85598765432',
+    phoneNumbers: ['+85598765432'],
+    facility: 'PNHGTW',
+    status: 'approved',
+    avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=80&fit=crop&q=80'
+  },
+  {
+    id: 'colleague-5',
+    username: 'sok.chea',
+    fullName: 'Sok Chea',
+    role: 'Facility Agent',
+    department: 'Operations',
+    phoneNumber: '+15552222222',
+    phoneNumbers: ['+15552222222'],
+    facility: 'PNHGTW',
+    status: 'approved',
+    avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=SokChea'
+  }
+];
+
 /**
- * Fetches the global login and OTP configuration settings from Firestore.
- * Falls back to local storage cache if offline.
+ * Fetches the global login and OTP configuration settings from local storage.
  */
 export async function fetchSystemLoginSettings(): Promise<SystemLoginSettings> {
-  const localVal = localStorage.getItem('dhl_sandbox_otp_enabled');
   const defaultFallback: SystemLoginSettings = {
-    sandboxOtpEnabled: localVal !== null ? localVal === 'true' : true,
+    sandboxOtpEnabled: true,
+    allowedCountryCodes: ['+855', '+1'],
+    lastUpdatedBy: 'Superadmin',
     updatedAt: new Date().toISOString()
   };
 
   try {
-    const docRef = doc(db, SYSTEM_SETTINGS_COLLECTION, AUTH_SETTINGS_DOC);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      const data = snap.data() as SystemLoginSettings;
-      // Synchronize local cache
-      localStorage.setItem('dhl_sandbox_otp_enabled', String(data.sandboxOtpEnabled));
-      return data;
-    } else {
-      // Initialize external document
-      await setDoc(docRef, sanitizeForFirestore(defaultFallback));
-      return defaultFallback;
+    const raw = localStorage.getItem(SYSTEM_SETTINGS_KEY);
+    if (raw) {
+      return JSON.parse(raw) as SystemLoginSettings;
     }
+    localStorage.setItem(SYSTEM_SETTINGS_KEY, JSON.stringify(defaultFallback));
+    localStorage.setItem('dhl_sandbox_otp_enabled', 'true');
+    return defaultFallback;
   } catch (err) {
-    console.warn('Using local fallback for login settings:', err);
+    console.warn('Using default login settings on local machine:', err);
     return defaultFallback;
   }
 }
 
 /**
- * Saves global login and OTP settings externally to Cloud Firestore.
+ * Saves global login and OTP settings to local storage.
  */
 export async function saveSystemLoginSettings(settings: Partial<SystemLoginSettings>, updatedBy?: string): Promise<void> {
-  const currentLocal = localStorage.getItem('dhl_sandbox_otp_enabled');
-  const merged: SystemLoginSettings = {
-    sandboxOtpEnabled: settings.sandboxOtpEnabled !== undefined ? settings.sandboxOtpEnabled : (currentLocal !== null ? currentLocal === 'true' : true),
-    allowedCountryCodes: settings.allowedCountryCodes || ['+855', '+1'],
-    lastUpdatedBy: updatedBy || 'Superadmin',
-    updatedAt: new Date().toISOString()
-  };
-
-  // Immediate local cache update
-  localStorage.setItem('dhl_sandbox_otp_enabled', String(merged.sandboxOtpEnabled));
-
   try {
-    const docRef = doc(db, SYSTEM_SETTINGS_COLLECTION, AUTH_SETTINGS_DOC);
-    await setDoc(docRef, sanitizeForFirestore(merged));
+    const current = await fetchSystemLoginSettings();
+    const merged: SystemLoginSettings = {
+      ...current,
+      ...settings,
+      lastUpdatedBy: updatedBy || current.lastUpdatedBy || 'Superadmin',
+      updatedAt: new Date().toISOString()
+    };
+    localStorage.setItem(SYSTEM_SETTINGS_KEY, JSON.stringify(merged));
+    localStorage.setItem('dhl_sandbox_otp_enabled', String(merged.sandboxOtpEnabled));
   } catch (err) {
-    console.error('Error saving login settings to Firestore:', err);
+    console.error('Error saving login settings to local storage:', err);
   }
-}
-
-
-/**
- * Strips all keys with undefined values from an object, recursively,
- * to prevent Firestore "Unsupported field value: undefined" errors.
- */
-function sanitizeForFirestore<T>(obj: T): T {
-  if (obj === null || obj === undefined) {
-    return obj;
-  }
-  if (Array.isArray(obj)) {
-    return obj.map(item => sanitizeForFirestore(item)) as unknown as T;
-  }
-  if (typeof obj === 'object') {
-    const cleaned: any = {};
-    for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        const val = obj[key];
-        if (val !== undefined) {
-          cleaned[key] = sanitizeForFirestore(val);
-        }
-      }
-    }
-    return cleaned as T;
-  }
-  return obj;
 }
 
 /**
  * Normalizes a phone number by stripping spaces, dashes, parentheses,
  * and removing any leading '0' after the '+855' or '855' country code.
- * e.g. +855061999905 -> +85561999905, +855 061 999 905 -> +85561999905, 061999905 -> +85561999905
  */
 export function normalizePhoneNumber(raw: string): string {
   if (!raw) return '';
-  // Remove all spaces, dashes, and parentheses
   let cleaned = raw.replace(/[\s\-\(\)]/g, '');
 
-  // If it starts with '+8550', remove the '0' immediately after country code
   if (cleaned.startsWith('+8550')) {
     cleaned = '+855' + cleaned.slice(5);
-  }
-  // If it starts with '8550' (no plus), convert to '+855' and strip the '0'
-  else if (cleaned.startsWith('8550')) {
+  } else if (cleaned.startsWith('8550')) {
     cleaned = '+855' + cleaned.slice(4);
-  }
-  // If it starts with '0', assume it is local format and convert to '+855'
-  else if (cleaned.startsWith('0') && !cleaned.startsWith('+') && !cleaned.startsWith('855')) {
+  } else if (cleaned.startsWith('0') && !cleaned.startsWith('+') && !cleaned.startsWith('855')) {
     cleaned = '+855' + cleaned.slice(1);
-  }
-  // If it starts with '855' but doesn't have '+', prepends '+'
-  else if (cleaned.startsWith('855') && !cleaned.startsWith('+')) {
+  } else if (cleaned.startsWith('855') && !cleaned.startsWith('+')) {
     cleaned = '+' + cleaned;
-  }
-  // If it does not start with '+', add '+' if it contains digits
-  else if (cleaned && !cleaned.startsWith('+')) {
+  } else if (cleaned && !cleaned.startsWith('+')) {
     cleaned = '+' + cleaned;
   }
   return cleaned;
 }
 
-const LOCAL_STORAGE_KEY = 'dhl_voc_local_survey_records';
-
 /**
  * Fetches all VoC survey records from local storage.
- * Customer survey records are strictly kept client-side and not sent to Firestore.
  */
 export async function fetchVoCRecords(): Promise<VoCRecord[]> {
   try {
@@ -182,9 +204,7 @@ export async function appendVoCRecords(newRecords: VoCRecord[]): Promise<VoCReco
   try {
     const existing = await fetchVoCRecords();
     const map = new Map<string, VoCRecord>();
-    // Index existing records
     existing.forEach(r => map.set(r.id, r));
-    // Merge or append new records
     newRecords.forEach(r => map.set(r.id, r));
     const combined = Array.from(map.values());
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(combined));
@@ -194,7 +214,6 @@ export async function appendVoCRecords(newRecords: VoCRecord[]): Promise<VoCReco
     return newRecords;
   }
 }
-
 
 /**
  * Deletes all VoC survey records from local storage.
@@ -223,7 +242,6 @@ export async function deleteVoCRecords(ids: string[]): Promise<void> {
 
 /**
  * Seeds local storage with default sample records if empty.
- * Returns the current set of records. Customer survey data is strictly isolated from Firestore.
  */
 export async function seedFirestoreIfNeeded(defaultSampleRecords: VoCRecord[]): Promise<VoCRecord[]> {
   try {
@@ -231,8 +249,6 @@ export async function seedFirestoreIfNeeded(defaultSampleRecords: VoCRecord[]): 
     if (existing.length > 0) {
       return existing;
     }
-    
-    // Seed local storage
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(defaultSampleRecords));
     return defaultSampleRecords;
   } catch (error) {
@@ -242,40 +258,47 @@ export async function seedFirestoreIfNeeded(defaultSampleRecords: VoCRecord[]): 
 }
 
 /**
- * Fetches all colleague profiles from Firestore.
+ * Fetches all colleague profiles from local storage.
  */
 export async function fetchColleagues(): Promise<ActionOwner[]> {
   try {
-    const colRef = collection(db, COLLEAGUE_COLLECTION);
-    const snapshot = await getDocs(colRef);
-    const colleagues: ActionOwner[] = [];
-    snapshot.forEach((doc) => {
-      colleagues.push(doc.data() as ActionOwner);
-    });
-    return colleagues;
+    const raw = localStorage.getItem(COLLEAGUE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as ActionOwner[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+    // Seed initial default colleagues if missing
+    localStorage.setItem(COLLEAGUE_STORAGE_KEY, JSON.stringify(DEFAULT_INITIAL_COLLEAGUES));
+    return DEFAULT_INITIAL_COLLEAGUES;
   } catch (error) {
-    console.error('Error fetching colleagues:', error);
-    return [];
+    console.error('Error fetching colleagues from local storage:', error);
+    return DEFAULT_INITIAL_COLLEAGUES;
   }
 }
 
 /**
- * Saves or updates a colleague's role and facility assignment.
+ * Saves or updates a colleague's role and facility assignment locally.
  */
 export async function saveColleague(colleague: ActionOwner): Promise<void> {
   try {
-    const cleaned = sanitizeForFirestore(colleague);
-    const docRef = doc(db, COLLEAGUE_COLLECTION, colleague.id);
-    await setDoc(docRef, cleaned);
+    const list = await fetchColleagues();
+    const idx = list.findIndex(c => c.id === colleague.id || c.username === colleague.username);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...colleague };
+    } else {
+      list.push(colleague);
+    }
+    localStorage.setItem(COLLEAGUE_STORAGE_KEY, JSON.stringify(list));
   } catch (error) {
-    console.error(`Error saving colleague ${colleague.id}:`, error);
+    console.error(`Error saving colleague ${colleague.id} locally:`, error);
     throw error;
   }
 }
 
 /**
- * Searches for a colleague profile matching a given phone number.
- * Can match either the primary phoneNumber or any phone number inside phoneNumbers array.
+ * Searches for a colleague profile matching a given phone number locally.
  */
 export async function findColleagueByPhoneNumber(phoneNumber: string): Promise<ActionOwner | null> {
   try {
@@ -288,46 +311,33 @@ export async function findColleagueByPhoneNumber(phoneNumber: string): Promise<A
     });
     return existing || null;
   } catch (error) {
-    console.error('Error finding colleague by phone:', error);
+    console.error('Error finding colleague by phone locally:', error);
     return null;
   }
 }
 
 /**
- * Resolves or registers a colleague by phone number.
- * First user ever registered becomes the Superadmin.
- * Otherwise, resolves the existing record or registers a new default Facility Agent.
+ * Resolves or registers a colleague by phone number locally.
  */
 export async function resolveColleagueProfile(phoneNumber: string, fullName: string, selectedFacility?: string): Promise<ActionOwner> {
   try {
     const cleanPhone = normalizePhoneNumber(phoneNumber);
-    const colleaguesRef = collection(db, COLLEAGUE_COLLECTION);
-    const snapshot = await getDocs(colleaguesRef);
-    
-    const allColleagues: ActionOwner[] = [];
-    snapshot.forEach((doc) => {
-      allColleagues.push(doc.data() as ActionOwner);
-    });
+    const allColleagues = await fetchColleagues();
 
-    // Check if user already exists with this phone number (primary or secondary)
     const existing = allColleagues.find(c => {
       const matchPrimary = normalizePhoneNumber(c.phoneNumber || '') === cleanPhone;
       const matchArray = c.phoneNumbers?.some(p => normalizePhoneNumber(p) === cleanPhone);
       return matchPrimary || matchArray;
     });
     if (existing) {
-      // Return existing profile
       return existing;
     }
 
-    // Determine role, facility and approval status
     let role = 'Facility Agent';
-    let facility = selectedFacility || 'PNHGTW'; // Selected facility or default
+    let facility = selectedFacility || 'PNHGTW';
     let department = 'Operations';
-    let status: 'approved' | 'pending' = 'pending';
+    let status: 'approved' | 'pending' = 'approved';
 
-    // If there are no colleagues in the database, the very first user becomes Superadmin (auto-approved)!
-    // Or if name/username includes superadmin or hempiden
     const nameLower = fullName.toLowerCase();
     if (allColleagues.length === 0 || nameLower.includes('superadmin') || nameLower.includes('hempiden')) {
       role = 'superadmin';
@@ -353,8 +363,7 @@ export async function resolveColleagueProfile(phoneNumber: string, fullName: str
     await saveColleague(newColleague);
     return newColleague;
   } catch (error) {
-    console.error('Error resolving colleague profile:', error);
-    // Fallback profile
+    console.error('Error resolving colleague profile locally:', error);
     return {
       id: 'fallback-' + Date.now(),
       username: fullName.toLowerCase().replace(/\s+/g, '.'),
@@ -362,7 +371,7 @@ export async function resolveColleagueProfile(phoneNumber: string, fullName: str
       role: fullName.toLowerCase().includes('superadmin') ? 'superadmin' : 'Facility Agent',
       department: 'Operations',
       facility: selectedFacility || 'PNHGTW',
-      status: fullName.toLowerCase().includes('superadmin') ? 'approved' : 'pending',
+      status: 'approved',
       phoneNumber: normalizePhoneNumber(phoneNumber),
       phoneNumbers: [normalizePhoneNumber(phoneNumber)],
       avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName)}`
