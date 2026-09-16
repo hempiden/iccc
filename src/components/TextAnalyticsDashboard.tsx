@@ -126,11 +126,78 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         }
       });
     }
-    return { minDate: min || '2026-03-01', maxDate: max || '2026-07-31' };
+    return { minDate: min || '2026-01-01', maxDate: max || '2026-07-31' };
   }, [records]);
 
-  const [startDate, setStartDate] = useState<string>('2026-06-01');
-  const [endDate, setEndDate] = useState<string>('2026-07-31');
+  const [startDate, setStartDateState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('dhl_voc_ta_start_date');
+      if (saved && saved.trim()) return saved;
+    } catch {
+      // ignore
+    }
+    // Default to the dataset's earliest date
+    let min = '';
+    records.forEach(r => {
+      if (r.responseDate && r.responseDate.length >= 10) {
+        const d = r.responseDate.substring(0, 10);
+        if (!min || d < min) min = d;
+      }
+    });
+    return min || '2026-01-01';
+  });
+
+  const [endDate, setEndDateState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('dhl_voc_ta_end_date');
+      if (saved && saved.trim()) return saved;
+    } catch {
+      // ignore
+    }
+    // Default to the dataset's latest date
+    let max = '';
+    records.forEach(r => {
+      if (r.responseDate && r.responseDate.length >= 10) {
+        const d = r.responseDate.substring(0, 10);
+        if (!max || d > max) max = d;
+      }
+    });
+    return max || '2026-07-31';
+  });
+
+  // State setters that persist selections across browser refresh
+  const setStartDate = (val: string) => {
+    setStartDateState(val);
+    try {
+      if (val) localStorage.setItem('dhl_voc_ta_start_date', val);
+      else localStorage.removeItem('dhl_voc_ta_start_date');
+    } catch {
+      // ignore
+    }
+  };
+
+  const setEndDate = (val: string) => {
+    setEndDateState(val);
+    try {
+      if (val) localStorage.setItem('dhl_voc_ta_end_date', val);
+      else localStorage.removeItem('dhl_voc_ta_end_date');
+    } catch {
+      // ignore
+    }
+  };
+
+  const setDateRange = (start: string, end: string) => {
+    setStartDateState(start);
+    setEndDateState(end);
+    try {
+      if (start) localStorage.setItem('dhl_voc_ta_start_date', start);
+      else localStorage.removeItem('dhl_voc_ta_start_date');
+      if (end) localStorage.setItem('dhl_voc_ta_end_date', end);
+      else localStorage.removeItem('dhl_voc_ta_end_date');
+    } catch {
+      // ignore
+    }
+  };
 
   // Format date range text for subtitle and exports (e.g. 06/01/26 to 07/31/26)
   const formatDateRangeDisplay = (start: string, end: string) => {
@@ -1086,9 +1153,6 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                     <span>Date Filter</span>
                     <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono">Responsedate</span>
                   </div>
-                  <p className="text-[11px] text-slate-500">
-                    Filter customer comments and topic impact by response date
-                  </p>
                 </div>
               </div>
 
@@ -1120,75 +1184,6 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   />
                 </div>
               </div>
-
-              {/* Quick Preset Buttons */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <button
-                  onClick={() => {
-                    setStartDate('2026-01-01');
-                    setEndDate('2026-07-31');
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
-                    startDate === '2026-01-01' && endDate === '2026-07-31'
-                      ? 'bg-amber-500 text-slate-950 shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  All (01/01 – 07/31)
-                </button>
-                <button
-                  onClick={() => {
-                    setStartDate('2026-06-01');
-                    setEndDate('2026-07-31');
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
-                    startDate === '2026-06-01' && endDate === '2026-07-31'
-                      ? 'bg-amber-500 text-slate-950 shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  Full Period (06/01 – 07/31)
-                </button>
-                <button
-                  onClick={() => {
-                    setStartDate('2026-06-01');
-                    setEndDate('2026-06-30');
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
-                    startDate === '2026-06-01' && endDate === '2026-06-30'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  June 2026
-                </button>
-                <button
-                  onClick={() => {
-                    setStartDate('2026-07-01');
-                    setEndDate('2026-07-31');
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
-                    startDate === '2026-07-01' && endDate === '2026-07-31'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  July 2026
-                </button>
-                <button
-                  onClick={() => {
-                    setStartDate('2026-07-18');
-                    setEndDate('2026-07-31');
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
-                    startDate === '2026-07-18' && endDate === '2026-07-31'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  Last 14 Days
-                </button>
-              </div>
             </div>
 
             {/* Right: Response count & Reset */}
@@ -1208,8 +1203,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
               {!isAllTime && (
                 <button
                   onClick={() => {
-                    setStartDate('2026-06-01');
-                    setEndDate('2026-07-31');
+                    setDateRange(minDate || '2026-01-01', maxDate || '2026-07-31');
                   }}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition"
                   title="Reset date filter to full time window"
