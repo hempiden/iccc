@@ -53,6 +53,7 @@ import {
   TOPIC_AI_SUMMARIES,
   generateRealisticResponseDate
 } from '../utils/textAnalyticsData';
+import { getEnrichedTopicSentimentRecords } from '../utils/textAnalyticsSeedData';
 import {
   syncTopicRecordsWithVoCLookup
 } from '../utils/vocDateLookup';
@@ -75,11 +76,12 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
   // Persistence state with deduplication by surveyID + topic/theme + phrase
   const [records, setRecords] = useState<TopicSentimentRecord[]>(() => {
     let initialRecords: TopicSentimentRecord[] = [];
+    const cacheVersion = localStorage.getItem('dhl_voc_topic_sentiment_v');
     const saved = localStorage.getItem('dhl_voc_topic_sentiment_records');
-    if (saved) {
+    if (cacheVersion === 'v5_calibrated_phrases' && saved) {
       try {
         const parsed: TopicSentimentRecord[] = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed) && parsed.length >= 600) {
           initialRecords = parsed;
         }
       } catch {
@@ -87,7 +89,13 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       }
     }
     if (initialRecords.length === 0) {
-      initialRecords = parseCSV(RAW_SAMPLE_CSV);
+      initialRecords = getEnrichedTopicSentimentRecords();
+      try {
+        localStorage.setItem('dhl_voc_topic_sentiment_v', 'v5_calibrated_phrases');
+        localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(initialRecords));
+      } catch {
+        // ignore
+      }
     }
 
     // Deduplicate records
@@ -262,10 +270,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
   // Helper to extract matching cases for any (topic, aspect)
   const getMatchingCasesForAspect = (topic: string, aspect: string, summary?: string) => {
-    const normTopic = topic.toLowerCase();
-    const normAspect = aspect.toLowerCase();
+    const normTopic = (topic || '').toLowerCase();
+    const normAspect = (aspect || '').toLowerCase();
 
-    // 1. Exact matcher for Customs Clearance - Duties/Taxes/Fees
+    // 1. Customs Clearance - Duties/Taxes/Fees
     if (
       normTopic.includes('dut') ||
       normTopic.includes('tax') ||
@@ -275,32 +283,11 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       normAspect.includes('storage charge') ||
       normAspect.includes('ppwk')
     ) {
-      return filteredRecords.filter(r => {
-        const theme = r.topicTheme || '';
-        const sub = (r.subTopic || '').toLowerCase();
-        const phrase = (r.phrase || '').toLowerCase();
-        const comment = (r.comment || '').toLowerCase();
-        const parent = r.parentTopic || '';
-
-        return (
-          theme.includes('Customs Clearance - Duties/Taxes/Fees') ||
-          sub.includes('duties/taxes/fees') ||
-          (parent === 'Customs Clearance' && (
-            sub.includes('dut') ||
-            sub.includes('tax') ||
-            sub.includes('fee') ||
-            phrase.includes('duty') ||
-            phrase.includes('tax') ||
-            phrase.includes('storage') ||
-            phrase.includes('ppwk') ||
-            phrase.includes('fee') ||
-            comment.includes('duty and tax') ||
-            comment.includes('customs duty') ||
-            comment.includes('storage charge') ||
-            comment.includes('ppwk fee')
-          ))
-        );
-      });
+      return filteredRecords.filter(r => 
+        r.topicTheme === 'Customs Clearance - Duties/Taxes/Fees' ||
+        r.subTopic === 'Duties/Taxes/Fees' ||
+        (r.parentTopic === 'Customs Clearance' && (r.subTopic.includes('Dut') || r.subTopic.includes('Tax') || r.subTopic.includes('Fee')))
+      );
     }
 
     // 2. Customs Clearance - Process
@@ -311,7 +298,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       normAspect.includes('clearance delay')
     ) {
       return filteredRecords.filter(r =>
-        (r.topicTheme || '').includes('Customs Clearance - Process') ||
+        r.topicTheme === 'Customs Clearance - Process' ||
         (r.parentTopic === 'Customs Clearance' && (r.subTopic || '').toLowerCase() === 'process')
       );
     }
@@ -322,24 +309,31 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       (normTopic.includes('custom') || normAspect.includes('custom') || normAspect.includes('duty') || normAspect.includes('processing'))
     ) {
       return filteredRecords.filter(r =>
-        (r.topicTheme || '').includes('Customs Clearance - Payment') ||
+        r.topicTheme === 'Customs Clearance - Payment' ||
         (r.parentTopic === 'Customs Clearance' && (r.subTopic || '').toLowerCase().includes('payment'))
       );
     }
 
     // 4. Price - Value for money
-    if (normTopic.includes('price') || normTopic.includes('value for money') || normAspect.includes('shipping rate') || normAspect.includes('surcharge')) {
+    if (
+      normTopic.includes('price') ||
+      normTopic.includes('value for money') ||
+      normTopic.includes('money') ||
+      normAspect.includes('shipping rate') ||
+      normAspect.includes('surcharge') ||
+      normAspect.includes('value')
+    ) {
       return filteredRecords.filter(r =>
-        (r.topicTheme || '').includes('Price - Value for money') ||
-        (r.parentTopic === 'Price' && (r.subTopic || '').toLowerCase().includes('value'))
+        r.topicTheme === 'Price - Value for money' ||
+        (r.parentTopic === 'Price' && ((r.subTopic || '').toLowerCase().includes('value') || (r.subTopic || '').toLowerCase().includes('money')))
       );
     }
 
     // 5. Relationship - Overall Relationship
-    if (normTopic.includes('relationship')) {
+    if (normTopic.includes('relationship') || normAspect.includes('relationship')) {
       return filteredRecords.filter(r =>
         (r.topicTheme || '').includes('Relationship') ||
-        (r.parentTopic === 'Relationship')
+        r.parentTopic === 'Relationship'
       );
     }
 
@@ -352,6 +346,57 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       );
     }
 
+    // 7. Brand - Overall Satisfaction
+    if (
+      normTopic.includes('brand - overall') ||
+      (normTopic.includes('brand') && (normAspect.includes('satisfaction') || normAspect.includes('overall'))) ||
+      ((normTopic.includes('satisfaction') || normAspect.includes('satisfaction')) && !normTopic.includes('pickup') && !normTopic.includes('delivery') && !normTopic.includes('courier'))
+    ) {
+      return filteredRecords.filter(r =>
+        r.topicTheme === 'Brand - Overall Satisfaction' ||
+        (r.parentTopic === 'Brand' && r.subTopic === 'Overall Satisfaction')
+      );
+    }
+
+    // 8. Brand - Likelihood to Recommend
+    if (normTopic.includes('recommend') || normAspect.includes('recommend')) {
+      return filteredRecords.filter(r =>
+        r.topicTheme === 'Brand - Likelihood to Recommend' ||
+        r.subTopic === 'Likelihood to Recommend'
+      );
+    }
+
+    // 9. Courier - Knowledge and Competence / People / Politeness / Helpfulness
+    if (
+      normTopic.includes('courier') ||
+      normTopic.includes('people') ||
+      normTopic.includes('knowledge') ||
+      normAspect.includes('politeness') ||
+      normAspect.includes('helpfulness') ||
+      normAspect.includes('knowledge') ||
+      normAspect.includes('competence')
+    ) {
+      return filteredRecords.filter(r =>
+        r.topicTheme === 'Courier - Knowledge and Competence' ||
+        r.subTopic === 'Knowledge and Competence' ||
+        (r.topicTheme || '').includes('Knowledge') ||
+        (r.subTopic || '').includes('Knowledge') ||
+        r.parentTopic === 'People'
+      );
+    }
+
+    // 10. Delivery - Timeliness
+    if (
+      normTopic.includes('timeliness') ||
+      normAspect.includes('timeliness') ||
+      (normTopic.includes('delivery') && (normAspect.includes('speed') || normAspect.includes('fast') || normAspect.includes('time')))
+    ) {
+      return filteredRecords.filter(r =>
+        r.topicTheme === 'Delivery - Timeliness' ||
+        r.subTopic === 'Timeliness'
+      );
+    }
+
     return filteredRecords.filter(r => {
       const parent = (r.parentTopic || '').toLowerCase();
       const sub = (r.subTopic || '').toLowerCase();
@@ -359,7 +404,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       const phrase = (r.phrase || '').toLowerCase();
       const comment = (r.comment || '').toLowerCase();
 
-      // 1. Check if topic matches
+      // Check if topic matches
       const topicMatches =
         parent.includes(normTopic) ||
         normTopic.includes(parent) ||
@@ -370,7 +415,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
       if (!topicMatches) return false;
 
-      // 2. Filter by aspect keywords if specified
+      // Filter by aspect keywords if specified
       if (normAspect.includes('overall') || normAspect.includes('satisfaction')) {
         return (
           theme.includes('satisfaction') ||
@@ -517,7 +562,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
             }))
           : (matchedDefaultAspect?.contributingPhrases || []);
 
-        const matchedCases = getMatchingCasesForAspect(topicLabel, topicLabel, fallbackSummary);
+        const matchedCases = getMatchingCasesForAspect(t.name, topicLabel, fallbackSummary);
         const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
 
         subTopicHighlights = [
@@ -535,7 +580,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         // Ensure caseCount and impactScore follow live filtered records
         subTopicHighlights = subTopicHighlights.map((sh, sIdx) => {
           const defAspect = matchedDefaultAspect || matchedDefault?.subTopicHighlights?.[sIdx];
-          const matchedCases = getMatchingCasesForAspect(topicLabel, sh.aspect || topicLabel, sh.summary);
+          const matchedCases = getMatchingCasesForAspect(t.name, sh.aspect || topicLabel, sh.summary);
           const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
 
           const dynamicPhrases = (t.samplePhrases && t.samplePhrases.length > 0)
@@ -625,7 +670,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       let subTopicHighlights = existing?.subTopicHighlights || matchedDefault?.subTopicHighlights;
 
       if (!subTopicHighlights || subTopicHighlights.length === 0) {
-        const matchedCases = getMatchingCasesForAspect(topicLabel, 'Friction Highlight');
+        const matchedCases = getMatchingCasesForAspect(t.name, 'Friction Highlight');
         const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
         subTopicHighlights = [
           {
@@ -640,7 +685,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
         // Ensure contributingPhrases, caseCount, and impactScore dynamically follow filtered dataset
         subTopicHighlights = subTopicHighlights.map((sh, sIdx) => {
           const defAspect = matchedDefault?.subTopicHighlights?.[sIdx];
-          const matchedCases = getMatchingCasesForAspect(topicLabel, sh.aspect || defAspect?.aspect || 'Key Highlight', sh.summary);
+          const matchedCases = getMatchingCasesForAspect(t.name, sh.aspect || defAspect?.aspect || 'Key Highlight', sh.summary);
           const dynamicCount = matchedCases.length > 0 ? matchedCases.length : t.volume;
 
           return {

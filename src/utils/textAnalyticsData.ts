@@ -429,11 +429,34 @@ export function parseCSV(csvText: string): TopicSentimentRecord[] {
     const cells = parseRow(lines[r]);
     if (cells.length < 3) continue;
 
-    const surveyId = (surveyIdIdx !== -1 && cells[surveyIdIdx]) ? String(cells[surveyIdIdx]).trim() : `S-${r}`;
+    const isTailAligned = cells.length > 8 && dateIdx === -1;
+    const surveyId = (surveyIdIdx !== -1 && cells[surveyIdIdx]) ? String(cells[surveyIdIdx]).trim() : (cells[0] ? String(cells[0]).trim() : `S-${r}`);
     const commentField = (commentFieldIdx !== -1 && cells[commentFieldIdx]) ? String(cells[commentFieldIdx]).trim() : 'Invitation survey comment';
-    const comment = (commentIdx !== -1 && cells[commentIdx]) ? String(cells[commentIdx]).trim() : '';
-    const phrase = (phraseIdx !== -1 && cells[phraseIdx]) ? String(cells[phraseIdx]).trim() : comment;
-    const rawTheme = (topicThemeIdx !== -1 && cells[topicThemeIdx]) ? String(cells[topicThemeIdx]).trim() : 'Brand - Overall Satisfaction';
+    
+    // In tail-aligned rows (unquoted commas in comment), country is last, score is 2nd last, sentiment is 3rd last, theme is 4th last, phrase is 5th last
+    const countryUnit = isTailAligned 
+      ? String(cells[cells.length - 1]).trim() 
+      : ((countryIdx !== -1 && cells[countryIdx]) ? String(cells[countryIdx]).trim() : 'Cambodia');
+      
+    const scoreVal = isTailAligned 
+      ? (parseInt(String(cells[cells.length - 2]), 10) || 9) 
+      : ((scoreIdx !== -1 && cells[scoreIdx]) ? (parseInt(String(cells[scoreIdx]), 10) || 9) : 9);
+      
+    const sentimentRaw = isTailAligned 
+      ? String(cells[cells.length - 3]).toUpperCase().trim() 
+      : String((sentimentIdx !== -1 && cells[sentimentIdx]) ? cells[sentimentIdx] : 'POSITIVE').toUpperCase().trim();
+      
+    const rawTheme = isTailAligned 
+      ? String(cells[cells.length - 4]).trim() 
+      : ((topicThemeIdx !== -1 && cells[topicThemeIdx]) ? String(cells[topicThemeIdx]).trim() : 'Brand - Overall Satisfaction');
+      
+    const phrase = isTailAligned 
+      ? (cells.length >= 6 ? String(cells[cells.length - 5]).trim() : '') 
+      : ((phraseIdx !== -1 && cells[phraseIdx]) ? String(cells[phraseIdx]).trim() : '');
+      
+    const comment = isTailAligned 
+      ? cells.slice(2, Math.max(2, cells.length - 5)).join(', ').trim() 
+      : ((commentIdx !== -1 && cells[commentIdx]) ? String(cells[commentIdx]).trim() : phrase);
 
     // Unique phrase key concatenated from surveyID, theme/topic, and phrase as requested
     const normPhrase = (phrase || comment).trim().toLowerCase().replace(/\s+/g, ' ');
@@ -443,10 +466,6 @@ export function parseCSV(csvText: string): TopicSentimentRecord[] {
       continue;
     }
     seenKeys.add(uniqueKey);
-
-    const sentimentRaw = String((sentimentIdx !== -1 && cells[sentimentIdx]) ? cells[sentimentIdx] : 'POSITIVE').toUpperCase().trim();
-    const scoreVal = (scoreIdx !== -1 && cells[scoreIdx]) ? (parseInt(String(cells[scoreIdx]), 10) || 9) : 9;
-    const countryUnit = (countryIdx !== -1 && cells[countryIdx]) ? String(cells[countryIdx]).trim() : 'Cambodia';
 
     let sentiment: SentimentType = 'POSITIVE';
     if (sentimentRaw.includes('NEG')) sentiment = 'NEGATIVE';
