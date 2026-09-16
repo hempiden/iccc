@@ -66,13 +66,6 @@ interface TextAnalyticsDashboardProps {
 }
 
 export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ vocRecords, onBackToVoC }) => {
-  // Sync status tracking between VoC Survey Records and Text Analytics Survey IDs
-  const [vocSyncStatus, setVocSyncStatus] = useState<{ matchedCount: number; totalVoCLinked: number }>({
-    matchedCount: 0,
-    totalVoCLinked: 0
-  });
-  const [syncToastMessage, setSyncToastMessage] = useState<string | null>(null);
-
   // Persistence state with deduplication by surveyID + topic/theme + phrase
   const [records, setRecords] = useState<TopicSentimentRecord[]>(() => {
     let initialRecords: TopicSentimentRecord[] = [];
@@ -108,8 +101,7 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
   // Re-sync with VoC Survey Records whenever vocRecords changes or on mount
   useEffect(() => {
-    const { updatedRecords, matchedCount, totalVoCLinked } = syncTopicRecordsWithVoCLookup(records, vocRecords);
-    setVocSyncStatus({ matchedCount, totalVoCLinked });
+    const { updatedRecords } = syncTopicRecordsWithVoCLookup(records, vocRecords);
     const hasChanges = updatedRecords.some((r, idx) => r.responseDate !== records[idx]?.responseDate);
     if (hasChanges) {
       setRecords(updatedRecords);
@@ -120,22 +112,6 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       }
     }
   }, [vocRecords]);
-
-  // Handler for manual VoC Survey Records date re-sync
-  const handleManualVoCDateSync = () => {
-    const { updatedRecords, matchedCount, totalVoCLinked } = syncTopicRecordsWithVoCLookup(records, vocRecords);
-    setRecords(updatedRecords);
-    try {
-      localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(updatedRecords));
-    } catch {
-      // ignore
-    }
-    setVocSyncStatus({ matchedCount, totalVoCLinked });
-    setSyncToastMessage(
-      `✓ Successfully linked ${matchedCount} survey records with interactive dates from VoC Survey Records by Survey ID!`
-    );
-    setTimeout(() => setSyncToastMessage(null), 4500);
-  };
 
   // Min and Max dates across records
   const { minDate, maxDate } = useMemo(() => {
@@ -1213,23 +1189,6 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                   Last 14 Days
                 </button>
               </div>
-
-              {/* VoC Survey Records Lookup Button */}
-              <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
-                <button
-                  onClick={handleManualVoCDateSync}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-700 bg-slate-100 hover:bg-amber-100 hover:text-amber-900 border border-slate-200 hover:border-amber-300 transition shadow-2xs"
-                  title="Lookup and sync interactive dates from VoC Survey Records using Survey ID"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Sync VoC Survey Dates</span>
-                  {vocSyncStatus.matchedCount > 0 && (
-                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-1.5 py-0.2 rounded-full border border-emerald-200">
-                      {vocSyncStatus.matchedCount} linked
-                    </span>
-                  )}
-                </button>
-              </div>
             </div>
 
             {/* Right: Response count & Reset */}
@@ -1262,22 +1221,6 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
             </div>
           </div>
         </div>
-
-        {/* Sync Toast Alert */}
-        {syncToastMessage && (
-          <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-2.5 rounded-xl text-xs font-medium flex items-center justify-between shadow-xs animate-in fade-in slide-in-from-top-1">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{syncToastMessage}</span>
-            </div>
-            <button
-              onClick={() => setSyncToastMessage(null)}
-              className="text-emerald-700 hover:text-emerald-900 text-xs font-bold px-2 py-0.5"
-            >
-              &times;
-            </button>
-          </div>
-        )}
 
         {/* TAB 1: TOP & BOTTOM SUB-TOPICS (SCREENSHOT 1) */}
         {activeTab === 'top_bottom' && (
