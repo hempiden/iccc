@@ -11,9 +11,9 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // 3. Customer VoC Survey data is stored strictly locally on the user's computer (localStorage)
+    // 3. Customer VoC Survey data stored and synchronized in Cloud Firestore
     match /voc_records/{recordId} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }

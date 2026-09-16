@@ -211,6 +211,20 @@ export default function App() {
     localStorage.setItem('dhl_voc_read_notifications', JSON.stringify(ids));
   };
 
+  const handleResetToSampleData = () => {
+    setLoadingDb(true);
+    const sanitized = sampleRecords.map(r => {
+      const healed = healRecordTimeline(r);
+      return {
+        ...healed,
+        responseDate: sanitizeExcelDateString(healed.responseDate),
+        creationDate: sanitizeExcelDateString(healed.creationDate)
+      };
+    });
+    setRecords(sanitized);
+    setLoadingDb(false);
+  };
+
   // Load and seed records locally on authentication
   useEffect(() => {
     if (!currentUser) return;
@@ -991,6 +1005,7 @@ export default function App() {
           currentUser={currentUser} 
           initialTab={superadminTab}
           onDeleteRecords={handleDeleteRecords}
+          onResetToSampleData={handleResetToSampleData}
         />
       )}
       {showColleagueManager && (

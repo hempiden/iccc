@@ -747,23 +747,28 @@ export default function ExecutiveOverview({
         'Pickup': '+3.8%'
       };
       
-      const staticImpactMap: { [key: string]: number } = {
-        'Brand': 11.8,
-        'Delivery': 4.0,
-        'People': 2.3,
-        'Customs Clearance': -6.9,
-        'Digital User Experience': -5.1,
-        'Support': -1.4,
-        'Price': -0.5,
-        'Pickup': 0.8
-      };
+      // Leave-One-Out NPS impact score calculation
+      let dynamicImpact = 0;
+      const overallPromoters = records.filter(r => r.likelihood >= 9).length;
+      const overallDetractors = records.filter(r => r.likelihood <= 6).length;
+      const overallNps = total > 0 ? ((overallPromoters - overallDetractors) / total) * 100 : 0;
+      
+      const topicPromoters = topicRecords.filter(r => r.likelihood >= 9).length;
+      const topicDetractors = topicRecords.filter(r => r.likelihood <= 6).length;
+      const remainingCount = total - vol;
+      if (remainingCount > 0) {
+        const remProm = overallPromoters - topicPromoters;
+        const remDet = overallDetractors - topicDetractors;
+        const npsWithout = ((remProm - remDet) / remainingCount) * 100;
+        dynamicImpact = parseFloat((overallNps - npsWithout).toFixed(1));
+      }
 
       return {
         name: topicName,
         volume: vol,
         volumePct: volPct,
         volumeChange: staticChangeMap[topicName] || '+14.6%',
-        impactScore: staticImpactMap[topicName] !== undefined ? staticImpactMap[topicName] : 1.2,
+        impactScore: dynamicImpact,
         nps: topicNps,
         avgScore,
         posPct,

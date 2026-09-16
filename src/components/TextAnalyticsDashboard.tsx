@@ -78,10 +78,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     let initialRecords: TopicSentimentRecord[] = [];
     const cacheVersion = localStorage.getItem('dhl_voc_topic_sentiment_v');
     const saved = localStorage.getItem('dhl_voc_topic_sentiment_records');
-    if (cacheVersion === 'v5_calibrated_phrases' && saved) {
+    if (cacheVersion === 'v7_official_nps_leave_one_out' && saved) {
       try {
         const parsed: TopicSentimentRecord[] = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= 600) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           initialRecords = parsed;
         }
       } catch {
@@ -89,9 +89,9 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
       }
     }
     if (initialRecords.length === 0) {
-      initialRecords = getEnrichedTopicSentimentRecords();
+      initialRecords = parseCSV(RAW_SAMPLE_CSV);
       try {
-        localStorage.setItem('dhl_voc_topic_sentiment_v', 'v5_calibrated_phrases');
+        localStorage.setItem('dhl_voc_topic_sentiment_v', 'v7_official_nps_leave_one_out');
         localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(initialRecords));
       } catch {
         // ignore
@@ -1334,7 +1334,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                             <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
                             Summary
                           </span>
-                          <span className="w-1/4 text-right flex items-center justify-end gap-1 text-slate-600">
+                          <span
+                            className="w-1/4 text-right flex items-center justify-end gap-1 text-slate-600 cursor-help"
+                            title="Official Leave-One-Out NPS Contribution: Impact = Overall NPS - NPS without topic. Measures net NPS point contribution."
+                          >
                             Impact Score
                             <Info className="w-3 h-3 text-slate-400" />
                           </span>
@@ -1397,7 +1400,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
                             <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
                             Summary
                           </span>
-                          <span className="w-1/4 text-right flex items-center justify-end gap-1 text-slate-600">
+                          <span
+                            className="w-1/4 text-right flex items-center justify-end gap-1 text-slate-600 cursor-help"
+                            title="Official Leave-One-Out NPS Contribution: Impact = Overall NPS - NPS without topic. Negative values indicate friction dragging down company NPS."
+                          >
                             Impact Score
                             <Info className="w-3 h-3 text-slate-400" />
                           </span>

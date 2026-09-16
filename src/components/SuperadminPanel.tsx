@@ -7,7 +7,8 @@ import {
   Search, Eye, Trash2, Filter, FileText, List, MessageSquare, Calendar, User
 } from 'lucide-react';
 import { ActionOwner, VoCRecord } from '../types';
-import { fetchColleagues, saveColleague, fetchSystemLoginSettings, saveSystemLoginSettings } from '../utils/firebaseSync';
+import { fetchColleagues, saveColleague, fetchSystemLoginSettings, saveSystemLoginSettings, resetAllDataToSampleData } from '../utils/firebaseSync';
+import { sampleRecords } from '../sampleData';
 import { exportMasterExcelWorkbook } from '../utils/excelDatabase';
 import { 
   getPowerAutomateConfig, 
@@ -24,6 +25,7 @@ interface SuperadminPanelProps {
   currentUser: ActionOwner | null;
   initialTab?: 'otp' | 'sharepoint' | 'users' | 'database';
   onDeleteRecords?: (ids: string[]) => void;
+  onResetToSampleData?: () => void;
 }
 
 export interface SharePointConfig {
@@ -36,7 +38,7 @@ export interface SharePointConfig {
   lastSyncTimestamp?: string;
 }
 
-export default function SuperadminPanel({ onClose, records, currentUser, initialTab = 'otp', onDeleteRecords }: SuperadminPanelProps) {
+export default function SuperadminPanel({ onClose, records, currentUser, initialTab = 'otp', onDeleteRecords, onResetToSampleData }: SuperadminPanelProps) {
   const [activeTab, setActiveTab] = useState<'otp' | 'sharepoint' | 'users' | 'database'>(initialTab);
 
   // --- DATABASE INSPECTOR STATE ---
@@ -44,6 +46,32 @@ export default function SuperadminPanel({ onClose, records, currentUser, initial
   const [dbChannelFilter, setDbChannelFilter] = useState('All');
   const [dbCategoryFilter, setDbCategoryFilter] = useState('All');
   const [selectedRecordForModal, setSelectedRecordForModal] = useState<VoCRecord | null>(null);
+  const [isResettingData, setIsResettingData] = useState(false);
+  const [resetSuccessMsg, setResetSuccessMsg] = useState<string | null>(null);
+
+  const handleTriggerResetData = async () => {
+    const confirmed = window.confirm(
+      'Are you sure you want to clear all data and only keep the sample data in Firebase and this system?\n\nThis will remove all extra records and restore the pristine sample VoC surveys and colleague profiles in Firebase and local storage.'
+    );
+    if (!confirmed) return;
+
+    setIsResettingData(true);
+    setResetSuccessMsg(null);
+    try {
+      await resetAllDataToSampleData(sampleRecords);
+      await loadColleaguesList();
+      if (onResetToSampleData) {
+        onResetToSampleData();
+      }
+      setResetSuccessMsg('All data cleared successfully! Only the sample data is retained in Firebase and this system.');
+      setTimeout(() => setResetSuccessMsg(null), 6000);
+    } catch (err) {
+      console.error('Error clearing data:', err);
+      window.alert('Failed to reset data: ' + String(err));
+    } finally {
+      setIsResettingData(false);
+    }
+  };
 
   // --- 1. OTP SANDBOX SETTINGS STATE ---
   const [isSandboxMode, setIsSandboxMode] = useState<boolean>(() => {
@@ -1262,9 +1290,16 @@ export default function SuperadminPanel({ onClose, records, currentUser, initial
                 </div>
               </div>
 
+              {resetSuccessMsg && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold flex items-center gap-2 animate-fade-in shadow-2xs">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{resetSuccessMsg}</span>
+                </div>
+              )}
+
               {/* Table of Database Records */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-                <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
                   <div className="flex items-center gap-2">
                     <Database className="w-4 h-4 text-purple-600" />
                     <h3 className="font-extrabold text-slate-900 text-sm">
@@ -1276,6 +1311,23 @@ export default function SuperadminPanel({ onClose, records, currentUser, initial
                         return matchesQuery && matchesChan && matchesCat;
                       }).length} of {records.length})
                     </h3>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isResettingData}
+                      onClick={handleTriggerResetData}
+                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                      title="Clear all data in Firebase and this system, keeping only sample data"
+                    >
+                      {isResettingData ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      )}
+                      <span>{isResettingData ? 'Resetting Data...' : 'Clear All & Keep Sample Data'}</span>
+                    </button>
                   </div>
                 </div>
 

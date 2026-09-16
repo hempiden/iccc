@@ -71,6 +71,42 @@
         }
       },
       "required": ["sandboxOtpEnabled"]
+    },
+    "VoCRecord": {
+      "title": "VoCRecord",
+      "description": "Customer Voice of Customer survey and feedback record.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique survey identifier."
+        },
+        "likelihood": {
+          "type": "number",
+          "description": "NPS recommendation likelihood score (0 to 10)."
+        },
+        "category": {
+          "type": "string",
+          "description": "NPS classification: Promoter, Passive, or Detractor."
+        },
+        "comment": {
+          "type": "string",
+          "description": "Customer qualitative feedback comment."
+        },
+        "interaction": {
+          "type": "string",
+          "description": "Interaction point or facility code (e.g. PNHGTW, SGNEXP)."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Assigned action owner colleague name."
+        },
+        "status": {
+          "type": "string",
+          "description": "Action resolution status (Open, In Progress, or Completed)."
+        }
+      },
+      "required": ["id", "likelihood", "category"]
     }
   },
   "firestore": {
@@ -81,6 +117,10 @@
     "/system_settings/{settingId}": {
       "schema": "SystemSetting",
       "description": "Collection storing external system configuration and login OTP mode settings."
+    },
+    "/voc_records/{recordId}": {
+      "schema": "VoCRecord",
+      "description": "Collection storing customer VoC survey records and resolution tracking."
     }
   }
 }
