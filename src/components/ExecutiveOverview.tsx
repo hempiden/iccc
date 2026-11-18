@@ -28,8 +28,8 @@ export default function ExecutiveOverview({
   const [activeSession, setActiveSession] = useState<'all' | 'transactions' | 'scorecard'>('all');
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [selectedSentimentFilter, setSelectedSentimentFilter] = useState<'ALL' | 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL'>('ALL');
-  const [trendInterval, setTrendInterval] = useState<'monthly' | 'weekly' | 'daily'>('weekly');
-  const [showLastYear, setShowLastYear] = useState<boolean>(true);
+  const [trendInterval, setTrendInterval] = useState<'monthly' | 'weekly' | 'daily'>('monthly');
+  const [showLastYear, setShowLastYear] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [showExportMenu, setShowExportMenu] = useState<boolean>(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -345,47 +345,103 @@ export default function ExecutiveOverview({
 
   // 2. NPS over Time (Monthly / Weekly / Daily trends)
   const trendData = useMemo(() => {
-    // Determine target year dynamically from the current dataset
-    const dates = records.map(r => {
-      const dStr = r.responseDate || r.creationDate;
+    const parseSafeDate = (dStr?: string): Date | null => {
       if (!dStr) return null;
-      try {
-        const cleaned = dStr.replace(/-/g, '/');
-        const parsed = Date.parse(cleaned);
-        return isNaN(parsed) ? null : new Date(parsed);
-      } catch {
-        return null;
+      const trimmed = dStr.trim();
+      if (!trimmed) return null;
+      if (/^\d{5}(\.\d+)?$/.test(trimmed)) {
+        const serial = Number(trimmed);
+        const dt = new Date((serial - 25569) * 86400 * 1000);
+        return isNaN(dt.getTime()) ? null : dt;
       }
-    }).filter((d): d is Date => d !== null);
+      const isoMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+      if (isoMatch) {
+        const [, y, m, d, hh = '0', mm = '0', ss = '0'] = isoMatch;
+        const dt = new Date(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss));
+        return isNaN(dt.getTime()) ? null : dt;
+      }
+      const dmyMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+      if (dmyMatch) {
+        const [, p1, p2, y] = dmyMatch;
+        const n1 = Number(p1);
+        const n2 = Number(p2);
+        if (n1 > 12) {
+          const dt = new Date(Number(y), n2 - 1, n1);
+          return isNaN(dt.getTime()) ? null : dt;
+        }
+      }
+      const parsed = Date.parse(trimmed);
+      return isNaN(parsed) ? null : new Date(parsed);
+    };
+
+    const round1 = (val: number) => parseFloat(val.toFixed(1));
+
+    const calculatePeriodStats = (obj: { promoters: number; passives: number; detractors: number; sumScore: number; count: number }) => {
+      if (obj.count === 0) {
+        return {
+          promoterPct: 0,
+          passivePct: 0,
+          detractorPct: 0,
+          promoterRaw: 0,
+          passiveRaw: 0,
+          detractorRaw: 0,
+          nps: 0,
+          avgScore: '0.0',
+          count: 0
+        };
+      }
+      const promPct = (obj.promoters / obj.count) * 100;
+      const passPct = (obj.passives / obj.count) * 100;
+      const detrPct = (obj.detractors / obj.count) * 100;
+      return {
+        promoterPct: round1(promPct),
+        passivePct: round1(passPct),
+        detractorPct: round1(detrPct),
+        promoterRaw: promPct,
+        passiveRaw: passPct,
+        detractorRaw: detrPct,
+        nps: round1(promPct - detrPct),
+        avgScore: (obj.sumScore / obj.count).toFixed(1),
+        count: obj.count
+      };
+    };
+
+    if (records.length === 0) return [];
+
+    // Determine target year dynamically from the current dataset
+    const dates = records
+      .map(r => parseSafeDate(r.responseDate || r.creationDate))
+      .filter((d): d is Date => d !== null);
 
     const maxDate = dates.length > 0 ? new Date(Math.max(...dates.map(d => d.getTime()))) : new Date();
     const determinedYear = maxDate.getFullYear() || 2026;
 
     // Check if we have actual previous year records in the set
     const hasActualPreviousYear = records.some(r => {
-      const dStr = r.responseDate || r.creationDate;
-      if (!dStr) return false;
-      const d = new Date(dStr.replace(/-/g, '/'));
-      return d.getFullYear() === determinedYear - 1;
+      const d = parseSafeDate(r.responseDate || r.creationDate);
+      return d !== null && d.getFullYear() === determinedYear - 1;
     });
+
+    const cyRecords = hasActualPreviousYear
+      ? records.filter(r => {
+          const d = parseSafeDate(r.responseDate || r.creationDate);
+          return d !== null && d.getFullYear() === determinedYear;
+        })
+      : records;
 
     let lyRecords: VoCRecord[] = [];
     if (hasActualPreviousYear) {
       lyRecords = records.filter(r => {
-        const dStr = r.responseDate || r.creationDate;
-        if (!dStr) return false;
-        const d = new Date(dStr.replace(/-/g, '/'));
-        return d.getFullYear() === determinedYear - 1;
+        const d = parseSafeDate(r.responseDate || r.creationDate);
+        return d !== null && d.getFullYear() === determinedYear - 1;
       });
     } else {
       // Create high-fidelity projected last year records matched to the current set
-      lyRecords = records.map((r, idx) => {
-        // drop ~15% of records to simulate growth
+      lyRecords = cyRecords.map((r, idx) => {
         if (idx % 7 === 0) return null;
 
-        const dStr = r.responseDate || r.creationDate;
-        if (!dStr) return null;
-        const origDate = new Date(dStr.replace(/-/g, '/'));
+        const origDate = parseSafeDate(r.responseDate || r.creationDate);
+        if (!origDate) return null;
         const lyDate = new Date(origDate);
         lyDate.setFullYear(determinedYear - 1);
 
@@ -400,7 +456,10 @@ export default function ExecutiveOverview({
         if (lyLikelihood >= 9) lyCategory = 'Promoter';
         else if (lyLikelihood <= 6) lyCategory = 'Detractor';
 
-        const formattedDate = lyDate.toISOString().slice(0, 16).replace('T', ' ');
+        const yyyy = lyDate.getFullYear();
+        const mm = String(lyDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(lyDate.getDate()).padStart(2, '0');
+        const formattedDate = `${yyyy}-${mm}-${dd}`;
 
         return {
           ...r,
@@ -414,29 +473,36 @@ export default function ExecutiveOverview({
 
     if (trendInterval === 'monthly') {
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const targetMonths = Array.from({ length: 5 }, (_, i) => {
-        const d = new Date(maxDate.getFullYear(), maxDate.getMonth() - 4 + i, 1);
+      const cyDates = cyRecords
+        .map(r => parseSafeDate(r.responseDate || r.creationDate))
+        .filter((d): d is Date => d !== null);
+
+      const minCyDate = cyDates.length > 0 ? new Date(Math.min(...cyDates.map(d => d.getTime()))) : maxDate;
+      const maxCyDate = cyDates.length > 0 ? new Date(Math.max(...cyDates.map(d => d.getTime()))) : maxDate;
+
+      const startTotalMonths = minCyDate.getFullYear() * 12 + minCyDate.getMonth();
+      const endTotalMonths = maxCyDate.getFullYear() * 12 + maxCyDate.getMonth();
+      const spansMultipleYears = minCyDate.getFullYear() !== maxCyDate.getFullYear();
+      const totalMonthsCount = Math.min(36, Math.max(1, endTotalMonths - startTotalMonths + 1));
+
+      const targetMonths = Array.from({ length: totalMonthsCount }, (_, i) => {
+        const d = new Date(minCyDate.getFullYear(), minCyDate.getMonth() + i, 1);
+        const shortYr = `'${String(d.getFullYear()).slice(-2)}`;
         return {
           year: d.getFullYear(),
           month: d.getMonth(),
-          name: `${monthNames[d.getMonth()]} ${d.getFullYear()}`,
+          name: spansMultipleYears ? `${monthNames[d.getMonth()]} ${shortYr}` : monthNames[d.getMonth()],
+          fullName: `${monthNames[d.getMonth()]} ${d.getFullYear()}`,
           cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 },
           ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }
         };
       });
 
-      const parseDate = (dStr?: string) => {
-        if (!dStr) return null;
-        const d = new Date(dStr.replace(/-/g, '/'));
-        return isNaN(d.getTime()) ? null : d;
-      };
-
-      records.forEach((r, idx) => {
-        const d = parseDate(r.responseDate || r.creationDate);
-        let mObj = d ? targetMonths.find(tm => tm.year === d.getFullYear() && tm.month === d.getMonth()) : null;
-        if (!mObj) {
-          mObj = targetMonths[idx % 5];
-        }
+      cyRecords.forEach(r => {
+        const d = parseSafeDate(r.responseDate || r.creationDate);
+        if (!d) return;
+        const mObj = targetMonths.find(tm => tm.year === d.getFullYear() && tm.month === d.getMonth());
+        if (!mObj) return;
         const cy = mObj.cy;
         cy.count++;
         cy.sumScore += r.likelihood;
@@ -445,12 +511,11 @@ export default function ExecutiveOverview({
         else cy.detractors++;
       });
 
-      lyRecords.forEach((r, idx) => {
-        const d = parseDate(r.responseDate || r.creationDate);
-        let mObj = d ? targetMonths.find(tm => tm.month === d.getMonth()) : null;
-        if (!mObj) {
-          mObj = targetMonths[idx % 5];
-        }
+      lyRecords.forEach(r => {
+        const d = parseSafeDate(r.responseDate || r.creationDate);
+        if (!d) return;
+        const mObj = targetMonths.find(tm => tm.month === d.getMonth());
+        if (!mObj) return;
         const ly = mObj.ly;
         ly.count++;
         ly.sumScore += r.likelihood;
@@ -459,45 +524,28 @@ export default function ExecutiveOverview({
         else ly.detractors++;
       });
 
-      return targetMonths.map(m => {
-        const calculateStats = (obj: typeof m.cy) => {
-          if (obj.count === 0) return { promoterPct: 0, passivePct: 0, detractorPct: 0, nps: 0, avgScore: '0.0', count: 0 };
-          const promPct = (obj.promoters / obj.count) * 100;
-          const passPct = (obj.passives / obj.count) * 100;
-          const detrPct = (obj.detractors / obj.count) * 100;
-          return {
-            promoterPct: Math.round(promPct),
-            passivePct: Math.round(passPct),
-            detractorPct: Math.round(detrPct),
-            nps: Math.round(promPct - detrPct),
-            avgScore: (obj.sumScore / obj.count).toFixed(1),
-            count: obj.count
-          };
-        };
-
-        return {
-          name: m.name,
-          cy: calculateStats(m.cy),
-          ly: calculateStats(m.ly)
-        };
-      });
+      return targetMonths.map(m => ({
+        name: m.name,
+        fullName: m.fullName,
+        cy: calculatePeriodStats(m.cy),
+        ly: calculatePeriodStats(m.ly)
+      }));
     } else if (trendInterval === 'daily') {
       const days = [
-        { name: 'Mon', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Tue', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Wed', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Thu', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Fri', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Sat', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
-        { name: 'Sun', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } }
+        { name: 'Mon', fullName: 'Monday', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
+        { name: 'Tue', fullName: 'Tuesday', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
+        { name: 'Wed', fullName: 'Wednesday', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
+        { name: 'Thu', fullName: 'Thursday', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
+        { name: 'Fri', fullName: 'Friday', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
+        { name: 'Sat', fullName: 'Saturday', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } },
+        { name: 'Sun', fullName: 'Sunday', cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }, ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 } }
       ];
 
-      records.forEach((r, idx) => {
+      cyRecords.forEach((r, idx) => {
         let dayIndex = idx % 7;
-        const dStr = r.responseDate || r.creationDate;
-        if (dStr) {
-          const d = new Date(dStr.replace(/-/g, '/'));
-          const day = d.getDay(); // 0 is Sun, 1 is Mon, 2 is Tue, etc.
+        const d = parseSafeDate(r.responseDate || r.creationDate);
+        if (d) {
+          const day = d.getDay();
           dayIndex = day === 0 ? 6 : day - 1;
         } else {
           dayIndex = parseInt(r.id.slice(-2), 10) % 7 || idx % 7;
@@ -512,9 +560,8 @@ export default function ExecutiveOverview({
 
       lyRecords.forEach((r, idx) => {
         let dayIndex = idx % 7;
-        const dStr = r.responseDate || r.creationDate;
-        if (dStr) {
-          const d = new Date(dStr.replace(/-/g, '/'));
+        const d = parseSafeDate(r.responseDate || r.creationDate);
+        if (d) {
           const day = d.getDay();
           dayIndex = day === 0 ? 6 : day - 1;
         } else {
@@ -528,52 +575,29 @@ export default function ExecutiveOverview({
         else dObj.detractors++;
       });
 
-      return days.map(d => {
-        const calculateStats = (obj: typeof d.cy) => {
-          if (obj.count === 0) return { promoterPct: 0, passivePct: 0, detractorPct: 0, nps: 0, avgScore: '0.0', count: 0 };
-          const promPct = (obj.promoters / obj.count) * 100;
-          const passPct = (obj.passives / obj.count) * 100;
-          const detrPct = (obj.detractors / obj.count) * 100;
-          return {
-            promoterPct: Math.round(promPct),
-            passivePct: Math.round(passPct),
-            detractorPct: Math.round(detrPct),
-            nps: Math.round(promPct - detrPct),
-            avgScore: (obj.sumScore / obj.count).toFixed(1),
-            count: obj.count
-          };
-        };
-
-        return {
-          name: d.name,
-          cy: calculateStats(d.cy),
-          ly: calculateStats(d.ly)
-        };
-      });
+      return days.map(d => ({
+        name: d.name,
+        fullName: d.fullName,
+        cy: calculatePeriodStats(d.cy),
+        ly: calculatePeriodStats(d.ly)
+      }));
     } else {
       // Weekly - Calculate actual week numbers isolated to the current target year (determinedYear)
       const parseYearAndWeek = (dateStr?: string): { year: number; week: number } | null => {
-        if (!dateStr) return null;
-        try {
-          const d = new Date(dateStr.replace(/-/g, '/'));
-          if (isNaN(d.getTime())) return null;
-          const year = d.getFullYear();
-          const startOfYear = new Date(year, 0, 1);
-          const pastDaysOfYear = (d.getTime() - startOfYear.getTime()) / 86400000;
-          const week = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
-          return { year, week: Math.max(1, Math.min(53, week)) };
-        } catch {
-          return null;
-        }
+        const d = parseSafeDate(dateStr);
+        if (!d) return null;
+        const year = d.getFullYear();
+        const startOfYear = new Date(year, 0, 1);
+        const pastDaysOfYear = (d.getTime() - startOfYear.getTime()) / 86400000;
+        const week = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
+        return { year, week: Math.max(1, Math.min(53, week)) };
       };
 
-      // Extract week numbers ONLY for records belonging to the target determinedYear (e.g. 2026)
-      const cyWeeks = records
+      const cyWeeks = cyRecords
         .map(r => parseYearAndWeek(r.responseDate || r.creationDate))
         .filter((w): w is { year: number; week: number } => w !== null && w.year === determinedYear)
         .map(w => w.week);
 
-      // Determine max week in dataset specifically for determinedYear (e.g. 2026 week 31 for July 31)
       let maxWeek = 31;
       if (cyWeeks.length > 0) {
         maxWeek = Math.max(...cyWeeks);
@@ -585,20 +609,19 @@ export default function ExecutiveOverview({
 
       maxWeek = Math.max(1, Math.min(53, maxWeek));
 
-      // Ensure 5 consecutive week numbers ending at maxWeek (e.g. W-27, W-28, W-29, W-30, W-31)
       const startWeek = Math.max(1, maxWeek - 4);
       const targetWeeks = Array.from({ length: 5 }, (_, i) => startWeek + i);
 
       const weeks = targetWeeks.map(wNum => ({
         weekNum: wNum,
         name: `W-${String(wNum).padStart(2, '0')}`,
+        fullName: `${determinedYear} Week ${wNum}`,
         cy: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 },
         ly: { promoters: 0, passives: 0, detractors: 0, sumScore: 0, count: 0 }
       }));
 
-      records.forEach((r, idx) => {
-        const dStr = r.responseDate || r.creationDate;
-        const parsed = parseYearAndWeek(dStr);
+      cyRecords.forEach((r, idx) => {
+        const parsed = parseYearAndWeek(r.responseDate || r.creationDate);
         let weekObj = parsed ? weeks.find(w => w.weekNum === parsed.week) : null;
         if (!weekObj) {
           if (parsed) {
@@ -618,8 +641,7 @@ export default function ExecutiveOverview({
       });
 
       lyRecords.forEach((r, idx) => {
-        const dStr = r.responseDate || r.creationDate;
-        const parsed = parseYearAndWeek(dStr);
+        const parsed = parseYearAndWeek(r.responseDate || r.creationDate);
         let weekObj = parsed ? weeks.find(w => w.weekNum === parsed.week) : null;
         if (!weekObj) {
           if (parsed) {
@@ -638,28 +660,12 @@ export default function ExecutiveOverview({
         else ly.detractors++;
       });
 
-      return weeks.map(w => {
-        const calculateStats = (obj: typeof w.cy) => {
-          if (obj.count === 0) return { promoterPct: 0, passivePct: 0, detractorPct: 0, nps: 0, avgScore: '0.0', count: 0 };
-          const promPct = (obj.promoters / obj.count) * 100;
-          const passPct = (obj.passives / obj.count) * 100;
-          const detrPct = (obj.detractors / obj.count) * 100;
-          return {
-            promoterPct: Math.round(promPct),
-            passivePct: Math.round(passPct),
-            detractorPct: Math.round(detrPct),
-            nps: Math.round(promPct - detrPct),
-            avgScore: (obj.sumScore / obj.count).toFixed(1),
-            count: obj.count
-          };
-        };
-
-        return {
-          name: w.name,
-          cy: calculateStats(w.cy),
-          ly: calculateStats(w.ly)
-        };
-      });
+      return weeks.map(w => ({
+        name: w.name,
+        fullName: w.fullName,
+        cy: calculatePeriodStats(w.cy),
+        ly: calculatePeriodStats(w.ly)
+      }));
     }
   }, [records, trendInterval]);
 
@@ -1192,107 +1198,334 @@ export default function ExecutiveOverview({
               </div>
 
               {/* Custom trend chart */}
-              <div className="relative flex-1 flex items-end gap-3 sm:gap-5 py-4 border-b border-slate-100 min-h-[160px] px-2 mt-2">
-                {trendData.map((period, idx) => (
-                  <div key={idx} className="flex-1 h-full flex items-end justify-center gap-1 sm:gap-2 relative group">
-                    
-                    {/* LAST YEAR COLUMN (Conditional) */}
-                    {showLastYear && (
-                      <div className="h-full flex-1 flex flex-col justify-end items-center relative max-w-[24px]">
-                        {/* NPS dot for Last Year */}
-                        <div 
-                          style={{ bottom: `${(period.ly.nps + 100) / 2}%` }}
-                          className="absolute w-2.5 h-2.5 rounded-full bg-slate-400 border-2 border-white shadow-xs z-20 hover:scale-150 transition-all cursor-help"
-                          title={`LY NPS: ${period.ly.nps > 0 ? `+${period.ly.nps}` : period.ly.nps}`}
-                        />
+              {(() => {
+                const n = trendData.length;
+                if (n === 0) {
+                  return (
+                    <div className="flex-1 flex items-center justify-center min-h-[210px] text-xs font-semibold text-slate-400">
+                      No survey records in selected timeline.
+                    </div>
+                  );
+                }
 
-                        {/* Stacked Bar for Last Year - desaturated/translucent */}
-                        <div className="w-full h-full flex flex-col justify-end rounded-md overflow-hidden bg-slate-50/50 shadow-2xs border border-dashed border-slate-200">
-                          {period.ly.promoterPct > 0 && (
-                            <div 
-                              style={{ height: `${period.ly.promoterPct}%` }} 
-                              className="bg-emerald-400/50 hover:bg-emerald-400/70 transition-colors"
-                              title={`LY Promoters: ${period.ly.promoterPct}%`}
+                const hasNegativeNps = trendData.some(
+                  p => p.cy.nps < 0 || (showLastYear && p.ly.nps < 0)
+                );
+                const getNpsYPct = (nps: number) =>
+                  hasNegativeNps
+                    ? Math.max(0, Math.min(100, (nps + 100) / 2))
+                    : Math.max(0, Math.min(100, nps));
+
+                const yTicks = [100, 80, 60, 40, 20, 0];
+                const rightTicks = hasNegativeNps ? [100, 60, 20, -20, -60, -100] : [100, 80, 60, 40, 20, 0];
+
+                const cyPointsList = trendData
+                  .map((period, idx) => {
+                    if (period.cy.count === 0) return null;
+                    const xPct = showLastYear ? ((idx + 0.75) / n) * 100 : ((idx + 0.5) / n) * 100;
+                    const yPct = getNpsYPct(period.cy.nps);
+                    return {
+                      idx,
+                      xPct,
+                      yPct,
+                      period
+                    };
+                  })
+                  .filter((pt): pt is NonNullable<typeof pt> => pt !== null);
+
+                const lyPointsList = showLastYear
+                  ? trendData
+                      .map((period, idx) => {
+                        if (period.ly.count === 0) return null;
+                        const xPct = ((idx + 0.25) / n) * 100;
+                        const yPct = getNpsYPct(period.ly.nps);
+                        return {
+                          idx,
+                          xPct,
+                          yPct,
+                          period
+                        };
+                      })
+                      .filter((pt): pt is NonNullable<typeof pt> => pt !== null)
+                  : [];
+
+                const cyPolylinePoints = cyPointsList
+                  .map(pt => `${(pt.xPct * 10).toFixed(2)},${((100 - pt.yPct) * 10).toFixed(2)}`)
+                  .join(' ');
+
+                const lyPolylinePoints = lyPointsList
+                  .map(pt => `${(pt.xPct * 10).toFixed(2)},${((100 - pt.yPct) * 10).toFixed(2)}`)
+                  .join(' ');
+
+                return (
+                  <div className="flex flex-col mt-2 pt-4">
+                    <div className="flex items-stretch gap-1.5">
+                      {/* Left Y-Axis (Percentage %) */}
+                      <div className="relative w-7 shrink-0 h-[220px] select-none">
+                        {yTicks.map((tick) => (
+                          <span
+                            key={tick}
+                            style={{ bottom: `${tick}%` }}
+                            className="absolute right-0.5 translate-y-1/2 text-[9px] font-bold text-slate-400 tabular-nums"
+                          >
+                            {tick}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Plot Area */}
+                      <div className="relative flex-1 h-[220px] border-b border-slate-200">
+                        {/* Horizontal Gridlines */}
+                        <div className="absolute inset-0 pointer-events-none">
+                          {yTicks.map((tick) => (
+                            <div
+                              key={tick}
+                              style={{ bottom: `${tick}%` }}
+                              className="absolute inset-x-0 h-0 border-t border-slate-100"
+                            />
+                          ))}
+                        </div>
+
+                        {/* Stacked Bars Layer (Zero-gap equal columns so bar centers lock to SVG points) */}
+                        <div className="relative z-10 h-full w-full flex items-end">
+                          {trendData.map((period, idx) => (
+                            <div key={idx} className="flex-1 min-w-0 h-full flex items-end justify-center relative group">
+                              {showLastYear ? (
+                                <>
+                                  {/* LAST YEAR SUB-COLUMN */}
+                                  <div className="flex-1 min-w-0 h-full flex items-end justify-center">
+                                    <div className="w-[82%] max-w-[26px] h-full flex flex-col justify-end rounded-[3px] overflow-hidden bg-slate-50/50 border border-dashed border-slate-200/80">
+                                      {period.ly.promoterRaw > 0 && (
+                                        <div
+                                          style={{ height: `${period.ly.promoterRaw}%` }}
+                                          className="bg-emerald-400/50 hover:bg-emerald-400/70 transition-colors flex items-center justify-center overflow-hidden"
+                                          title={`LY Promoters: ${period.ly.promoterPct.toFixed(1)}%`}
+                                        />
+                                      )}
+                                      {period.ly.passiveRaw > 0 && (
+                                        <div
+                                          style={{ height: `${period.ly.passiveRaw}%` }}
+                                          className="bg-amber-300/50 hover:bg-amber-300/70 transition-colors flex items-center justify-center overflow-hidden"
+                                          title={`LY Passives: ${period.ly.passivePct.toFixed(1)}%`}
+                                        />
+                                      )}
+                                      {period.ly.detractorRaw > 0 && (
+                                        <div
+                                          style={{ height: `${period.ly.detractorRaw}%` }}
+                                          className="bg-rose-300/50 hover:bg-rose-300/70 transition-colors flex items-center justify-center overflow-hidden"
+                                          title={`LY Detractors: ${period.ly.detractorPct.toFixed(1)}%`}
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* CURRENT YEAR SUB-COLUMN */}
+                                  <div className="flex-1 min-w-0 h-full flex items-end justify-center">
+                                    <div className="w-[82%] max-w-[26px] h-full flex flex-col justify-end rounded-[3px] overflow-hidden bg-slate-50 border border-slate-100">
+                                      {period.cy.promoterRaw > 0 && (
+                                        <div
+                                          style={{ height: `${period.cy.promoterRaw}%` }}
+                                          className="bg-emerald-500/95 hover:bg-emerald-500 transition-colors flex items-center justify-center overflow-hidden"
+                                          title={`CY Promoters: ${period.cy.promoterPct.toFixed(1)}%`}
+                                        >
+                                          {period.cy.promoterRaw >= 10 && n <= 12 && (
+                                            <span className="text-[8px] font-extrabold text-white drop-shadow-2xs leading-none select-none">
+                                              {period.cy.promoterPct.toFixed(1)}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                      {period.cy.passiveRaw > 0 && (
+                                        <div
+                                          style={{ height: `${period.cy.passiveRaw}%` }}
+                                          className="bg-amber-400/90 hover:bg-amber-400 transition-colors flex items-center justify-center overflow-hidden"
+                                          title={`CY Passives: ${period.cy.passivePct.toFixed(1)}%`}
+                                        >
+                                          {period.cy.passiveRaw >= 8 && n <= 12 && (
+                                            <span className="text-[8px] font-extrabold text-slate-900 leading-none select-none">
+                                              {period.cy.passivePct.toFixed(1)}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                      {period.cy.detractorRaw > 0 && (
+                                        <div
+                                          style={{ height: `${period.cy.detractorRaw}%` }}
+                                          className="bg-rose-500/90 hover:bg-rose-500 transition-colors flex items-center justify-center overflow-hidden"
+                                          title={`CY Detractors: ${period.cy.detractorPct.toFixed(1)}%`}
+                                        >
+                                          {period.cy.detractorRaw >= 6 && n <= 12 && (
+                                            <span className="text-[8px] font-extrabold text-white drop-shadow-2xs leading-none select-none">
+                                              {period.cy.detractorPct.toFixed(1)}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="w-[66%] max-w-[42px] h-full flex flex-col justify-end rounded-[3px] overflow-hidden bg-slate-50 border border-slate-100">
+                                  {period.cy.promoterRaw > 0 && (
+                                    <div
+                                      style={{ height: `${period.cy.promoterRaw}%` }}
+                                      className="bg-emerald-500/95 hover:bg-emerald-500 transition-colors flex items-center justify-center overflow-hidden"
+                                      title={`CY Promoters: ${period.cy.promoterPct.toFixed(1)}%`}
+                                    >
+                                      {period.cy.promoterRaw >= 9 && n <= 14 && (
+                                        <span className="text-[9px] font-extrabold text-white drop-shadow-2xs leading-none select-none">
+                                          {period.cy.promoterPct.toFixed(1)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {period.cy.passiveRaw > 0 && (
+                                    <div
+                                      style={{ height: `${period.cy.passiveRaw}%` }}
+                                      className="bg-amber-400/90 hover:bg-amber-400 transition-colors flex items-center justify-center overflow-hidden"
+                                      title={`CY Passives: ${period.cy.passivePct.toFixed(1)}%`}
+                                    >
+                                      {period.cy.passiveRaw >= 7 && n <= 14 && (
+                                        <span className="text-[9px] font-extrabold text-slate-900 leading-none select-none">
+                                          {period.cy.passivePct.toFixed(1)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {period.cy.detractorRaw > 0 && (
+                                    <div
+                                      style={{ height: `${period.cy.detractorRaw}%` }}
+                                      className="bg-rose-500/90 hover:bg-rose-500 transition-colors flex items-center justify-center overflow-hidden"
+                                      title={`CY Detractors: ${period.cy.detractorPct.toFixed(1)}%`}
+                                    >
+                                      {period.cy.detractorRaw >= 5 && n <= 14 && (
+                                        <span className="text-[9px] font-extrabold text-white drop-shadow-2xs leading-none select-none">
+                                          {period.cy.detractorPct.toFixed(1)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Combined Tooltip on Group Hover */}
+                              <div className="opacity-0 group-hover:opacity-100 absolute -top-14 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[9px] font-medium px-2.5 py-1.5 rounded shadow-lg z-40 transition-opacity pointer-events-none whitespace-nowrap leading-relaxed border border-slate-700">
+                                <div className="font-bold border-b border-slate-700 pb-0.5 mb-0.5 text-center">
+                                  {period.fullName || period.name} ({period.cy.count} surveys)
+                                </div>
+                                <div className="flex gap-4">
+                                  <div>
+                                    <span className="font-bold text-emerald-400">CY:</span> NPS {period.cy.nps > 0 ? `+${period.cy.nps.toFixed(1)}` : period.cy.nps.toFixed(1)} | Avg {period.cy.avgScore}
+                                  </div>
+                                  {showLastYear && (
+                                    <div>
+                                      <span className="font-bold text-slate-400">LY:</span> NPS {period.ly.nps > 0 ? `+${period.ly.nps.toFixed(1)}` : period.ly.nps.toFixed(1)} | Avg {period.ly.avgScore}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Connected Line SVG Overlay */}
+                        <svg
+                          className="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible"
+                          viewBox="0 0 1000 1000"
+                          preserveAspectRatio="none"
+                        >
+                          {showLastYear && lyPointsList.length > 1 && (
+                            <polyline
+                              fill="none"
+                              stroke="#64748b"
+                              strokeWidth="2"
+                              strokeDasharray="5 4"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              vectorEffect="non-scaling-stroke"
+                              points={lyPolylinePoints}
                             />
                           )}
-                          {period.ly.passivePct > 0 && (
-                            <div 
-                              style={{ height: `${period.ly.passivePct}%` }} 
-                              className="bg-amber-300/50 hover:bg-amber-300/70 transition-colors"
-                              title={`LY Passives: ${period.ly.passivePct}%`}
-                            />
+                          {cyPointsList.length > 1 && (
+                            <>
+                              <polyline
+                                fill="none"
+                                stroke="rgba(255,255,255,0.8)"
+                                strokeWidth="4"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                vectorEffect="non-scaling-stroke"
+                                points={cyPolylinePoints}
+                              />
+                              <polyline
+                                fill="none"
+                                stroke="#0f766e"
+                                strokeWidth="2.2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                vectorEffect="non-scaling-stroke"
+                                points={cyPolylinePoints}
+                              />
+                            </>
                           )}
-                          {period.ly.detractorPct > 0 && (
-                            <div 
-                              style={{ height: `${period.ly.detractorPct}%` }} 
-                              className="bg-rose-300/50 hover:bg-rose-300/70 transition-colors"
-                              title={`LY Detractors: ${period.ly.detractorPct}%`}
-                            />
-                          )}
+                        </svg>
+
+                        {/* Circular NPS Dots & 1-Decimal Score Labels */}
+                        <div className="absolute inset-0 pointer-events-none z-30">
+                          {lyPointsList.map((pt) => (
+                            <div
+                              key={`ly-dot-${pt.idx}`}
+                              style={{ left: `${pt.xPct}%`, bottom: `${pt.yPct}%` }}
+                              className="absolute -translate-x-1/2 translate-y-1/2"
+                            >
+                              <div className="w-2.5 h-2.5 rounded-full bg-slate-500 border-2 border-white shadow-xs" />
+                            </div>
+                          ))}
+
+                          {cyPointsList.map((pt) => (
+                            <div
+                              key={`cy-dot-${pt.idx}`}
+                              style={{ left: `${pt.xPct}%`, bottom: `${pt.yPct}%` }}
+                              className="absolute -translate-x-1/2 translate-y-1/2 flex flex-col items-center"
+                            >
+                              <span className="absolute bottom-full mb-1 px-1 py-px rounded bg-white/85 text-slate-900 text-[9px] sm:text-[10px] font-extrabold leading-tight whitespace-nowrap shadow-2xs tabular-nums">
+                                {pt.period.cy.nps.toFixed(1)}
+                              </span>
+                              <div className="w-3 h-3 rounded-full bg-teal-700 border-2 border-white shadow-sm" />
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    )}
 
-                    {/* CURRENT YEAR COLUMN */}
-                    <div className="h-full flex-1 flex flex-col justify-end items-center relative max-w-[24px]">
-                      {/* NPS dot for Current Year */}
-                      <div 
-                        style={{ bottom: `${(period.cy.nps + 100) / 2}%` }}
-                        className="absolute w-2.5 h-2.5 rounded-full bg-slate-900 border-2 border-white shadow-md z-30 hover:scale-150 transition-all cursor-help"
-                        title={`CY NPS: ${period.cy.nps > 0 ? `+${period.cy.nps}` : period.cy.nps}`}
-                      />
-
-                      {/* Stacked Bar for Current Year */}
-                      <div className="w-full h-full flex flex-col justify-end rounded-md overflow-hidden bg-slate-50 shadow-xs border border-slate-100">
-                        {period.cy.promoterPct > 0 && (
-                          <div 
-                            style={{ height: `${period.cy.promoterPct}%` }} 
-                            className="bg-emerald-500/95 hover:bg-emerald-500 transition-colors"
-                            title={`CY Promoters: ${period.cy.promoterPct}%`}
-                          />
-                        )}
-                        {period.cy.passivePct > 0 && (
-                          <div 
-                            style={{ height: `${period.cy.passivePct}%` }} 
-                            className="bg-amber-400/90 hover:bg-amber-400 transition-colors"
-                            title={`CY Passives: ${period.cy.passivePct}%`}
-                          />
-                        )}
-                        {period.cy.detractorPct > 0 && (
-                          <div 
-                            style={{ height: `${period.cy.detractorPct}%` }} 
-                            className="bg-rose-500/90 hover:bg-rose-500 transition-colors"
-                            title={`CY Detractors: ${period.cy.detractorPct}%`}
-                          />
-                        )}
+                      {/* Right Y-Axis (NPS Scale) */}
+                      <div className="relative w-7 shrink-0 h-[220px] select-none">
+                        {yTicks.map((tick, i) => (
+                          <span
+                            key={tick}
+                            style={{ bottom: `${tick}%` }}
+                            className="absolute left-0.5 translate-y-1/2 text-[9px] font-bold text-slate-400 tabular-nums"
+                          >
+                            {rightTicks[i]}
+                          </span>
+                        ))}
                       </div>
                     </div>
 
-                    {/* Combined Tooltip on Group Hover */}
-                    <div className="opacity-0 group-hover:opacity-100 absolute -top-14 bg-slate-800 text-white text-[9px] font-medium px-2 py-1.5 rounded shadow-lg z-40 transition-opacity pointer-events-none whitespace-nowrap leading-relaxed border border-slate-700">
-                      <div className="font-bold border-b border-slate-700 pb-0.5 mb-0.5 text-center">{period.name}</div>
-                      <div className="flex gap-4">
-                        <div>
-                          <span className="font-bold text-emerald-400">CY:</span> NPS {period.cy.nps > 0 ? `+${period.cy.nps}` : period.cy.nps} | Avg {period.cy.avgScore}
-                        </div>
-                        {showLastYear && (
-                          <div>
-                            <span className="font-bold text-slate-400">LY:</span> NPS {period.ly.nps > 0 ? `+${period.ly.nps}` : period.ly.nps} | Avg {period.ly.avgScore}
-                          </div>
-                        )}
+                    {/* X-Axis labels aligned 1:1 with columns */}
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <div className="w-7 shrink-0" />
+                      <div className="flex-1 flex items-center text-[9px] sm:text-[10px] text-slate-500 font-bold">
+                        {trendData.map((period, idx) => (
+                          <span key={idx} className="text-center flex-1 min-w-0 truncate px-0.5">
+                            {period.name.replace('Week of ', '')}
+                          </span>
+                        ))}
                       </div>
+                      <div className="w-7 shrink-0" />
                     </div>
-
                   </div>
-                ))}
-              </div>
-
-              {/* X-Axis labels */}
-              <div className="flex justify-between items-center text-[9px] sm:text-[10px] text-slate-400 font-bold mt-2 px-2 gap-1">
-                {trendData.map((period, idx) => (
-                  <span key={idx} className="text-center flex-1 truncate">{period.name.replace('Week of ', '')}</span>
-                ))}
-              </div>
+                );
+              })()}
 
               {/* Chart Legend */}
               <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mt-3 pt-3 border-t border-slate-50 text-[10px] font-bold text-slate-500">
@@ -1319,11 +1552,19 @@ export default function ExecutiveOverview({
                   </>
                 )}
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-900 border-2 border-white shadow-xs" /> CY NPS Curve
+                  <span className="relative flex items-center justify-center w-5 h-2.5">
+                    <span className="absolute inset-x-0 h-[2px] bg-teal-700 rounded-full" />
+                    <span className="relative w-2.5 h-2.5 rounded-full bg-teal-700 border-2 border-white shadow-xs" />
+                  </span>
+                  CY NPS Score
                 </span>
                 {showLastYear && (
                   <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-slate-400 border-2 border-white shadow-xs" /> LY NPS Curve
+                    <span className="relative flex items-center justify-center w-5 h-2.5">
+                      <span className="absolute inset-x-0 border-t-2 border-dashed border-slate-500" />
+                      <span className="relative w-2 h-2 rounded-full bg-slate-500 border border-white shadow-xs" />
+                    </span>
+                    LY NPS Score
                   </span>
                 )}
               </div>
