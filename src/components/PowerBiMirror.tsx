@@ -532,14 +532,20 @@ export default function PowerBiMirror({
           const list = chartData[chName];
           const isChannelSelected = selectedChartFilter.channel === chName;
           
-          // Determine scale max based on chart name to match Power BI scales
-          const maxVal = chName === 'SVC' ? 30 : chName === 'ASC' ? 25 : 15;
-          const gridLines = chName === 'SVC' ? [0, 10, 20, 30] : chName === 'ASC' ? [0, 10, 20] : [0, 5, 10];
+          // Determine scale max based on chart name and data (0 at bottom, maxVal at top)
+          const defaultMax = chName === 'SVC' ? 30 : chName === 'ASC' ? 20 : 15;
+          const step = chName === 'GTW' ? 5 : 10;
+          const highestTotal = list.reduce((max, pt) => Math.max(max, pt.total), 0);
+          const maxVal = highestTotal > defaultMax ? Math.ceil(highestTotal / step) * step : defaultMax;
+          const gridLines: number[] = [];
+          for (let v = 0; v <= maxVal; v += step) {
+            gridLines.push(v);
+          }
 
           return (
             <div 
               key={chName} 
-              className={`bg-slate-50/50 p-4 rounded-xl border transition-all relative min-w-0 overflow-hidden ${
+              className={`bg-slate-50/50 p-4 rounded-xl border transition-all relative min-w-0 ${
                 isChannelSelected ? 'border-amber-400 ring-2 ring-amber-100 bg-amber-50/5' : 'border-slate-200'
               }`}
             >
@@ -577,7 +583,7 @@ export default function PowerBiMirror({
               {/* Main SVG/HTML Canvas Arena */}
               <div className="flex h-48 items-stretch relative">
                 
-                {/* A. Vertical Power BI Scroll/Zoom Slider Slider */}
+                {/* A. Vertical Power BI Scroll/Zoom Slider */}
                 <div className="w-5 flex flex-col items-center justify-between py-2 shrink-0 border-r border-slate-200/60 mr-2">
                   <div className="w-1.5 h-full bg-slate-200 rounded-full relative flex flex-col justify-between">
                     {/* Top Handle */}
@@ -599,132 +605,153 @@ export default function PowerBiMirror({
                   </span>
                 </div>
 
-                {/* C. Grid & Bars container */}
-                <div className="flex-1 flex flex-col justify-between relative px-2">
+                {/* C. Totals Header + Aligned Plot Arena */}
+                <div className="flex-1 flex flex-col relative px-2 pb-1">
                   
-                  {/* Grid Lines behind bars */}
-                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none py-1">
-                    {gridLines.map((gl) => (
-                      <div key={gl} className="w-full flex items-center gap-2">
-                        <span className="text-[8px] font-mono font-bold text-slate-400 w-4 text-right">{gl}</span>
-                        <div className="flex-1 border-t border-dashed border-slate-200" />
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Horizontal GREEN Target Line at Y = 10 */}
-                  <div 
-                    style={{ bottom: `${(10 / maxVal) * 100}%` }}
-                    className="absolute left-6 right-3 border-t-2 border-dashed border-emerald-500/90 z-10 pointer-events-none flex justify-end"
-                  >
-                    <span className="bg-emerald-500 text-white text-[7px] font-black uppercase px-1 rounded -translate-y-2 translate-x-1 tracking-wider">
-                      Target 10
-                    </span>
-                  </div>
-
-                  {/* Columns */}
-                  <div className="w-full h-full flex items-end gap-2 sm:gap-3 pl-6 pr-3 pb-2 z-10 pt-4 relative">
+                  {/* Floating Total Badges row above plot area so cylinder height is 100% true-to-scale */}
+                  <div className="flex items-center gap-2 sm:gap-3 pl-6 pr-12 pb-1.5 shrink-0">
                     {list.map(pt => {
                       const isWeekSelected = selectedWeeks.includes(pt.weekKey);
-                      const isBarActive = selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName;
-
-                      // Category segment heights in percentage
-                      const promPct = (pt.promoters / maxVal) * 100;
-                      const passPct = (pt.passives / maxVal) * 100;
-                      const detrPct = (pt.detractors / maxVal) * 100;
-
                       return (
-                        <div 
-                          key={pt.weekKey} 
-                          className={`flex-1 h-full flex flex-col justify-end items-center relative group transition-all duration-300 ${
-                            !isWeekSelected ? 'opacity-20 pointer-events-none' : ''
+                        <span
+                          key={pt.weekKey}
+                          className={`flex-1 text-center text-[9px] font-black text-slate-700 transition-opacity ${
+                            !isWeekSelected ? 'opacity-20' : ''
                           }`}
                         >
-                          {/* Floating Total Badge */}
-                          <span className="text-[9px] font-black text-slate-700 mb-1 group-hover:scale-110 transition-transform">
-                            {pt.total}
-                          </span>
-
-                          {/* Stacked bar cylinder */}
-                          <div 
-                            className={`w-6 h-full flex flex-col justify-end rounded bg-slate-100 overflow-hidden shadow-xs border transition-all ${
-                              isBarActive ? 'ring-2 ring-amber-400 border-amber-500 shadow-md scale-105' : 'border-slate-200 hover:border-slate-400'
-                            }`}
-                          >
-                            {/* Promoter - top segment */}
-                            {pt.promoters > 0 && (
-                              <button 
-                                style={{ height: `${promPct}%` }}
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Promoter' })}
-                                className="bg-emerald-500 w-full hover:brightness-110 transition-all cursor-pointer relative"
-                                title={`Promoters: ${pt.promoters}`}
-                              >
-                                {pt.promoters >= 5 && (
-                                  <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
-                                    {pt.promoters}
-                                  </span>
-                                )}
-                              </button>
-                            )}
-
-                            {/* Passive - middle segment */}
-                            {pt.passives > 0 && (
-                              <button 
-                                style={{ height: `${passPct}%` }}
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Passive' })}
-                                className="bg-amber-500 w-full hover:brightness-110 transition-all cursor-pointer relative"
-                                title={`Passives: ${pt.passives}`}
-                              >
-                                {pt.passives >= 3 && (
-                                  <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
-                                    {pt.passives}
-                                  </span>
-                                )}
-                              </button>
-                            )}
-
-                            {/* Detractor - bottom segment */}
-                            {pt.detractors > 0 && (
-                              <button 
-                                style={{ height: `${detrPct}%` }}
-                                onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Detractor' })}
-                                className="bg-rose-500 w-full hover:brightness-110 transition-all cursor-pointer relative"
-                                title={`Detractors: ${pt.detractors}`}
-                              >
-                                {pt.detractors >= 1 && (
-                                  <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
-                                    {pt.detractors}
-                                  </span>
-                                )}
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Hover Tooltip Info */}
-                          <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] rounded p-2 shadow-lg z-30 pointer-events-none transition-opacity whitespace-nowrap mb-6 flex flex-col gap-0.5 border border-slate-700/50">
-                            <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5 text-amber-400">Week {pt.week} ({pt.year}) Details</span>
-                            <span className="flex items-center gap-1">🟢 Promoters: <strong className="font-mono">{pt.promoters}</strong></span>
-                            <span className="flex items-center gap-1">🟡 Passives: <strong className="font-mono">{pt.passives}</strong></span>
-                            <span className="flex items-center gap-1">🔴 Detractors: <strong className="font-mono">{pt.detractors}</strong></span>
-                            <span className="flex items-center gap-1 border-t border-slate-700/50 pt-0.5 mt-0.5">📊 Total Count: <strong className="font-mono text-white">{pt.total}</strong></span>
-                          </div>
-
-                        </div>
+                          {pt.total}
+                        </span>
                       );
                     })}
+                  </div>
+
+                  {/* Plot Area: Grid lines, Target 10 line, and Bar Cylinders share exact 0..maxVal bounds */}
+                  <div className="relative flex-1">
+                    {/* Grid Lines behind bars (0 at bottom, maxVal at top) */}
+                    <div className="absolute inset-0 pointer-events-none">
+                      {gridLines.map((gl) => (
+                        <div
+                          key={gl}
+                          style={{ bottom: `${(gl / maxVal) * 100}%` }}
+                          className="absolute left-0 right-0 flex items-center translate-y-1/2"
+                        >
+                          <span className="text-[8px] font-mono font-bold text-slate-400 w-5 text-right pr-1.5 shrink-0">{gl}</span>
+                          <div className="flex-1 border-t border-dashed border-slate-200" />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Horizontal GREEN Target Line at exact Y = 10 */}
+                    {maxVal >= 10 && (
+                      <div
+                        style={{ bottom: `${(10 / maxVal) * 100}%` }}
+                        className="absolute left-5 right-0 border-t-2 border-dashed border-emerald-500/90 z-20 pointer-events-none flex justify-end"
+                      >
+                        <span className="bg-emerald-500 text-white text-[7px] font-black uppercase px-1.5 py-0.5 rounded -translate-y-1/2 tracking-wider shadow-2xs">
+                          Target 10
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Columns (h-full spans exact 0..maxVal height) */}
+                    <div className="w-full h-full flex items-end gap-2 sm:gap-3 pl-6 pr-12 z-10 relative">
+                      {list.map(pt => {
+                        const isWeekSelected = selectedWeeks.includes(pt.weekKey);
+                        const isBarActive = selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName;
+
+                        // Category segment heights in exact percentage of maxVal
+                        const promPct = (pt.promoters / maxVal) * 100;
+                        const passPct = (pt.passives / maxVal) * 100;
+                        const detrPct = (pt.detractors / maxVal) * 100;
+
+                        return (
+                          <div 
+                            key={pt.weekKey} 
+                            className={`flex-1 h-full flex flex-col justify-end items-center relative group transition-all duration-300 ${
+                              !isWeekSelected ? 'opacity-20 pointer-events-none' : ''
+                            }`}
+                          >
+                            {/* Stacked bar cylinder */}
+                            <div 
+                              className={`w-6 h-full flex flex-col justify-end rounded bg-slate-100/80 overflow-hidden shadow-xs border transition-all ${
+                                isBarActive ? 'ring-2 ring-amber-400 border-amber-500 shadow-md scale-105' : 'border-slate-200 hover:border-slate-400'
+                              }`}
+                            >
+                              {/* Promoter - top segment */}
+                              {pt.promoters > 0 && (
+                                <button 
+                                  style={{ height: `${promPct}%` }}
+                                  onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Promoter' })}
+                                  className="bg-emerald-500 w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                  title={`Promoters: ${pt.promoters}`}
+                                >
+                                  {pt.promoters >= 5 && (
+                                    <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
+                                      {pt.promoters}
+                                    </span>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Passive - middle segment */}
+                              {pt.passives > 0 && (
+                                <button 
+                                  style={{ height: `${passPct}%` }}
+                                  onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Passive' })}
+                                  className="bg-amber-500 w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                  title={`Passives: ${pt.passives}`}
+                                >
+                                  {pt.passives >= 3 && (
+                                    <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
+                                      {pt.passives}
+                                    </span>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Detractor - bottom segment */}
+                              {pt.detractors > 0 && (
+                                <button 
+                                  style={{ height: `${detrPct}%` }}
+                                  onClick={() => setSelectedChartFilter({ channel: chName, week: pt.weekKey, category: 'Detractor' })}
+                                  className="bg-rose-500 w-full hover:brightness-110 transition-all cursor-pointer relative"
+                                  title={`Detractors: ${pt.detractors}`}
+                                >
+                                  {pt.detractors >= 1 && (
+                                    <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-white">
+                                      {pt.detractors}
+                                    </span>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Hover Tooltip Info */}
+                            <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] rounded p-2 shadow-lg z-30 pointer-events-none transition-opacity whitespace-nowrap mb-2 flex flex-col gap-0.5 border border-slate-700/50">
+                              <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5 text-amber-400">Week {pt.week} ({pt.year}) Details</span>
+                              <span className="flex items-center gap-1">🟢 Promoters: <strong className="font-mono">{pt.promoters}</strong></span>
+                              <span className="flex items-center gap-1">🟡 Passives: <strong className="font-mono">{pt.passives}</strong></span>
+                              <span className="flex items-center gap-1">🔴 Detractors: <strong className="font-mono">{pt.detractors}</strong></span>
+                              <span className="flex items-center gap-1 border-t border-slate-700/50 pt-0.5 mt-0.5">📊 Total Count: <strong className="font-mono text-white">{pt.total}</strong></span>
+                            </div>
+
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
 
                 </div>
               </div>
 
               {/* X Axis sequence label (Week numbers) */}
-              <div className="flex items-center text-[10px] text-slate-500 font-extrabold mt-1 border-t border-slate-100 pt-2.5">
+              <div className="flex items-center text-[10px] text-slate-500 font-extrabold mt-2 border-t border-slate-100 pt-2.5">
                 {/* Offset spacer to match Y-axis controls (A + B offsets) */}
                 <span className="w-11 shrink-0" />
                 
-                {/* Exact layout padding wrapper matching C's px-2 and columns' pl-6 pr-3 */}
+                {/* Exact layout padding wrapper matching C's px-2 and columns' pl-6 pr-12 */}
                 <div className="flex-1 px-2">
-                  <div className="flex gap-2 sm:gap-3 pl-6 pr-3">
+                  <div className="flex gap-2 sm:gap-3 pl-6 pr-12">
                     {list.map(pt => (
                       <span key={pt.weekKey} className="flex-1 text-center font-mono text-[9px]">{pt.week}</span>
                     ))}
