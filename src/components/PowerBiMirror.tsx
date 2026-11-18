@@ -6,7 +6,7 @@ import {
   Presentation, Trash2, Download, FileSpreadsheet, FileText, CheckSquare
 } from 'lucide-react';
 import { VoCRecord, TimelineEvent, ActionOwner } from '../types';
-import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix, formatTargetDeadline } from '../utils/parser';
+import { getSurveyUrl, getCleanSurveyId, getSurveyIdSuffix, formatTargetDeadline, getFollowUpTag } from '../utils/parser';
 import { exportFilteredExcelWorkbook, exportFilteredCSV } from '../utils/excelDatabase';
 import { exportVoCToPowerPoint, exportExecutiveSummarySlideToPowerPoint } from '../utils/pptxExport';
 import { motion, AnimatePresence } from 'motion/react';
@@ -35,188 +35,89 @@ interface WeeklyChartPoint {
   total: number;
 }
 
-// Helper to extract calendar week and year from a date string (e.g. "2026-06-11 11:00")
-const getYearAndWeekFromDate = (dateStr: string): { year: number; week: number; weekKey: string } => {
+// Helper to extract calendar week and year from a date string (returns null if missing/invalid)
+const getYearAndWeekFromDate = (dateStr?: string): { year: number; week: number; weekKey: string } | null => {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const trimmed = dateStr.trim();
+  if (!trimmed || trimmed.toUpperCase() === 'N/A') return null;
+
   try {
-    const d = new Date(dateStr.replace(/-/g, '/')); // simple cross-browser sanitize
-    if (isNaN(d.getTime())) return { year: 2026, week: 22, weekKey: '2026-W22' };
-    const year = d.getFullYear();
-    const startOfYear = new Date(year, 0, 1);
-    const pastDaysOfYear = (d.getTime() - startOfYear.getTime()) / 86400000;
-    const week = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
-    const weekKey = `${year}-W${String(week).padStart(2, '0')}`;
-    return { year, week, weekKey };
-  } catch (e) {
-    return { year: 2026, week: 22, weekKey: '2026-W22' };
-  }
-};
+    let parsedDate: Date | null = null;
 
-// Deterministic helper to get a response date within a specific week key and index
-const getResponseDateFromWeek = (year: number, weekNum: number, recordIdx: number): string => {
-  const janFirst = new Date(year, 0, 1);
-  const dayOffset = (weekNum - 1) * 7 - janFirst.getDay() + 1;
-  const startOfWeek = new Date(year, 0, 1 + dayOffset);
-  // Add a deterministic offset of days (e.g. 1 to 5 days) and hours
-  const dateOffset = (recordIdx % 5) + 1; // Mon to Fri
-  const d = new Date(startOfWeek.getTime() + dateOffset * 86400000);
-  
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const h = String(10 + (recordIdx % 8)).padStart(2, '0'); // hours 10 AM to 5 PM
-  const min = String(15 * (recordIdx % 4)).padStart(2, '0'); // minutes
-  
-  return `${y}-${m}-${day} ${h}:${min}`;
-};
-
-// Generates deterministic realistic VoC records to perfectly fill the charts background numbers
-const generateSynthesizedRecords = (
-  weekKey: string,
-  slotIdx: number,
-  channel: 'SVC' | 'ASC' | 'GTW',
-  category: 'Promoter' | 'Passive' | 'Detractor',
-  countNeeded: number
-): VoCRecord[] => {
-  const result: VoCRecord[] = [];
-  
-  const parts = weekKey.split('-W');
-  const year = parseInt(parts[0], 10) || 2026;
-  const weekNum = parseInt(parts[1], 10) || 22;
-
-  const customerNames = [
-    'SMART AXIATA CO. LTD', 'ABA BANK CORPORATE', 'PNH COURIER INC', 'SATHAPANA BANK',
-    'CAMBODIAN BEVERAGE CO.', 'CHIP MONG GROUP', 'GGB TRADING CO.', 'HONG KONG LAND KH',
-    'KHEMA MEDICAL CENTER', 'ISI STEEL CO. LTD', 'SINA COURIER EXP', 'LBL INTERNATIONAL',
-    'PPC BANK', 'PRASAC MICROFINANCE', 'ROYAL GROUP CAMBODIA'
-  ];
-
-  const owners = ['Thida Sovann', 'Panha Chhun', 'Rathana Hout', 'Sreynich Kong', 'Sophy Long'];
-
-  const promoterTemplates = {
-    SVC: [
-      "Excellent courier service! The shipment arrived early and the clearance was extremely fast.",
-      "DHL SVC always delivers top notch speed. Sophy Long was very professional in updating me.",
-      "Speedy delivery and highly polite driver. Track and trace updates were extremely precise.",
-      "Outstanding express clearance and seamless support. Truly professional delivery experience!"
-    ],
-    ASC: [
-      "Very smooth ASC handoff and prompt verification. Excellent communication by the staff.",
-      "Fast documentation support at the air support center. Clear instructions and zero delays.",
-      "We received our business documents way ahead of schedule. Professional and organized team!"
-    ],
-    GTW: [
-      "Our large pallet cargo was cleared by the GTW team in record time. Excellent support!",
-      "Superb response. Gate clearance broker resolved the invoice description issue proactively."
-    ]
-  };
-
-  const passiveTemplates = {
-    SVC: [
-      "The parcel was delivered on time, but getting the billing invoice clarification took multiple calls.",
-      "Delivery rider was very polite, but the online portal was slow to update the active status.",
-      "Decent express delivery, but the remote area surcharge policy could be made clearer beforehand."
-    ],
-    ASC: [
-      "Documentation verification was successful, but they requested some re-scans of existing files.",
-      "Satisfactory handoff, although ASC helpline took several attempts to connect me to our broker."
-    ],
-    GTW: [
-      "Cargo cleared, but gateway terminal fees were slightly confusing. Good response overall.",
-      "Minor delay in physical verification at the customs dock, but Courier resolved it quickly."
-    ]
-  };
-
-  const detractorTemplates = {
-    SVC: [
-      "Extremely slow customs clearance. The package was held for 4 days without any clear notification.",
-      "Worst experience. Surcharge was billed incorrectly and helpdesk failed to coordinate the refund.",
-      "Hotline menus are too confusing. I got stuck in the IVR for an hour trying to trace my shipment."
-    ],
-    ASC: [
-      "ASC team failed to notify us about the missing import certificate, delaying our urgent documents.",
-      "Highly frustrated with ASC verification delays. Nobody takes ownership of clearance issues."
-    ],
-    GTW: [
-      "Freight stuck at the gateway warehouse for a whole week. Clearance support was unresponsive.",
-      "Duties were calculated incorrectly because shipper invoice was misclassified by GTW customs team."
-    ]
-  };
-
-  for (let i = 0; i < countNeeded; i++) {
-    const seed = slotIdx * 100 + i;
-    
-    let likelihood = 8;
-    if (category === 'Promoter') {
-      likelihood = 9 + (seed % 2); // 9 or 10
-    } else if (category === 'Passive') {
-      likelihood = 7 + (seed % 2); // 7 or 8
-    } else {
-      likelihood = 1 + (seed % 6); // 1 to 6
+    // 1. Numeric Excel serial date (e.g. "46295")
+    if (/^\d+(\.\d+)?$/.test(trimmed)) {
+      const serial = Number(trimmed);
+      if (serial > 1000 && serial < 100000) {
+        const d = new Date((serial - 25569) * 86400 * 1000);
+        if (!isNaN(d.getTime())) {
+          parsedDate = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+        }
+      }
     }
 
-    const customerName = customerNames[seed % customerNames.length];
-    const owner = owners[seed % owners.length];
-    const awbNumber = '86' + String(10000000 + (seed * 1234567) % 90000000);
-
-    const templates = category === 'Promoter' ? promoterTemplates :
-                      category === 'Passive' ? passiveTemplates : detractorTemplates;
-    const channelTemplates = templates[channel] || templates['SVC'];
-    const comment = channelTemplates[seed % channelTemplates.length];
-
-    const responseDate = getResponseDateFromWeek(year, weekNum, i);
-    const respD = new Date(responseDate.replace(/-/g, '/'));
-    const creationD = new Date(respD.getTime() - (1 + (seed % 2)) * 86400000 - 3600000 * (seed % 6));
-    const cy = creationD.getFullYear();
-    const cm = String(creationD.getMonth() + 1).padStart(2, '0');
-    const cd = String(creationD.getDate()).padStart(2, '0');
-    const ch = String(creationD.getHours()).padStart(2, '0');
-    const cmin = String(creationD.getMinutes()).padStart(2, '0');
-    const creationDate = `${cy}-${cm}-${cd} ${ch}:${cmin}`;
-
-    const id = String(28180000 + slotIdx * 1000 + (channel === 'SVC' ? 100 : channel === 'ASC' ? 200 : 300) + (category === 'Promoter' ? 10 : category === 'Passive' ? 20 : 30) + i);
-
-    const timeline = [
-      {
-        timestamp: creationDate.split(' ')[0],
-        action: `Alert Created: ${category} Alert`,
-        status: 'Completed' as const,
-        pic: 'System'
-      },
-      {
-        timestamp: responseDate.split(' ')[0],
-        action: `Case reviewed and closed by ${owner}`,
-        status: 'Closed' as const,
-        pic: owner
+    // 2. YYYY-MM-DD or YYYY/MM/DD (with optional T or space time)
+    if (!parsedDate) {
+      const ymd = trimmed.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s].*)?$/);
+      if (ymd) {
+        const y = parseInt(ymd[1], 10);
+        const m = parseInt(ymd[2], 10) - 1;
+        const d = parseInt(ymd[3], 10);
+        const candidate = new Date(y, m, d);
+        if (!isNaN(candidate.getTime()) && candidate.getFullYear() === y && candidate.getMonth() === m && candidate.getDate() === d) {
+          parsedDate = candidate;
+        }
       }
-    ];
+    }
 
-    const actionDetailsRaw = `[${creationDate}] Alert Created: ${category} Alert; [${responseDate}] Case reviewed and closed by ${owner};`;
+    // 3. DD/MM/YYYY or DD-MM-YYYY (with MM/DD/YYYY disambiguation)
+    if (!parsedDate) {
+      const dmy = trimmed.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?:[T\s].*)?$/);
+      if (dmy) {
+        const p1 = parseInt(dmy[1], 10);
+        const p2 = parseInt(dmy[2], 10);
+        let y = parseInt(dmy[3], 10);
+        if (y < 100) y += y < 50 ? 2000 : 1900;
 
-    result.push({
-      id,
-      likelihood,
-      category,
-      comment,
-      owner,
-      status: 'Completed',
-      interaction: `PNH${channel}`,
-      journeyName: 'I get the shipment delivered/self collect',
-      momentOfTruthName: channel === 'GTW' ? 'Duties and Taxes Payment' : 'Delivery by Courier',
-      transactionName: channel === 'GTW' ? 'Duties and Taxes Payment' : 'Delivery by Courier',
-      easeOfUse: likelihood >= 9 ? 9 : likelihood >= 7 ? 7 : 3,
-      responseDate,
-      creationDate,
-      customerName,
-      awbNumber,
-      topic: channel === 'GTW' ? 'Customs Clearance' : 'Courier Service Delivery',
-      sentiment: category === 'Promoter' ? 'POSITIVE' : category === 'Passive' ? 'NEUTRAL' : 'NEGATIVE',
-      timeline,
-      actionDetailsRaw,
-      followUpComments: category === 'Detractor' ? 'Contacted customer, clarified clearance fee invoice, apologized for courier menu confusion.' : 'Self service automated feedback received.'
-    });
+        let day = p1;
+        let month = p2;
+        if (p2 > 12) {
+          day = p2;
+          month = p1;
+        }
+
+        const candidate = new Date(y, month - 1, day);
+        if (!isNaN(candidate.getTime()) && candidate.getFullYear() === y && candidate.getMonth() === month - 1 && candidate.getDate() === day) {
+          parsedDate = candidate;
+        }
+      }
+    }
+
+    // 4. General Date fallback (handles ISO strings, "15 Jun 2026", etc.)
+    if (!parsedDate) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) {
+        parsedDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      } else {
+        const dSlash = new Date(trimmed.replace(/-/g, '/'));
+        if (!isNaN(dSlash.getTime())) {
+          parsedDate = new Date(dSlash.getFullYear(), dSlash.getMonth(), dSlash.getDate());
+        }
+      }
+    }
+
+    if (!parsedDate || isNaN(parsedDate.getTime())) return null;
+
+    const year = parsedDate.getFullYear();
+    if (year < 1970 || year > 2100) return null;
+
+    const startOfYear = new Date(year, 0, 1);
+    const pastDaysOfYear = Math.round((parsedDate.getTime() - startOfYear.getTime()) / 86400000);
+    const week = Math.max(1, Math.min(53, Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7)));
+    const weekKey = `${year}-W${String(week).padStart(2, '0')}`;
+    return { year, week, weekKey };
+  } catch {
+    return null;
   }
-
-  return result;
 };
 
 export default function PowerBiMirror({ 
@@ -234,7 +135,6 @@ export default function PowerBiMirror({
   // --- States for Dropdown Filters ---
   const [responseFeed, setResponseFeed] = useState<'All' | 'Detractor' | 'Passive' | 'Promoter'>('All');
   const [npsCategory, setNpsCategory] = useState<'All' | 'Detractor' | 'Passive' | 'Promoter'>('All');
-  const [selectedWeeks, setSelectedWeeks] = useState<string[]>(['2026-W19', '2026-W20', '2026-W21', '2026-W22', '2026-W23', '2026-W24']);
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [showFeedDropdown, setShowFeedDropdown] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
@@ -281,105 +181,44 @@ export default function PowerBiMirror({
     }
   };
 
-  // --- Dynamic Mappings & Fallback Synthesis ---
-  // Ensure we include the target record from the screenshot (MINOR INSTRUMENTS SET) if not already present
-  const mergedRecords = useMemo(() => {
-    const hasScreenshotRecord = records.some(r => r.id === '284669518');
-    if (hasScreenshotRecord) return records;
-
-    const screenshotRecord: VoCRecord = {
-      id: '284669518',
-      likelihood: 1,
-      category: 'Detractor',
-      comment: "It seems that DHL's customs clearance process has been slower recently compared to other logistics companies, which are handling clearance and deliveries more efficiently",
-      customSummary: "⏳ Slower customs clearance: Customs process slower compared to competitors; customer recommends workflow efficiency review.",
-      actionDetailsRaw: "[2026-06-11 11:00:00] Alert Created: Detractor: No follow-up; [2026-06-12 14:00:00] Case reviewed by CCO Specialist; [2026-06-15 16:00:00] Closed with standard apology.",
-      timeline: [
-        { timestamp: '11 Jun 2026', action: 'Alert Created: Detractor: No follow-up', status: 'Completed', pic: 'System' },
-        { timestamp: '12 Jun 2026', action: 'Case reviewed by CCO Specialist', status: 'Completed', pic: 'Thida Sovann' }
-      ],
-      owner: 'Thida Sovann',
-      status: 'Completed',
-      interaction: 'PNHGTW',
-      followUpComments: 'No follow-up required by requester.',
-      transactionName: 'Duties and Taxes Payment',
-      easeOfUse: 2,
-      customerName: 'MINOR INSTRUMENTS SET',
-      awbNumber: '8608310421',
-      topic: 'Customs Clearance',
-      sentiment: 'NEGATIVE',
-      responseDate: '2026-06-15 16:00',
-      creationDate: '2026-06-11 11:00'
-    };
-
-    return [screenshotRecord, ...records];
-  }, [records]);
-
-  // 1. Map existing mergedRecords to their baseline dates/weeks/channels first to avoid circular dependencies
+  // --- Dynamic Mappings directly from actual records (no forced Week 22 injection or fake data) ---
   const initialMapped = useMemo(() => {
-    return mergedRecords.map((r, idx) => {
-      let week = 22; // default middle week
-      let year = 2026;
-      let weekKey = '2026-W22';
-      let channel: 'SVC' | 'ASC' | 'GTW' = 'GTW';
-      let alertType = 'Detractor: No follow-up';
+    return records.map((r, idx) => {
+      let week = 0;
+      let year = 0;
+      let weekKey = '';
 
-      // Assign realistic weeks 19-24 based on original dates/ids
-      if (r.id === '246896936') {
-        week = 19; year = 2026; weekKey = '2026-W19';
-        channel = 'GTW';
-        alertType = 'Detractor: No follow-up';
-      } else if (r.id === '263437429') {
-        week = 20; year = 2026; weekKey = '2026-W20';
-        channel = 'SVC';
-        alertType = 'Detractor: No follow-up';
-      } else if (r.id === '28167332') {
-        week = 21; year = 2026; weekKey = '2026-W21';
-        channel = 'SVC';
-        alertType = 'Detractor: No follow-up';
-      } else if (r.id === '28172901') {
-        week = 22; year = 2026; weekKey = '2026-W22';
-        channel = 'SVC';
-        alertType = 'Promoter feedback';
-      } else if (r.id === '281681709') {
-        week = 22; year = 2026; weekKey = '2026-W22';
-        channel = 'ASC';
-        alertType = 'Detractor: Requested follow-up';
-      } else if (r.id === '28169450') {
-        week = 23; year = 2026; weekKey = '2026-W23';
-        channel = 'ASC';
-        alertType = 'Passive follow-up required';
-      } else if (r.id === '28174411') {
-        week = 24; year = 2026; weekKey = '2026-W24';
-        channel = 'GTW';
-        alertType = 'Critical detractor alert';
-      } else if (r.id === '284669518') {
-        week = 22; year = 2026; weekKey = '2026-W22';
-        channel = 'GTW';
-        alertType = 'Detractor: No follow-up';
-      } else {
-        // Fallback for custom uploaded files - parse week from date if available, otherwise spread
-        const idNum = parseInt(r.id.slice(-3), 10) || idx;
-        const targetDate = r.responseDate || r.creationDate;
-        if (targetDate) {
-          const res = getYearAndWeekFromDate(targetDate);
+      // Resolve week strictly from actual record dates (responseDate -> creationDate -> timeline -> raw logs)
+      const rawTimestampMatch = r.actionDetailsRaw?.match(/\[\s*(\d{1,4}[-/.]\d{1,4}[-/.]\d{2,4})/);
+      const dateCandidates = [
+        r.responseDate,
+        r.creationDate,
+        r.timeline?.[0]?.timestamp,
+        rawTimestampMatch?.[1]
+      ];
+
+      for (const candidate of dateCandidates) {
+        const res = getYearAndWeekFromDate(candidate);
+        if (res) {
           week = res.week;
           year = res.year;
           weekKey = res.weekKey;
-        } else {
-          week = 19 + (idNum % 6); // spread across 19-24
-          year = 2026;
-          weekKey = `2026-W${week}`;
+          break;
         }
-        
-        const facility = (r.interaction || '').toUpperCase();
-        if (facility.includes('SVC') || idNum % 3 === 0) channel = 'SVC';
-        else if (facility.includes('ASC') || idNum % 3 === 1) channel = 'ASC';
-        else channel = 'GTW';
-
-        alertType = r.category === 'Promoter' ? 'Promoter feedback' : 
-                    r.category === 'Passive' ? 'Passive follow-up' : 'Detractor: No follow-up';
       }
+
+      const idNum = parseInt(r.id.slice(-3), 10) || idx;
+      const facility = (r.interaction || '').toUpperCase();
+      let channel: 'SVC' | 'ASC' | 'GTW' = 'GTW';
+      if (facility.includes('SVC') || idNum % 3 === 0) {
+        channel = 'SVC';
+      } else if (facility.includes('ASC') || idNum % 3 === 1) {
+        channel = 'ASC';
+      } else {
+        channel = 'GTW';
+      }
+
+      const alertType = getFollowUpTag(r);
 
       return {
         ...r,
@@ -391,101 +230,31 @@ export default function PowerBiMirror({
         facility: r.interaction || `PNH${channel}`
       };
     });
-  }, [mergedRecords]);
+  }, [records]);
 
-  // --- Dynamic Latest 6 Weeks Computation directly from initialMapped ---
+  // --- Dynamic Latest 6 Weeks Computation directly from actual records ---
   const latest6WeeksKeys = useMemo(() => {
     const keysSet = new Set<string>();
     initialMapped.forEach(r => {
-      if (r.weekKey !== undefined) {
+      if (r.weekKey) {
         keysSet.add(r.weekKey);
       }
     });
     if (keysSet.size === 0) {
-      return ['2026-W19', '2026-W20', '2026-W21', '2026-W22', '2026-W23', '2026-W24'];
+      return [];
     }
-    const sorted = Array.from(keysSet).sort(); // Alphabetical sort of YYYY-WXX is chronological!
+    const sorted = Array.from(keysSet).sort(); // Alphabetical sort of YYYY-WXX is chronological
     return sorted.slice(-6);
   }, [initialMapped]);
 
   const latest6WeeksStr = latest6WeeksKeys.join(',');
-  const [prevLatest6WeeksStr, setPrevLatest6WeeksStr] = useState(latest6WeeksStr);
+  const [selectedWeeks, setSelectedWeeks] = useState<string[]>(latest6WeeksKeys);
 
   React.useEffect(() => {
-    if (latest6WeeksStr !== prevLatest6WeeksStr) {
-      setSelectedWeeks(latest6WeeksKeys);
-      setPrevLatest6WeeksStr(latest6WeeksStr);
-    }
-  }, [latest6WeeksStr, prevLatest6WeeksStr, latest6WeeksKeys]);
+    setSelectedWeeks(latest6WeeksKeys);
+  }, [latest6WeeksStr]);
 
-  // Combine initial mapped records and synthesized baseline records to fill background chart numbers
-  const mappedRecords = useMemo(() => {
-    const list = [...initialMapped];
-
-    // Baseline chart data targets mapped by slot index (0 to 5)
-    const baseSVCData = [
-      { promoters: 18, passives: 0, detractors: 0 },
-      { promoters: 0, passives: 11, detractors: 0 },
-      { promoters: 19, passives: 0, detractors: 0 },
-      { promoters: 25, passives: 2, detractors: 0 },
-      { promoters: 18, passives: 2, detractors: 0 },
-      { promoters: 14, passives: 0, detractors: 0 }
-    ];
-
-    const baseASCData = [
-      { promoters: 1, passives: 0, detractors: 0 },
-      { promoters: 3, passives: 0, detractors: 0 },
-      { promoters: 3, passives: 3, detractors: 1 },
-      { promoters: 17, passives: 4, detractors: 0 },
-      { promoters: 5, passives: 1, detractors: 1 },
-      { promoters: 1, passives: 0, detractors: 0 }
-    ];
-
-    const baseGTWData = [
-      { promoters: 2, passives: 0, detractors: 0 },
-      { promoters: 3, passives: 0, detractors: 0 },
-      { promoters: 5, passives: 1, detractors: 0 },
-      { promoters: 5, passives: 4, detractors: 3 },
-      { promoters: 8, passives: 0, detractors: 4 },
-      { promoters: 7, passives: 0, detractors: 1 }
-    ];
-    
-    // For each week key in latest6WeeksKeys, we count how many records we have in each bucket
-    latest6WeeksKeys.forEach((wKey, index) => {
-      const slot = Math.min(index, 5);
-      
-      const channels: ('SVC' | 'ASC' | 'GTW')[] = ['SVC', 'ASC', 'GTW'];
-      const categories: ('Promoter' | 'Passive' | 'Detractor')[] = ['Promoter', 'Passive', 'Detractor'];
-      
-      channels.forEach(ch => {
-        categories.forEach(cat => {
-          // Count existing in initialMapped
-          const existingCount = initialMapped.filter(r => r.weekKey === wKey && r.channel === ch && r.category === cat).length;
-          
-          // Get target count from base data
-          let target = 0;
-          if (ch === 'SVC') {
-            const data = baseSVCData[slot];
-            target = cat === 'Promoter' ? data.promoters : cat === 'Passive' ? data.passives : data.detractors;
-          } else if (ch === 'ASC') {
-            const data = baseASCData[slot];
-            target = cat === 'Promoter' ? data.promoters : cat === 'Passive' ? data.passives : data.detractors;
-          } else {
-            const data = baseGTWData[slot];
-            target = cat === 'Promoter' ? data.promoters : cat === 'Passive' ? data.passives : data.detractors;
-          }
-          
-          const needed = target - existingCount;
-          if (needed > 0) {
-            const synthesized = generateSynthesizedRecords(wKey, slot, ch, cat, needed);
-            list.push(...synthesized);
-          }
-        });
-      });
-    });
-    
-    return list;
-  }, [initialMapped, latest6WeeksKeys]);
+  const mappedRecords = initialMapped;
 
   // --- Chart Dataset Computations ---
   // Count counts solely and dynamically from mappedRecords to guarantee 100% data alignment!
@@ -496,8 +265,8 @@ export default function PowerBiMirror({
 
     latest6WeeksKeys.forEach((wKey, index) => {
       const parts = wKey.split('-W');
-      const year = parseInt(parts[0], 10) || 2026;
-      const week = parseInt(parts[1], 10) || 22;
+      const year = parseInt(parts[0], 10) || new Date().getFullYear();
+      const week = parseInt(parts[1], 10) || 1;
 
       baseSVC[wKey] = { week, weekKey: wKey, year, promoters: 0, passives: 0, detractors: 0, total: 0 };
       baseASC[wKey] = { week, weekKey: wKey, year, promoters: 0, passives: 0, detractors: 0, total: 0 };
@@ -546,7 +315,7 @@ export default function PowerBiMirror({
       }
 
       // 2. Year. Week Checkbox Filter
-      if (!selectedWeeks.includes(r.weekKey)) {
+      if (selectedWeeks.length > 0 && r.weekKey && !selectedWeeks.includes(r.weekKey)) {
         return false;
       }
 
@@ -735,7 +504,7 @@ export default function PowerBiMirror({
       const yr = parseInt(wKey.split('-W')[0], 10);
       if (!isNaN(yr)) years.add(yr);
     });
-    if (years.size === 0) return '2026 WEEK';
+    if (years.size === 0) return `${new Date().getFullYear()} WEEK`;
     const sortedYears = Array.from(years).sort();
     return `${sortedYears.join('-')} WEEK`;
   }, [latest6WeeksKeys]);
