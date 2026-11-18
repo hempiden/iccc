@@ -144,7 +144,7 @@ export default function ExecutiveOverview({
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const currentMonthName = monthNames[currentMonth];
 
-    // Helper to calculate NPS
+    // Helper to calculate NPS with 1 decimal precision
     const calculateNPSForList = (list: VoCRecord[]) => {
       if (list.length === 0) return 0;
       let promoters = 0;
@@ -153,7 +153,7 @@ export default function ExecutiveOverview({
         if (r.category === 'Promoter') promoters++;
         else if (r.category === 'Detractor') detractors++;
       });
-      return Math.round(((promoters - detractors) / list.length) * 100);
+      return parseFloat((((promoters - detractors) / list.length) * 100).toFixed(1));
     };
 
     // 2. Filter current year YTD and MTD records
@@ -254,11 +254,11 @@ export default function ExecutiveOverview({
     // 5. NPS
     const ytdNps = calculateNPSForList(ytdRecords);
     const ytdLyNps = calculateNPSForList(ytdLyRecords);
-    const ytdNpsDiff = ytdNps - ytdLyNps;
+    const ytdNpsDiff = parseFloat((ytdNps - ytdLyNps).toFixed(1));
 
     const mtdNps = calculateNPSForList(mtdRecords);
     const mtdLyNps = calculateNPSForList(mtdLyRecords);
-    const mtdNpsDiff = mtdNps - mtdLyNps;
+    const mtdNpsDiff = parseFloat((mtdNps - mtdLyNps).toFixed(1));
 
     return {
       ytdCount,
@@ -325,7 +325,7 @@ export default function ExecutiveOverview({
     const promoterPct = (promoters / total) * 100;
     const passivePct = (passives / total) * 100;
     const detractorPct = (detractors / total) * 100;
-    const nps = Math.round(promoterPct - detractorPct);
+    const nps = parseFloat((promoterPct - detractorPct).toFixed(1));
     const closedPct = (closed / total) * 100;
 
     return {
@@ -977,7 +977,7 @@ export default function ExecutiveOverview({
               <div>
                 <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">YTD NPS Score</span>
                 <span className="text-2xl font-black text-slate-800 tracking-tight mt-1 block animate-fade-in">
-                  {ytdMtdStats.ytdNps > 0 ? `+${ytdMtdStats.ytdNps}` : ytdMtdStats.ytdNps}
+                  {ytdMtdStats.ytdNps > 0 ? `+${ytdMtdStats.ytdNps.toFixed(1)}` : ytdMtdStats.ytdNps.toFixed(1)}
                 </span>
               </div>
               <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
@@ -987,7 +987,7 @@ export default function ExecutiveOverview({
                     ? 'bg-emerald-50 text-emerald-600' 
                     : 'bg-rose-50 text-rose-600'
                 }`}>
-                  {ytdMtdStats.ytdNpsDiff >= 0 ? '+' : ''}{ytdMtdStats.ytdNpsDiff} pts
+                  {ytdMtdStats.ytdNpsDiff >= 0 ? '+' : ''}{ytdMtdStats.ytdNpsDiff.toFixed(1)} pts
                 </div>
               </div>
             </div>
@@ -997,7 +997,7 @@ export default function ExecutiveOverview({
               <div>
                 <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 block">MTD NPS Score</span>
                 <span className="text-2xl font-black text-slate-800 tracking-tight mt-1 block">
-                  {ytdMtdStats.mtdNps > 0 ? `+${ytdMtdStats.mtdNps}` : ytdMtdStats.mtdNps}
+                  {ytdMtdStats.mtdNps > 0 ? `+${ytdMtdStats.mtdNps.toFixed(1)}` : ytdMtdStats.mtdNps.toFixed(1)}
                 </span>
               </div>
               <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-3">
@@ -1007,7 +1007,7 @@ export default function ExecutiveOverview({
                     ? 'bg-emerald-50 text-emerald-600' 
                     : 'bg-rose-50 text-rose-600'
                 }`}>
-                  {ytdMtdStats.mtdNpsDiff >= 0 ? '+' : ''}{ytdMtdStats.mtdNpsDiff} pts
+                  {ytdMtdStats.mtdNpsDiff >= 0 ? '+' : ''}{ytdMtdStats.mtdNpsDiff.toFixed(1)} pts
                 </div>
               </div>
             </div>
@@ -1061,8 +1061,8 @@ export default function ExecutiveOverview({
               </svg>
               {/* Gauge Text overlay */}
               <div className="absolute inset-0 flex flex-col items-center justify-center mt-2">
-                <span className="text-4xl font-black text-slate-800 tracking-tight tabular-nums">
-                  {stats.nps > 0 ? `+${stats.nps}` : stats.nps}
+                <span className="text-3xl font-black text-slate-800 tracking-tight tabular-nums">
+                  {stats.nps > 0 ? `+${stats.nps.toFixed(1)}` : stats.nps.toFixed(1)}
                 </span>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">NPS Rating</span>
               </div>
