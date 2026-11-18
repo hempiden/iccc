@@ -606,16 +606,16 @@ export default function PowerBiMirror({
                 </div>
 
                 {/* C. Totals Header + Aligned Plot Arena */}
-                <div className="flex-1 flex flex-col relative px-2 pb-1">
+                <div className="flex-1 min-w-0 flex flex-col relative px-2 pb-1">
                   
                   {/* Floating Total Badges row above plot area so cylinder height is 100% true-to-scale */}
-                  <div className="flex items-center gap-2 sm:gap-3 pl-6 pr-12 pb-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 pl-6 pr-12 pb-1.5 shrink-0">
                     {list.map(pt => {
                       const isWeekSelected = selectedWeeks.includes(pt.weekKey);
                       return (
                         <span
                           key={pt.weekKey}
-                          className={`flex-1 text-center text-[9px] font-black text-slate-700 transition-opacity ${
+                          className={`flex-1 min-w-0 text-center text-[9px] font-black text-slate-700 transition-opacity ${
                             !isWeekSelected ? 'opacity-20' : ''
                           }`}
                         >
@@ -633,7 +633,7 @@ export default function PowerBiMirror({
                         <div
                           key={gl}
                           style={{ bottom: `${(gl / maxVal) * 100}%` }}
-                          className="absolute left-0 right-0 flex items-center translate-y-1/2"
+                          className="absolute left-0 right-0 h-0 flex items-center"
                         >
                           <span className="text-[8px] font-mono font-bold text-slate-400 w-5 text-right pr-1.5 shrink-0">{gl}</span>
                           <div className="flex-1 border-t border-dashed border-slate-200" />
@@ -645,16 +645,17 @@ export default function PowerBiMirror({
                     {maxVal >= 10 && (
                       <div
                         style={{ bottom: `${(10 / maxVal) * 100}%` }}
-                        className="absolute left-5 right-0 border-t-2 border-dashed border-emerald-500/90 z-20 pointer-events-none flex justify-end"
+                        className="absolute left-5 right-0 h-0 z-20 pointer-events-none flex items-center"
                       >
-                        <span className="bg-emerald-500 text-white text-[7px] font-black uppercase px-1.5 py-0.5 rounded -translate-y-1/2 tracking-wider shadow-2xs">
+                        <div className="flex-1 border-t-2 border-dashed border-emerald-500/90" />
+                        <span className="bg-emerald-500 text-white text-[7px] font-black uppercase px-1.5 py-0.5 rounded tracking-wider shadow-2xs shrink-0">
                           Target 10
                         </span>
                       </div>
                     )}
 
                     {/* Columns (h-full spans exact 0..maxVal height) */}
-                    <div className="w-full h-full flex items-end gap-2 sm:gap-3 pl-6 pr-12 z-10 relative">
+                    <div className="w-full h-full flex items-end gap-1.5 pl-6 pr-12 z-10 relative">
                       {list.map(pt => {
                         const isWeekSelected = selectedWeeks.includes(pt.weekKey);
                         const isBarActive = selectedChartFilter.week === pt.weekKey && selectedChartFilter.channel === chName;
@@ -667,14 +668,14 @@ export default function PowerBiMirror({
                         return (
                           <div 
                             key={pt.weekKey} 
-                            className={`flex-1 h-full flex flex-col justify-end items-center relative group transition-all duration-300 ${
+                            className={`flex-1 min-w-0 h-full flex flex-col justify-end items-center relative group transition-all duration-300 ${
                               !isWeekSelected ? 'opacity-20 pointer-events-none' : ''
                             }`}
                           >
                             {/* Stacked bar cylinder */}
                             <div 
-                              className={`w-6 h-full flex flex-col justify-end rounded bg-slate-100/80 overflow-hidden shadow-xs border transition-all ${
-                                isBarActive ? 'ring-2 ring-amber-400 border-amber-500 shadow-md scale-105' : 'border-slate-200 hover:border-slate-400'
+                              className={`w-full max-w-[24px] h-full flex flex-col justify-end rounded bg-slate-100/80 overflow-hidden shadow-xs ring-1 ring-inset transition-all ${
+                                isBarActive ? 'ring-2 ring-amber-400 shadow-md scale-105' : 'ring-slate-200 hover:ring-slate-400'
                               }`}
                             >
                               {/* Promoter - top segment */}
@@ -746,21 +747,24 @@ export default function PowerBiMirror({
 
               {/* X Axis sequence label (Week numbers) */}
               <div className="flex items-center text-[10px] text-slate-500 font-extrabold mt-2 border-t border-slate-100 pt-2.5">
-                {/* Offset spacer to match Y-axis controls (A + B offsets) */}
-                <span className="w-11 shrink-0" />
+                {/* Exact mirror of A + B widths */}
+                <span className="w-5 border-r border-transparent mr-2 shrink-0" />
+                <span className="w-4 shrink-0" />
                 
                 {/* Exact layout padding wrapper matching C's px-2 and columns' pl-6 pr-12 */}
-                <div className="flex-1 px-2">
-                  <div className="flex gap-2 sm:gap-3 pl-6 pr-12">
+                <div className="flex-1 min-w-0 px-2">
+                  <div className="flex items-center gap-1.5 pl-6 pr-12">
                     {list.map(pt => (
-                      <span key={pt.weekKey} className="flex-1 text-center font-mono text-[9px]">{pt.week}</span>
+                      <span key={pt.weekKey} className="flex-1 min-w-0 text-center font-mono text-[9px]">{pt.week}</span>
                     ))}
+                  </div>
+                  <div className="pl-6 pr-12 mt-1">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center block">
+                      {displayedYearsLabel}
+                    </span>
                   </div>
                 </div>
               </div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center block mt-1">
-                {displayedYearsLabel}
-              </span>
             </div>
           );
         })}
