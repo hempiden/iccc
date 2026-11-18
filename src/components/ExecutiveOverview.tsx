@@ -49,11 +49,17 @@ export default function ExecutiveOverview({
     setIsExporting(true);
     try {
       if (mode === 'summary') {
-        await exportExecutiveSummarySlideToPowerPoint(records, undefined, currentUser);
+        await exportExecutiveSummarySlideToPowerPoint(records, undefined, currentUser, {
+          trendInterval,
+          showLastYear
+        });
       } else if (mode === 'transactions') {
         await exportTransactionAnalyticsSlideToPowerPoint(records, undefined, currentUser);
       } else {
-        await exportVoCToPowerPoint(records, undefined, currentUser);
+        await exportVoCToPowerPoint(records, undefined, currentUser, {
+          trendInterval,
+          showLastYear
+        });
       }
     } catch (err) {
       console.error('PPT export error:', err);
@@ -889,8 +895,8 @@ export default function ExecutiveOverview({
               >
                 <Presentation className="w-3.5 h-3.5 text-red-600 shrink-0" />
                 <div>
-                  <div className="font-bold text-[11px] text-red-700">Executive Summary Slide (.pptx)</div>
-                  <div className="text-[9px] text-slate-400 font-normal">1 Widescreen Slide: Scorecard & Governance</div>
+                  <div className="font-bold text-[11px] text-red-700">Journey NPS Over Time Slide (.pptx)</div>
+                  <div className="text-[9px] text-slate-400 font-normal">1 Widescreen Slide: Full-Fit Scorecard & Trends</div>
                 </div>
               </button>
               <button

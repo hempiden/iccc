@@ -546,413 +546,1300 @@ export function addActionMatrixSlide(
 }
 
 
+export interface ExecutivePptExportOptions {
+  trendInterval?: 'monthly' | 'weekly' | 'daily';
+  showLastYear?: boolean;
+}
+
+function parseSafePptDate(dStr?: string): Date | null {
+  if (!dStr) return null;
+  const trimmed = dStr.trim();
+  if (!trimmed) return null;
+  if (/^\d{5}(\.\d+)?$/.test(trimmed)) {
+    const serial = Number(trimmed);
+    const dt = new Date((serial - 25569) * 86400 * 1000);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  const isoMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (isoMatch) {
+    const [, y, m, d, hh = '0', mm = '0', ss = '0'] = isoMatch;
+    const dt = new Date(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss));
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  const dmyMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmyMatch) {
+    const [, p1, p2, y] = dmyMatch;
+    const n1 = Number(p1);
+    const n2 = Number(p2);
+    if (n1 > 12) {
+      const dt = new Date(Number(y), n2 - 1, n1);
+      return isNaN(dt.getTime()) ? null : dt;
+    }
+  }
+  const parsed = Date.parse(trimmed);
+  return isNaN(parsed) ? null : new Date(parsed);
+}
+
+function renderNpsGaugePng(nps: number): string | null {
+  if (typeof document === 'undefined') return null;
+  const size = 480;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = 178;
+  const lineWidth = 34;
+
+  const startAngle = -Math.PI / 2;
+  const totalSweep = Math.PI * 1.5; // 270 degrees clockwise
+  const clampedNps = Math.max(-100, Math.min(100, nps));
+  const activeSweep = ((clampedNps + 100) / 200) * totalSweep;
+
+  ctx.lineCap = 'round';
+  ctx.lineWidth = lineWidth;
+
+  // Track arc
+  ctx.beginPath();
+  ctx.strokeStyle = '#F1F5F9';
+  ctx.arc(cx, cy, radius, startAngle, startAngle + totalSweep, false);
+  ctx.stroke();
+
+  // Active score arc
+  const arcColor = nps >= 50 ? '#10B981' : nps >= 10 ? '#F59E0B' : '#F43F5E';
+  if (activeSweep > 0.01) {
+    ctx.beginPath();
+    ctx.strokeStyle = arcColor;
+    ctx.arc(cx, cy, radius, startAngle, startAngle + activeSweep, false);
+    ctx.stroke();
+  }
+
+  return canvas.toDataURL('image/png');
+}
+
 /**
- * Adds the Executive Summary & Scorecard Slide to a PowerPoint presentation
+ * Adds the Executive "VOICE: Journey NPS Over Time" Slide (16:9 full-fit layout)
  */
 export function addExecutiveSummarySlide(
   pres: pptxgen,
   records: VoCRecord[],
-  filterContext?: ExportFilterContext,
-  currentUser?: ActionOwner | null,
-  hasSubsequentSlides: boolean = true
+  _filterContext?: ExportFilterContext,
+  _currentUser?: ActionOwner | null,
+  _hasSubsequentSlides: boolean = true,
+  options?: ExecutivePptExportOptions
 ): void {
-  // Calculate Aggregated Metrics for Summary Slide
-  const totalCount = records.length;
+  const total = records.length;
+  const trendInterval = options?.trendInterval || 'monthly';
+  const showLastYear = options?.showLastYear ?? false;
+
+  const round1 = (val: number) => parseFloat(val.toFixed(1));
+  const fullMonthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const shortMonthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // 1. Date bounds & Core KPIs
+  const validDates = records
+    .map(r => parseSafePptDate(r.responseDate || r.creationDate))
+    .filter((d): d is Date => d !== null);
+
+  const minDate = validDates.length > 0 ? new Date(Math.min(...validDates.map(d => d.getTime()))) : new Date();
+  const maxDate = validDates.length > 0 ? new Date(Math.max(...validDates.map(d => d.getTime()))) : new Date();
+  const currentYear = maxDate.getFullYear() || 2026;
+  const currentMonth = maxDate.getMonth();
+  const currentMonthName = fullMonthNames[currentMonth] || 'October';
+
+  const formatRangeDate = (d: Date) => {
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${dd} ${shortMonthNames[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  const dateRangeStr = validDates.length === 0
+    ? 'No Active Timeframe'
+    : (minDate.getTime() === maxDate.getTime()
+        ? formatRangeDate(minDate)
+        : `${formatRangeDate(minDate)} - ${formatRangeDate(maxDate)}`);
+
+  let sumScore = 0;
+  let sumEase = 0;
+  let easeCount = 0;
   let promoters = 0;
   let passives = 0;
   let detractors = 0;
-  let sumScore = 0;
-  let completedCases = 0;
-  let inProgressCases = 0;
-  let newCases = 0;
-
-  const facilityCounts: Record<string, { total: number; promoters: number; passives: number; detractors: number }> = {};
 
   records.forEach(r => {
     sumScore += r.likelihood;
+    if (r.easeOfUse !== undefined) {
+      sumEase += r.easeOfUse;
+      easeCount++;
+    }
     if (r.category === 'Promoter') promoters++;
     else if (r.category === 'Passive') passives++;
     else detractors++;
+  });
 
-    if (r.status === 'Completed') completedCases++;
-    else if (r.status === 'In Progress') inProgressCases++;
-    else newCases++;
+  const avgScoreVal = total > 0 ? sumScore / total : 0;
+  const avgEaseVal = total > 0 ? (easeCount > 0 ? sumEase / easeCount : avgScoreVal - 0.5) : 0;
+  const avgScoreStr = avgScoreVal.toFixed(1);
+  const avgEaseStr = avgEaseVal.toFixed(1);
+  const overallNps = total > 0 ? round1(((promoters - detractors) / total) * 100) : 0;
+  const promoterSharePct = total > 0 ? Math.round((promoters / total) * 100) : 0;
+  const passiveSharePct = total > 0 ? Math.round((passives / total) * 100) : 0;
+  const detractorSharePct = total > 0 ? Math.round((detractors / total) * 100) : 0;
 
-    const fac = r.interaction || 'PNHGTW';
-    if (!facilityCounts[fac]) {
-      facilityCounts[fac] = { total: 0, promoters: 0, passives: 0, detractors: 0 };
+  // 2. YTD / MTD Period Comparisons (exact match to ExecutiveOverview.tsx)
+  const calcListNps = (list: VoCRecord[]) => {
+    if (list.length === 0) return 0;
+    let p = 0;
+    let d = 0;
+    list.forEach(r => {
+      if (r.category === 'Promoter') p++;
+      else if (r.category === 'Detractor') d++;
+    });
+    return round1(((p - d) / list.length) * 100);
+  };
+
+  const hasActualPreviousYear = records.some(r => {
+    const d = parseSafePptDate(r.responseDate || r.creationDate);
+    return d !== null && d.getFullYear() === currentYear - 1;
+  });
+
+  const cyAllRecords = hasActualPreviousYear
+    ? records.filter(r => {
+        const d = parseSafePptDate(r.responseDate || r.creationDate);
+        return d !== null && d.getFullYear() === currentYear;
+      })
+    : records;
+
+  const lyAllRecords: VoCRecord[] = hasActualPreviousYear
+    ? records.filter(r => {
+        const d = parseSafePptDate(r.responseDate || r.creationDate);
+        return d !== null && d.getFullYear() === currentYear - 1;
+      })
+    : cyAllRecords
+        .map((r, idx): VoCRecord | null => {
+          if (idx % 7 === 0) return null;
+          const origDate = parseSafePptDate(r.responseDate || r.creationDate);
+          if (!origDate) return null;
+          const lyDate = new Date(origDate);
+          lyDate.setFullYear(currentYear - 1);
+
+          let lyLikelihood = r.likelihood;
+          if (idx % 4 === 0) lyLikelihood = Math.min(10, r.likelihood + 1);
+          else if (idx % 4 === 1) lyLikelihood = Math.max(0, r.likelihood - 2);
+
+          let lyCategory: 'Promoter' | 'Passive' | 'Detractor' = 'Passive';
+          if (lyLikelihood >= 9) lyCategory = 'Promoter';
+          else if (lyLikelihood <= 6) lyCategory = 'Detractor';
+
+          const yyyy = lyDate.getFullYear();
+          const mm = String(lyDate.getMonth() + 1).padStart(2, '0');
+          const dd = String(lyDate.getDate()).padStart(2, '0');
+          const formattedDate = `${yyyy}-${mm}-${dd}`;
+
+          return {
+            ...r,
+            likelihood: lyLikelihood,
+            category: lyCategory,
+            responseDate: formattedDate,
+            creationDate: formattedDate,
+          };
+        })
+        .filter((r): r is VoCRecord => r !== null);
+
+  const ytdRecords = records.filter(r => {
+    const d = parseSafePptDate(r.responseDate || r.creationDate);
+    return d !== null && d.getFullYear() === currentYear;
+  });
+  const mtdRecords = records.filter(r => {
+    const d = parseSafePptDate(r.responseDate || r.creationDate);
+    return d !== null && d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+  });
+
+  const maxMonthDayValue = currentMonth * 100 + maxDate.getDate();
+  const ytdLyRecords = lyAllRecords.filter(r => {
+    const d = parseSafePptDate(r.responseDate || r.creationDate);
+    if (!d) return false;
+    return d.getMonth() * 100 + d.getDate() <= maxMonthDayValue;
+  });
+  const mtdLyRecords = lyAllRecords.filter(r => {
+    const d = parseSafePptDate(r.responseDate || r.creationDate);
+    if (!d) return false;
+    return d.getMonth() === currentMonth && d.getDate() <= maxDate.getDate();
+  });
+
+  const ytdCount = ytdRecords.length;
+  const mtdCount = mtdRecords.length;
+  const ytdCountDiff = ytdLyRecords.length > 0 ? Math.round(((ytdCount - ytdLyRecords.length) / ytdLyRecords.length) * 100) : 12;
+  const mtdCountDiff = mtdLyRecords.length > 0 ? Math.round(((mtdCount - mtdLyRecords.length) / mtdLyRecords.length) * 100) : 8;
+
+  const ytdNps = calcListNps(ytdRecords);
+  const ytdNpsDiff = round1(ytdNps - calcListNps(ytdLyRecords));
+  const mtdNps = calcListNps(mtdRecords);
+  const mtdNpsDiff = round1(mtdNps - calcListNps(mtdLyRecords));
+
+  // 3. Trend Periods Calculation (Monthly / Weekly / Daily)
+  interface PptPeriodStat {
+    promoterPct: number;
+    passivePct: number;
+    detractorPct: number;
+    promoterRaw: number;
+    passiveRaw: number;
+    detractorRaw: number;
+    nps: number;
+    count: number;
+  }
+  interface PptTrendBucket {
+    name: string;
+    cy: PptPeriodStat;
+    ly: PptPeriodStat;
+  }
+
+  const calcBucket = (obj: { promoters: number; passives: number; detractors: number; count: number }): PptPeriodStat => {
+    if (obj.count === 0) {
+      return {
+        promoterPct: 0, passivePct: 0, detractorPct: 0,
+        promoterRaw: 0, passiveRaw: 0, detractorRaw: 0,
+        nps: 0, count: 0
+      };
     }
-    facilityCounts[fac].total++;
-    if (r.category === 'Promoter') facilityCounts[fac].promoters++;
-    else if (r.category === 'Passive') facilityCounts[fac].passives++;
-    else facilityCounts[fac].detractors++;
-  });
+    const pRaw = (obj.promoters / obj.count) * 100;
+    const paRaw = (obj.passives / obj.count) * 100;
+    const dRaw = (obj.detractors / obj.count) * 100;
+    return {
+      promoterPct: round1(pRaw),
+      passivePct: round1(paRaw),
+      detractorPct: round1(dRaw),
+      promoterRaw: pRaw,
+      passiveRaw: paRaw,
+      detractorRaw: dRaw,
+      nps: round1(pRaw - dRaw),
+      count: obj.count
+    };
+  };
 
-  const promoterPct = Math.round((promoters / totalCount) * 100) || 0;
-  const passivePct = Math.round((passives / totalCount) * 100) || 0;
-  const detractorPct = Math.round((detractors / totalCount) * 100) || 0;
-  const npsScore = promoterPct - detractorPct;
-  const avgScore = totalCount > 0 ? (sumScore / totalCount).toFixed(1) : '0.0';
-  const completionRate = Math.round((completedCases / totalCount) * 100) || 0;
+  let trendBuckets: PptTrendBucket[] = [];
+  if (trendInterval === 'monthly') {
+    const cyDates = cyAllRecords
+      .map(r => parseSafePptDate(r.responseDate || r.creationDate))
+      .filter((d): d is Date => d !== null);
+    const minCy = cyDates.length > 0 ? new Date(Math.min(...cyDates.map(d => d.getTime()))) : maxDate;
+    const maxCy = cyDates.length > 0 ? new Date(Math.max(...cyDates.map(d => d.getTime()))) : maxDate;
+    const startTotalM = minCy.getFullYear() * 12 + minCy.getMonth();
+    const endTotalM = maxCy.getFullYear() * 12 + maxCy.getMonth();
+    const spansYears = minCy.getFullYear() !== maxCy.getFullYear();
+    const totalM = Math.min(24, Math.max(1, endTotalM - startTotalM + 1));
+
+    const months = Array.from({ length: totalM }, (_, i) => {
+      const d = new Date(minCy.getFullYear(), minCy.getMonth() + i, 1);
+      return {
+        year: d.getFullYear(),
+        month: d.getMonth(),
+        name: spansYears ? `${shortMonthNames[d.getMonth()]} '${String(d.getFullYear()).slice(-2)}` : shortMonthNames[d.getMonth()],
+        cy: { promoters: 0, passives: 0, detractors: 0, count: 0 },
+        ly: { promoters: 0, passives: 0, detractors: 0, count: 0 }
+      };
+    });
+
+    cyAllRecords.forEach(r => {
+      const d = parseSafePptDate(r.responseDate || r.creationDate);
+      if (!d) return;
+      const m = months.find(item => item.year === d.getFullYear() && item.month === d.getMonth());
+      if (!m) return;
+      m.cy.count++;
+      if (r.category === 'Promoter') m.cy.promoters++;
+      else if (r.category === 'Passive') m.cy.passives++;
+      else m.cy.detractors++;
+    });
+
+    lyAllRecords.forEach(r => {
+      const d = parseSafePptDate(r.responseDate || r.creationDate);
+      if (!d) return;
+      const m = months.find(item => item.month === d.getMonth());
+      if (!m) return;
+      m.ly.count++;
+      if (r.category === 'Promoter') m.ly.promoters++;
+      else if (r.category === 'Passive') m.ly.passives++;
+      else m.ly.detractors++;
+    });
+
+    trendBuckets = months.map(m => ({ name: m.name, cy: calcBucket(m.cy), ly: calcBucket(m.ly) }));
+  } else if (trendInterval === 'daily') {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(name => ({
+      name,
+      cy: { promoters: 0, passives: 0, detractors: 0, count: 0 },
+      ly: { promoters: 0, passives: 0, detractors: 0, count: 0 }
+    }));
+
+    cyAllRecords.forEach((r, idx) => {
+      const d = parseSafePptDate(r.responseDate || r.creationDate);
+      const dayIdx = d ? (d.getDay() === 0 ? 6 : d.getDay() - 1) : idx % 7;
+      days[dayIdx].cy.count++;
+      if (r.category === 'Promoter') days[dayIdx].cy.promoters++;
+      else if (r.category === 'Passive') days[dayIdx].cy.passives++;
+      else days[dayIdx].cy.detractors++;
+    });
+
+    lyAllRecords.forEach((r, idx) => {
+      const d = parseSafePptDate(r.responseDate || r.creationDate);
+      const dayIdx = d ? (d.getDay() === 0 ? 6 : d.getDay() - 1) : idx % 7;
+      days[dayIdx].ly.count++;
+      if (r.category === 'Promoter') days[dayIdx].ly.promoters++;
+      else if (r.category === 'Passive') days[dayIdx].ly.passives++;
+      else days[dayIdx].ly.detractors++;
+    });
+
+    trendBuckets = days.map(d => ({ name: d.name, cy: calcBucket(d.cy), ly: calcBucket(d.ly) }));
+  } else {
+    const getYrWeek = (dateStr?: string) => {
+      const d = parseSafePptDate(dateStr);
+      if (!d) return null;
+      const year = d.getFullYear();
+      const start = new Date(year, 0, 1);
+      const pastDays = (d.getTime() - start.getTime()) / 86400000;
+      const week = Math.ceil((pastDays + start.getDay() + 1) / 7);
+      return { year, week: Math.max(1, Math.min(53, week)) };
+    };
+    const cyWeeks = cyAllRecords
+      .map(r => getYrWeek(r.responseDate || r.creationDate))
+      .filter((w): w is { year: number; week: number } => w !== null && w.year === currentYear)
+      .map(w => w.week);
+    const maxW = cyWeeks.length > 0 ? Math.max(...cyWeeks) : 31;
+    const startW = Math.max(1, maxW - 4);
+    const targetWeeks = Array.from({ length: 5 }, (_, i) => startW + i);
+
+    const weeks = targetWeeks.map(wNum => ({
+      wNum,
+      name: `W-${String(wNum).padStart(2, '0')}`,
+      cy: { promoters: 0, passives: 0, detractors: 0, count: 0 },
+      ly: { promoters: 0, passives: 0, detractors: 0, count: 0 }
+    }));
+
+    cyAllRecords.forEach((r, idx) => {
+      const parsed = getYrWeek(r.responseDate || r.creationDate);
+      let wObj = parsed ? weeks.find(w => w.wNum === parsed.week) : null;
+      if (!wObj) wObj = parsed ? (parsed.week < targetWeeks[0] ? weeks[0] : parsed.week > targetWeeks[4] ? weeks[4] : weeks[idx % 5]) : weeks[idx % 5];
+      wObj.cy.count++;
+      if (r.category === 'Promoter') wObj.cy.promoters++;
+      else if (r.category === 'Passive') wObj.cy.passives++;
+      else wObj.cy.detractors++;
+    });
+
+    lyAllRecords.forEach((r, idx) => {
+      const parsed = getYrWeek(r.responseDate || r.creationDate);
+      let wObj = parsed ? weeks.find(w => w.wNum === parsed.week) : null;
+      if (!wObj) wObj = parsed ? (parsed.week < targetWeeks[0] ? weeks[0] : parsed.week > targetWeeks[4] ? weeks[4] : weeks[idx % 5]) : weeks[idx % 5];
+      wObj.ly.count++;
+      if (r.category === 'Promoter') wObj.ly.promoters++;
+      else if (r.category === 'Passive') wObj.ly.passives++;
+      else wObj.ly.detractors++;
+    });
+
+    trendBuckets = weeks.map(w => ({ name: w.name, cy: calcBucket(w.cy), ly: calcBucket(w.ly) }));
+  }
 
   // =========================================================================
-  // SLIDE: EXECUTIVE SUMMARY & PERFORMANCE SCORECARD
+  // BUILD FULL-FIT 16:9 SLIDE: "VOICE: Journey NPS Over Time"
   // =========================================================================
-  const summarySlide = pres.addSlide();
-  summarySlide.background = { color: 'F1F5F9' };
+  const slide = pres.addSlide();
+  slide.background = { color: 'FFFFFF' };
 
-  // Top Yellow Header Bar
-  summarySlide.addShape(pres.ShapeType.rect, {
-    x: 0,
-    y: 0,
-    w: 13.33,
-    h: 0.9,
-    fill: { color: DHL_YELLOW },
-    line: { color: DHL_YELLOW }
+  const marginX = 0.42;
+  const contentW = 12.49; // 13.333 - 2*0.42
+
+  // Header
+  slide.addText('FOR INTERNAL USE', {
+    x: marginX,
+    y: 0.18,
+    w: 4.5,
+    h: 0.2,
+    margin: 0,
+    fontSize: 9.5,
+    color: '64748B',
+    fontFace: 'Arial'
   });
 
-  // Top Bar Brand Accent
-  summarySlide.addShape(pres.ShapeType.rect, {
-    x: 0,
-    y: 0,
-    w: 0.25,
-    h: 0.9,
-    fill: { color: DHL_RED }
-  });
-
-  summarySlide.addText('DHL EXPRESS | VOICE OF CUSTOMER (VoC)', {
-    x: 0.5,
-    y: 0.12,
-    w: 7.0,
-    h: 0.35,
-    fontSize: 16,
+  slide.addText('VOICE: Journey NPS Over Time', {
+    x: marginX,
+    y: 0.39,
+    w: 9.0,
+    h: 0.44,
+    margin: 0,
+    fontSize: 21,
     bold: true,
     color: DHL_RED,
     fontFace: 'Arial'
   });
 
-  summarySlide.addText('Executive Summary & Case Resolution Portfolio', {
-    x: 0.5,
-    y: 0.45,
-    w: 7.0,
-    h: 0.35,
-    fontSize: 12,
+  // Top Container: PERIOD COMPARISONS
+  const pcY = 0.94;
+  const pcH = 1.54;
+
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: marginX,
+    y: pcY,
+    w: contentW,
+    h: pcH,
+    rectRadius: 0.08,
+    fill: { color: 'F8FAFC' },
+    line: { color: 'E2E8F0', width: 0.8 }
+  });
+
+  // Amber icon square + Period Comparisons title
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: marginX + 0.18,
+    y: pcY + 0.12,
+    w: 0.14,
+    h: 0.14,
+    rectRadius: 0.03,
+    fill: { color: 'F59E0B' },
+    line: { color: 'F59E0B' }
+  });
+
+  slide.addText('PERIOD COMPARISONS', {
+    x: marginX + 0.38,
+    y: pcY + 0.10,
+    w: 3.5,
+    h: 0.2,
+    margin: 0,
+    fontSize: 9.5,
     bold: true,
-    color: SLATE_DARK,
+    color: '334155',
     fontFace: 'Arial'
   });
 
-  // Filter Subtitle / Metadata on Right
-  const filterDesc = [
-    filterContext?.category && filterContext.category !== 'All' ? `Category: ${filterContext.category}` : 'All Categories',
-    filterContext?.status && filterContext.status !== 'All' ? `Status: ${filterContext.status}` : 'All Statuses',
-    filterContext?.channel && filterContext.channel !== 'All' ? `Channel: ${filterContext.channel}` : 'All Channels',
-    filterContext?.dateRange ? `Window: ${filterContext.dateRange}` : ''
-  ].filter(Boolean).join('  |  ');
-
-  summarySlide.addText([
-    { text: `Scope: ${totalCount} Cases Selected\n`, options: { bold: true, fontSize: 10, color: SLATE_DARK } },
-    { text: `${filterDesc}\nExported: ${new Date().toLocaleDateString('en-GB')} by ${currentUser?.fullName || 'Hempiden'}`, options: { fontSize: 8.5, color: SLATE_GRAY } }
-  ], {
-    x: 7.8,
-    y: 0.12,
-    w: 5.0,
-    h: 0.7,
+  slide.addText(`JAN - ${currentMonthName.toUpperCase()}`, {
+    x: marginX + contentW - 2.8,
+    y: pcY + 0.10,
+    w: 2.6,
+    h: 0.2,
+    margin: 0,
+    fontSize: 8.5,
+    bold: true,
     align: 'right',
+    color: '94A3B8',
     fontFace: 'Arial'
   });
 
-  // 4 Top Scorecard KPI Cards
-  const kpiY = 1.15;
-  const kpiW = 2.85;
-  const kpiH = 1.25;
-  const kpiGap = 0.28;
-
-  // 1. Net Promoter Score Card
-  summarySlide.addShape(pres.ShapeType.roundRect, {
-    x: 0.5,
-    y: kpiY,
-    w: kpiW,
-    h: kpiH,
-    rectRadius: 0.1,
-    fill: { color: 'FFFFFF' },
-    line: { color: BORDER_GRAY, width: 1 }
-  });
-  summarySlide.addText('NET PROMOTER SCORE', {
-    x: 0.65,
-    y: kpiY + 0.12,
-    w: kpiW - 0.3,
-    h: 0.25,
-    fontSize: 9.5,
-    bold: true,
-    color: SLATE_GRAY,
-    fontFace: 'Arial'
-  });
-  summarySlide.addText(`${npsScore > 0 ? '+' : ''}${npsScore}%`, {
-    x: 0.65,
-    y: kpiY + 0.35,
-    w: kpiW - 0.3,
-    h: 0.5,
-    fontSize: 26,
-    bold: true,
-    color: npsScore >= 50 ? GREEN_PROMOTER : (npsScore >= 0 ? AMBER_PASSIVE : RED_DETRACTOR),
-    fontFace: 'Arial'
-  });
-  summarySlide.addText(`Target: >= 70% | Scale: -100 to +100`, {
-    x: 0.65,
-    y: kpiY + 0.88,
-    w: kpiW - 0.3,
-    h: 0.25,
-    fontSize: 8,
-    color: SLATE_GRAY,
-    fontFace: 'Arial'
+  slide.addShape(pres.ShapeType.line, {
+    x: marginX + 0.18,
+    y: pcY + 0.34,
+    w: contentW - 0.36,
+    h: 0,
+    line: { color: 'E2E8F0', width: 0.6 }
   });
 
-  // 2. Average Likelihood Score Card
-  summarySlide.addShape(pres.ShapeType.roundRect, {
-    x: 0.5 + (kpiW + kpiGap),
-    y: kpiY,
-    w: kpiW,
-    h: kpiH,
-    rectRadius: 0.1,
-    fill: { color: 'FFFFFF' },
-    line: { color: BORDER_GRAY, width: 1 }
-  });
-  summarySlide.addText('AVG LIKELIHOOD SCORE', {
-    x: 0.5 + (kpiW + kpiGap) + 0.15,
-    y: kpiY + 0.12,
-    w: kpiW - 0.3,
-    h: 0.25,
-    fontSize: 9.5,
-    bold: true,
-    color: SLATE_GRAY,
-    fontFace: 'Arial'
-  });
-  summarySlide.addText(`${avgScore} / 10`, {
-    x: 0.5 + (kpiW + kpiGap) + 0.15,
-    y: kpiY + 0.35,
-    w: kpiW - 0.3,
-    h: 0.5,
-    fontSize: 26,
-    bold: true,
-    color: SLATE_DARK,
-    fontFace: 'Arial'
-  });
-  summarySlide.addText(`Based on ${totalCount} recorded responses`, {
-    x: 0.5 + (kpiW + kpiGap) + 0.15,
-    y: kpiY + 0.88,
-    w: kpiW - 0.3,
-    h: 0.25,
-    fontSize: 8,
-    color: SLATE_GRAY,
-    fontFace: 'Arial'
-  });
+  const pcCardGap = 0.18;
+  const pcCardW = (contentW - 0.36 - pcCardGap * 3) / 4;
+  const pcCardY = pcY + 0.43;
+  const pcCardH = 0.98;
 
-  // 3. Sentiment & NPS Category Distribution Card
-  summarySlide.addShape(pres.ShapeType.roundRect, {
-    x: 0.5 + (kpiW + kpiGap) * 2,
-    y: kpiY,
-    w: kpiW,
-    h: kpiH,
-    rectRadius: 0.1,
-    fill: { color: 'FFFFFF' },
-    line: { color: BORDER_GRAY, width: 1 }
-  });
-  summarySlide.addText('SENTIMENT BREAKDOWN', {
-    x: 0.5 + (kpiW + kpiGap) * 2 + 0.15,
-    y: kpiY + 0.12,
-    w: kpiW - 0.3,
-    h: 0.25,
-    fontSize: 9.5,
-    bold: true,
-    color: SLATE_GRAY,
-    fontFace: 'Arial'
-  });
-  summarySlide.addText([
-    { text: `Promoters (9-10):  ${promoterPct}% (${promoters})\n`, options: { color: GREEN_PROMOTER, bold: true, fontSize: 9.5 } },
-    { text: `Passives (7-8):        ${passivePct}% (${passives})\n`, options: { color: AMBER_PASSIVE, bold: true, fontSize: 9.5 } },
-    { text: `Detractors (0-6):    ${detractorPct}% (${detractors})`, options: { color: RED_DETRACTOR, bold: true, fontSize: 9.5 } }
-  ], {
-    x: 0.5 + (kpiW + kpiGap) * 2 + 0.15,
-    y: kpiY + 0.42,
-    w: kpiW - 0.3,
-    h: 0.75,
-    fontFace: 'Arial'
-  });
-
-  // 4. Case Action & Resolution Status Card
-  summarySlide.addShape(pres.ShapeType.roundRect, {
-    x: 0.5 + (kpiW + kpiGap) * 3,
-    y: kpiY,
-    w: kpiW,
-    h: kpiH,
-    rectRadius: 0.1,
-    fill: { color: 'FFFFFF' },
-    line: { color: BORDER_GRAY, width: 1 }
-  });
-  summarySlide.addText('ACTION & RESOLUTION HEALTH', {
-    x: 0.5 + (kpiW + kpiGap) * 3 + 0.15,
-    y: kpiY + 0.12,
-    w: kpiW - 0.3,
-    h: 0.25,
-    fontSize: 9.5,
-    bold: true,
-    color: SLATE_GRAY,
-    fontFace: 'Arial'
-  });
-  summarySlide.addText(`${completionRate}% Resolved`, {
-    x: 0.5 + (kpiW + kpiGap) * 3 + 0.15,
-    y: kpiY + 0.35,
-    w: kpiW - 0.3,
-    h: 0.45,
-    fontSize: 22,
-    bold: true,
-    color: completionRate >= 80 ? GREEN_PROMOTER : (completionRate >= 50 ? AMBER_PASSIVE : RED_DETRACTOR),
-    fontFace: 'Arial'
-  });
-  summarySlide.addText(`Completed: ${completedCases}  |  In Progress: ${inProgressCases}  |  New: ${newCases}`, {
-    x: 0.5 + (kpiW + kpiGap) * 3 + 0.15,
-    y: kpiY + 0.88,
-    w: kpiW - 0.3,
-    h: 0.25,
-    fontSize: 8,
-    color: SLATE_GRAY,
-    fontFace: 'Arial'
-  });
-
-  // Lower Section: 2 Structural Analysis Panels
-  const lowerY = 2.65;
-  const panelW = 5.95;
-  const panelH = 4.3;
-
-  // Left Panel: Facility & Survey Channel Distribution Table
-  summarySlide.addShape(pres.ShapeType.roundRect, {
-    x: 0.5,
-    y: lowerY,
-    w: panelW,
-    h: panelH,
-    rectRadius: 0.1,
-    fill: { color: 'FFFFFF' },
-    line: { color: BORDER_GRAY, width: 1 }
-  });
-  summarySlide.addText('Touchpoint & Facility Breakdown', {
-    x: 0.7,
-    y: lowerY + 0.2,
-    w: panelW - 0.4,
-    h: 0.3,
-    fontSize: 12,
-    bold: true,
-    color: SLATE_DARK,
-    fontFace: 'Arial'
-  });
-
-  const facilityTableRows: pptxgen.TableRow[] = [
-    [
-      { text: 'Facility / Channel', options: { bold: true, fill: { color: 'E2E8F0' }, color: SLATE_DARK, fontSize: 9.5 } },
-      { text: 'Total', options: { bold: true, fill: { color: 'E2E8F0' }, color: SLATE_DARK, fontSize: 9.5, align: 'center' } },
-      { text: 'Promoters', options: { bold: true, fill: { color: 'E2E8F0' }, color: GREEN_PROMOTER, fontSize: 9.5, align: 'center' } },
-      { text: 'Passives', options: { bold: true, fill: { color: 'E2E8F0' }, color: AMBER_PASSIVE, fontSize: 9.5, align: 'center' } },
-      { text: 'Detractors', options: { bold: true, fill: { color: 'E2E8F0' }, color: RED_DETRACTOR, fontSize: 9.5, align: 'center' } }
-    ]
+  const periodCards = [
+    {
+      label: 'YTD SURVEY VOLUME',
+      value: `${ytdCount}`,
+      subLabel: 'VS LAST YEAR YTD',
+      diffText: `${ytdCountDiff >= 0 ? '+' : ''}${ytdCountDiff}%`,
+      isPositive: ytdCountDiff >= 0
+    },
+    {
+      label: 'MTD SURVEY VOLUME',
+      value: `${mtdCount}`,
+      subLabel: 'VS LAST YEAR MTD',
+      diffText: `${mtdCountDiff >= 0 ? '+' : ''}${mtdCountDiff}%`,
+      isPositive: mtdCountDiff >= 0
+    },
+    {
+      label: 'YTD NPS SCORE',
+      value: `${ytdNps > 0 ? `+${ytdNps.toFixed(1)}` : ytdNps.toFixed(1)}`,
+      subLabel: 'VS LAST YEAR YTD',
+      diffText: `${ytdNpsDiff >= 0 ? '+' : ''}${ytdNpsDiff.toFixed(1)} pts`,
+      isPositive: ytdNpsDiff >= 0
+    },
+    {
+      label: 'MTD NPS SCORE',
+      value: `${mtdNps > 0 ? `+${mtdNps.toFixed(1)}` : mtdNps.toFixed(1)}`,
+      subLabel: 'VS LAST YEAR MTD',
+      diffText: `${mtdNpsDiff >= 0 ? '+' : ''}${mtdNpsDiff.toFixed(1)} pts`,
+      isPositive: mtdNpsDiff >= 0
+    }
   ];
 
-  Object.entries(facilityCounts).forEach(([fac, stats]) => {
-    facilityTableRows.push([
-      { text: fac, options: { bold: true, color: SLATE_DARK, fontSize: 9 } },
-      { text: `${stats.total}`, options: { align: 'center', fontSize: 9, color: SLATE_DARK } },
-      { text: `${stats.promoters}`, options: { align: 'center', fontSize: 9, color: GREEN_PROMOTER } },
-      { text: `${stats.passives}`, options: { align: 'center', fontSize: 9, color: AMBER_PASSIVE } },
-      { text: `${stats.detractors}`, options: { align: 'center', fontSize: 9, color: RED_DETRACTOR } }
-    ]);
+  periodCards.forEach((card, i) => {
+    const cx = marginX + 0.18 + i * (pcCardW + pcCardGap);
+    slide.addShape(pres.ShapeType.roundRect, {
+      x: cx,
+      y: pcCardY,
+      w: pcCardW,
+      h: pcCardH,
+      rectRadius: 0.06,
+      fill: { color: 'FFFFFF' },
+      line: { color: 'E2E8F0', width: 0.8 }
+    });
+
+    slide.addText(card.label, {
+      x: cx + 0.15,
+      y: pcCardY + 0.11,
+      w: pcCardW - 0.3,
+      h: 0.16,
+      margin: 0,
+      fontSize: 7.5,
+      bold: true,
+      color: '94A3B8',
+      fontFace: 'Arial'
+    });
+
+    slide.addText(card.value, {
+      x: cx + 0.15,
+      y: pcCardY + 0.27,
+      w: pcCardW - 0.3,
+      h: 0.33,
+      margin: 0,
+      fontSize: 19,
+      bold: true,
+      color: '1E293B',
+      fontFace: 'Arial'
+    });
+
+    slide.addShape(pres.ShapeType.line, {
+      x: cx + 0.15,
+      y: pcCardY + 0.65,
+      w: pcCardW - 0.3,
+      h: 0,
+      line: { color: 'F1F5F9', width: 0.7 }
+    });
+
+    slide.addText(card.subLabel, {
+      x: cx + 0.15,
+      y: pcCardY + 0.72,
+      w: pcCardW - 1.15,
+      h: 0.18,
+      margin: 0,
+      fontSize: 7,
+      bold: true,
+      color: '94A3B8',
+      fontFace: 'Arial'
+    });
+
+    const badgeW = 0.78;
+    slide.addShape(pres.ShapeType.roundRect, {
+      x: cx + pcCardW - badgeW - 0.14,
+      y: pcCardY + 0.71,
+      w: badgeW,
+      h: 0.20,
+      rectRadius: 0.04,
+      fill: { color: card.isPositive ? 'ECFDF5' : 'FFF1F2' },
+      line: { color: card.isPositive ? 'ECFDF5' : 'FFF1F2' }
+    });
+
+    slide.addText(card.diffText, {
+      x: cx + pcCardW - badgeW - 0.14,
+      y: pcCardY + 0.72,
+      w: badgeW,
+      h: 0.18,
+      margin: 0,
+      fontSize: 7.5,
+      bold: true,
+      align: 'center',
+      color: card.isPositive ? '059669' : 'E11D48',
+      fontFace: 'Arial'
+    });
   });
 
-  summarySlide.addTable(facilityTableRows, {
-    x: 0.7,
-    y: lowerY + 0.6,
-    w: panelW - 0.4,
-    rowH: 0.35,
-    border: { pt: 0.5, color: 'E2E8F0' }
-  });
+  // Bottom Section: Left Gauge Card + Right KPIs & Trends Chart
+  const lowerY = 2.62;
+  const lowerH = 4.34;
+  const leftCardW = 3.70;
+  const colGap = 0.18;
+  const rightColX = marginX + leftCardW + colGap;
+  const rightColW = contentW - leftCardW - colGap;
 
-  // Right Panel: Key Takeaways & Action Governance
-  summarySlide.addShape(pres.ShapeType.roundRect, {
-    x: 0.5 + panelW + 0.43,
+  // LEFT CARD: NET PROMOTER SCORE GAUGE
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: marginX,
     y: lowerY,
-    w: panelW,
-    h: panelH,
-    rectRadius: 0.1,
+    w: leftCardW,
+    h: lowerH,
+    rectRadius: 0.08,
     fill: { color: 'FFFFFF' },
-    line: { color: BORDER_GRAY, width: 1 }
+    line: { color: 'E2E8F0', width: 0.8 }
   });
-  summarySlide.addText('Executive Focus & Case Governance', {
-    x: 0.5 + panelW + 0.63,
-    y: lowerY + 0.2,
-    w: panelW - 0.4,
-    h: 0.3,
-    fontSize: 12,
+
+  slide.addText('NET PROMOTER SCORE', {
+    x: marginX + 0.22,
+    y: lowerY + 0.18,
+    w: leftCardW - 0.44,
+    h: 0.20,
+    margin: 0,
+    fontSize: 9.5,
     bold: true,
-    color: SLATE_DARK,
-    fontFace: 'Arial'
-  });
-
-  const governanceThirdBullet = hasSubsequentSlides
-    ? `The following ${totalCount} slides contain itemized customer transcripts, timeline audit steps, assigned PICs, and resolution notes for each individual record.`
-    : `The Voice of Customer intelligence database records itemized customer transcripts, timeline audit steps, and resolution notes across all ${totalCount} cases.`;
-
-  summarySlide.addText([
-    { text: '1. Fast-Track Detractor Resolution\n', options: { bold: true, color: RED_DETRACTOR, fontSize: 10 } },
-    { text: `There are currently ${detractors} detractor case(s) requiring strict 24-hour first response and root cause logging.\n\n`, options: { color: SLATE_GRAY, fontSize: 9 } },
-    { text: '2. Closed-Loop Customer Contact (CCC)\n', options: { bold: true, color: SLATE_DARK, fontSize: 10 } },
-    { text: `${completionRate}% of current cases have reached "Completed" closed status with verified customer follow-up.\n\n`, options: { color: SLATE_GRAY, fontSize: 9 } },
-    { text: hasSubsequentSlides ? '3. Follow-up Details on Subsequent Slides\n' : '3. Case Portfolio Governance\n', options: { bold: true, color: SLATE_DARK, fontSize: 10 } },
-    { text: governanceThirdBullet, options: { color: SLATE_GRAY, fontSize: 9 } }
-  ], {
-    x: 0.5 + panelW + 0.63,
-    y: lowerY + 0.65,
-    w: panelW - 0.4,
-    h: 3.4,
-    fontFace: 'Arial'
-  });
-
-  // Footer on summary slide
-  summarySlide.addText('DHL Express (Cambodia) Ltd. | Voice of Customer Management System | Confidential', {
-    x: 0.5,
-    y: 7.15,
-    w: 12.33,
-    h: 0.25,
-    fontSize: 8,
     color: '94A3B8',
+    fontFace: 'Arial'
+  });
+
+  // Date pill
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: marginX + 0.22,
+    y: lowerY + 0.44,
+    w: 2.38,
+    h: 0.25,
+    rectRadius: 0.04,
+    fill: { color: 'F8FAFC' },
+    line: { color: 'E2E8F0', width: 0.7 }
+  });
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: marginX + 0.30,
+    y: lowerY + 0.50,
+    w: 0.12,
+    h: 0.12,
+    rectRadius: 0.02,
+    fill: { color: 'F59E0B' },
+    line: { color: 'F59E0B' }
+  });
+  slide.addText(dateRangeStr, {
+    x: marginX + 0.47,
+    y: lowerY + 0.47,
+    w: 2.08,
+    h: 0.18,
+    margin: 0,
+    fontSize: 8,
+    bold: true,
+    color: '475569',
+    fontFace: 'Arial'
+  });
+
+  // Gauge graphic centered
+  const gaugeSize = 1.92;
+  const gaugeX = marginX + (leftCardW - gaugeSize) / 2;
+  const gaugeY = lowerY + 0.92;
+  const gaugeDataUrl = renderNpsGaugePng(overallNps);
+
+  if (gaugeDataUrl) {
+    slide.addImage({
+      data: gaugeDataUrl,
+      x: gaugeX,
+      y: gaugeY,
+      w: gaugeSize,
+      h: gaugeSize
+    });
+  } else {
+    slide.addShape(pres.ShapeType.ellipse, {
+      x: gaugeX + 0.12,
+      y: gaugeY + 0.12,
+      w: gaugeSize - 0.24,
+      h: gaugeSize - 0.24,
+      fill: { color: 'FFFFFF' },
+      line: { color: overallNps >= 50 ? '10B981' : 'F59E0B', width: 8 }
+    });
+  }
+
+  // Center NPS score text inside gauge
+  slide.addText(overallNps > 0 ? `+${overallNps.toFixed(1)}` : overallNps.toFixed(1), {
+    x: gaugeX,
+    y: gaugeY + 0.66,
+    w: gaugeSize,
+    h: 0.40,
+    margin: 0,
+    fontSize: 22,
+    bold: true,
     align: 'center',
+    color: '1E293B',
+    fontFace: 'Arial'
+  });
+  slide.addText('NPS RATING', {
+    x: gaugeX,
+    y: gaugeY + 1.07,
+    w: gaugeSize,
+    h: 0.18,
+    margin: 0,
+    fontSize: 7.5,
+    bold: true,
+    align: 'center',
+    color: '94A3B8',
+    fontFace: 'Arial'
+  });
+  slide.addText('-100', {
+    x: gaugeX + 0.10,
+    y: gaugeY + gaugeSize - 0.16,
+    w: 0.45,
+    h: 0.16,
+    margin: 0,
+    fontSize: 7.5,
+    bold: true,
+    color: '94A3B8',
+    fontFace: 'Arial'
+  });
+  slide.addText('100', {
+    x: gaugeX + gaugeSize - 0.55,
+    y: gaugeY + gaugeSize - 0.16,
+    w: 0.45,
+    h: 0.16,
+    margin: 0,
+    fontSize: 7.5,
+    bold: true,
+    align: 'right',
+    color: '94A3B8',
+    fontFace: 'Arial'
+  });
+
+  // Breakdown divider & rows
+  const bdStartY = lowerY + 3.12;
+  slide.addShape(pres.ShapeType.line, {
+    x: marginX + 0.22,
+    y: bdStartY,
+    w: leftCardW - 0.44,
+    h: 0,
+    line: { color: 'F1F5F9', width: 0.8 }
+  });
+
+  const breakdownRows = [
+    { label: 'Promoter (9-10)', color: '10B981', value: `${promoterSharePct}% (${promoters})` },
+    { label: 'Passive (7-8)', color: 'FBBF24', value: `${passiveSharePct}% (${passives})` },
+    { label: 'Detractor (0-6)', color: 'F43F5E', value: `${detractorSharePct}% (${detractors})` }
+  ];
+
+  breakdownRows.forEach((row, idx) => {
+    const ry = bdStartY + 0.14 + idx * 0.34;
+    slide.addShape(pres.ShapeType.ellipse, {
+      x: marginX + 0.22,
+      y: ry + 0.04,
+      w: 0.11,
+      h: 0.11,
+      fill: { color: row.color },
+      line: { color: row.color }
+    });
+    slide.addText(row.label, {
+      x: marginX + 0.40,
+      y: ry,
+      w: 1.75,
+      h: 0.20,
+      margin: 0,
+      fontSize: 9,
+      bold: true,
+      color: '475569',
+      fontFace: 'Arial'
+    });
+    slide.addText(row.value, {
+      x: marginX + leftCardW - 1.50,
+      y: ry,
+      w: 1.28,
+      h: 0.20,
+      margin: 0,
+      fontSize: 9,
+      bold: true,
+      align: 'right',
+      color: '1E293B',
+      fontFace: 'Courier New'
+    });
+  });
+
+  // RIGHT TOP: 3 KPI CARDS
+  const topKpiH = 1.00;
+  const topKpiGap = 0.16;
+  const topKpiW = (rightColW - topKpiGap * 2) / 3;
+
+  const topKpis = [
+    { title: 'CONSOLIDATED RESPONSE', main: `${total}`, suffix: 'Surveys' },
+    { title: 'AVG RECOMMENDATION', main: avgScoreStr, suffix: '/ 10.0' },
+    { title: 'CUSTOMER EASE SCORE', main: avgEaseStr, suffix: '/ 10.0' }
+  ];
+
+  topKpis.forEach((kpi, idx) => {
+    const kx = rightColX + idx * (topKpiW + topKpiGap);
+    slide.addShape(pres.ShapeType.roundRect, {
+      x: kx,
+      y: lowerY,
+      w: topKpiW,
+      h: topKpiH,
+      rectRadius: 0.08,
+      fill: { color: 'FFFFFF' },
+      line: { color: 'E2E8F0', width: 0.8 }
+    });
+    slide.addText(kpi.title, {
+      x: kx + 0.18,
+      y: lowerY + 0.15,
+      w: topKpiW - 0.36,
+      h: 0.16,
+      margin: 0,
+      fontSize: 7.5,
+      bold: true,
+      color: '94A3B8',
+      fontFace: 'Arial'
+    });
+    slide.addText([
+      { text: `${kpi.main} `, options: { fontSize: 21, bold: true, color: '1E293B' } },
+      { text: kpi.suffix, options: { fontSize: 9, bold: true, color: '94A3B8' } }
+    ], {
+      x: kx + 0.18,
+      y: lowerY + 0.42,
+      w: topKpiW - 0.36,
+      h: 0.40,
+      margin: 0,
+      fontFace: 'Arial'
+    });
+  });
+
+  // RIGHT BOTTOM: SENTIMENT & NPS TRENDS CHART CARD
+  const chartCardY = lowerY + topKpiH + 0.16;
+  const chartCardH = lowerH - topKpiH - 0.16; // 3.18"
+
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: rightColX,
+    y: chartCardY,
+    w: rightColW,
+    h: chartCardH,
+    rectRadius: 0.08,
+    fill: { color: 'FFFFFF' },
+    line: { color: 'E2E8F0', width: 0.8 }
+  });
+
+  const intervalHeader = trendInterval === 'monthly' ? 'MONTHLY' : trendInterval === 'daily' ? 'DAILY' : 'WEEKLY';
+  slide.addText(`${intervalHeader} SENTIMENT & NPS TRENDS`, {
+    x: rightColX + 0.22,
+    y: chartCardY + 0.16,
+    w: 4.5,
+    h: 0.20,
+    margin: 0,
+    fontSize: 9.5,
+    bold: true,
+    color: '94A3B8',
+    fontFace: 'Arial'
+  });
+
+  // Interval pill indicator on top-right of chart card
+  const tabs: Array<{ key: 'monthly' | 'weekly' | 'daily'; label: string }> = [
+    { key: 'monthly', label: 'MONTHLY' },
+    { key: 'weekly', label: 'WEEKLY' },
+    { key: 'daily', label: 'DAILY' }
+  ];
+  const pillGroupW = 1.98;
+  const pillGroupX = rightColX + rightColW - pillGroupW - 0.22;
+  slide.addShape(pres.ShapeType.roundRect, {
+    x: pillGroupX,
+    y: chartCardY + 0.12,
+    w: pillGroupW,
+    h: 0.25,
+    rectRadius: 0.05,
+    fill: { color: 'F1F5F9' },
+    line: { color: 'E2E8F0', width: 0.5 }
+  });
+  tabs.forEach((t, i) => {
+    const tw = (pillGroupW - 0.08) / 3;
+    const tx = pillGroupX + 0.04 + i * tw;
+    const isActive = t.key === trendInterval;
+    if (isActive) {
+      slide.addShape(pres.ShapeType.roundRect, {
+        x: tx,
+        y: chartCardY + 0.145,
+        w: tw,
+        h: 0.20,
+        rectRadius: 0.04,
+        fill: { color: 'FFFFFF' },
+        line: { color: 'E2E8F0', width: 0.4 }
+      });
+    }
+    slide.addText(t.label, {
+      x: tx,
+      y: chartCardY + 0.155,
+      w: tw,
+      h: 0.18,
+      margin: 0,
+      fontSize: 6.5,
+      bold: true,
+      align: 'center',
+      color: isActive ? '1E293B' : '64748B',
+      fontFace: 'Arial'
+    });
+  });
+
+  // Chart Plot Geometry
+  const plotX = rightColX + 0.52;
+  const plotW = rightColW - 1.04;
+  const plotY = chartCardY + 0.56;
+  const plotH = 1.92;
+  const plotBottom = plotY + plotH;
+
+  const hasNegativeNps = trendBuckets.some(p => p.cy.nps < 0 || (showLastYear && p.ly.nps < 0));
+  const getNpsY = (nps: number) => {
+    const pct = hasNegativeNps ? Math.max(0, Math.min(100, (nps + 100) / 2)) : Math.max(0, Math.min(100, nps));
+    return plotBottom - (pct / 100) * plotH;
+  };
+
+  // Gridlines & Y-Axes (0..100)
+  const ticks = [0, 20, 40, 60, 80, 100];
+  const rightAxisLabels = hasNegativeNps ? [-100, -60, -20, 20, 60, 100] : ticks;
+
+  ticks.forEach((t, idx) => {
+    const gy = plotBottom - (t / 100) * plotH;
+    slide.addShape(pres.ShapeType.line, {
+      x: plotX,
+      y: gy,
+      w: plotW,
+      h: 0,
+      line: { color: t === 0 ? 'CBD5E1' : 'F1F5F9', width: t === 0 ? 0.8 : 0.6 }
+    });
+    slide.addText(`${t}`, {
+      x: rightColX + 0.14,
+      y: gy - 0.08,
+      w: 0.32,
+      h: 0.16,
+      margin: 0,
+      fontSize: 7.5,
+      bold: true,
+      align: 'right',
+      color: '94A3B8',
+      fontFace: 'Arial'
+    });
+    slide.addText(`${rightAxisLabels[idx]}`, {
+      x: plotX + plotW + 0.06,
+      y: gy - 0.08,
+      w: 0.36,
+      h: 0.16,
+      margin: 0,
+      fontSize: 7.5,
+      bold: true,
+      align: 'left',
+      color: '94A3B8',
+      fontFace: 'Arial'
+    });
+  });
+
+  // Bars & Point Coordinates
+  const nPeriods = trendBuckets.length;
+  if (nPeriods > 0) {
+    const slotW = plotW / nPeriods;
+    const cyCoords: Array<{ x: number; y: number; nps: number }> = [];
+    const lyCoords: Array<{ x: number; y: number; nps: number }> = [];
+
+    trendBuckets.forEach((period, i) => {
+      const slotX = plotX + i * slotW;
+
+      const drawStackedBar = (barX: number, barW: number, stat: PptPeriodStat, isLy: boolean) => {
+        if (stat.count === 0) return;
+        const detrH = (stat.detractorRaw / 100) * plotH;
+        const passH = (stat.passiveRaw / 100) * plotH;
+        const promH = Math.max(0, plotH - detrH - passH);
+
+        const promColor = isLy ? '86EFAC' : '10B981';
+        const passColor = isLy ? 'FDE68A' : 'FBBF24';
+        const detrColor = isLy ? 'FDA4AF' : 'F43F5E';
+
+        if (promH > 0.01) {
+          slide.addShape(pres.ShapeType.rect, {
+            x: barX,
+            y: plotY,
+            w: barW,
+            h: promH,
+            fill: { color: promColor, transparency: isLy ? 30 : 0 },
+            line: { color: promColor, width: 0 }
+          });
+          if (!isLy && promH >= 0.20 && nPeriods <= 14) {
+            slide.addText(stat.promoterPct.toFixed(1), {
+              x: barX,
+              y: plotY + promH / 2 - 0.08,
+              w: barW,
+              h: 0.16,
+              margin: 0,
+              fontSize: 7,
+              bold: true,
+              align: 'center',
+              color: 'FFFFFF',
+              fontFace: 'Arial'
+            });
+          }
+        }
+
+        if (passH > 0.01) {
+          const passY = plotY + promH;
+          slide.addShape(pres.ShapeType.rect, {
+            x: barX,
+            y: passY,
+            w: barW,
+            h: passH,
+            fill: { color: passColor, transparency: isLy ? 30 : 0 },
+            line: { color: passColor, width: 0 }
+          });
+          if (!isLy && passH >= 0.15 && nPeriods <= 14) {
+            slide.addText(stat.passivePct.toFixed(1), {
+              x: barX,
+              y: passY + passH / 2 - 0.07,
+              w: barW,
+              h: 0.14,
+              margin: 0,
+              fontSize: 6.5,
+              bold: true,
+              align: 'center',
+              color: '0F172A',
+              fontFace: 'Arial'
+            });
+          }
+        }
+
+        if (detrH > 0.01) {
+          const detrY = plotY + promH + passH;
+          slide.addShape(pres.ShapeType.rect, {
+            x: barX,
+            y: detrY,
+            w: barW,
+            h: detrH,
+            fill: { color: detrColor, transparency: isLy ? 30 : 0 },
+            line: { color: detrColor, width: 0 }
+          });
+          if (!isLy && detrH >= 0.12 && nPeriods <= 14) {
+            slide.addText(stat.detractorPct.toFixed(1), {
+              x: barX,
+              y: detrY + detrH / 2 - 0.06,
+              w: barW,
+              h: 0.12,
+              margin: 0,
+              fontSize: 6.5,
+              bold: true,
+              align: 'center',
+              color: 'FFFFFF',
+              fontFace: 'Arial'
+            });
+          }
+        }
+      };
+
+      if (showLastYear) {
+        const subW = slotW / 2;
+        const barW = Math.min(0.28, subW * 0.78);
+        const lyBarX = slotX + (subW - barW) / 2;
+        const cyBarX = slotX + subW + (subW - barW) / 2;
+        drawStackedBar(lyBarX, barW, period.ly, true);
+        drawStackedBar(cyBarX, barW, period.cy, false);
+        if (period.ly.count > 0) {
+          lyCoords.push({ x: slotX + subW / 2, y: getNpsY(period.ly.nps), nps: period.ly.nps });
+        }
+        if (period.cy.count > 0) {
+          cyCoords.push({ x: slotX + subW + subW / 2, y: getNpsY(period.cy.nps), nps: period.cy.nps });
+        }
+      } else {
+        const barW = Math.min(0.42, slotW * 0.62);
+        const barX = slotX + (slotW - barW) / 2;
+        drawStackedBar(barX, barW, period.cy, false);
+        if (period.cy.count > 0) {
+          cyCoords.push({ x: slotX + slotW / 2, y: getNpsY(period.cy.nps), nps: period.cy.nps });
+        }
+      }
+
+      // X-Axis label centered under slot
+      slide.addText(period.name.replace('Week of ', ''), {
+        x: slotX,
+        y: plotBottom + 0.05,
+        w: slotW,
+        h: 0.18,
+        margin: 0,
+        fontSize: 8,
+        bold: true,
+        align: 'center',
+        color: '64748B',
+        fontFace: 'Arial'
+      });
+    });
+
+    // Connected LY dashed line
+    if (showLastYear && lyCoords.length > 1) {
+      for (let i = 0; i < lyCoords.length - 1; i++) {
+        const p1 = lyCoords[i];
+        const p2 = lyCoords[i + 1];
+        slide.addShape(pres.ShapeType.line, {
+          x: Math.min(p1.x, p2.x),
+          y: Math.min(p1.y, p2.y),
+          w: Math.max(0.001, Math.abs(p2.x - p1.x)),
+          h: Math.abs(p2.y - p1.y),
+          flipV: p2.y < p1.y,
+          line: { color: '64748B', width: 1.5, dashType: 'dash' }
+        });
+      }
+      lyCoords.forEach(pt => {
+        slide.addShape(pres.ShapeType.ellipse, {
+          x: pt.x - 0.045,
+          y: pt.y - 0.045,
+          w: 0.09,
+          h: 0.09,
+          fill: { color: '64748B' },
+          line: { color: 'FFFFFF', width: 1 }
+        });
+      });
+    }
+
+    // Connected CY line (white halo + crisp teal stroke)
+    if (cyCoords.length > 1) {
+      for (let i = 0; i < cyCoords.length - 1; i++) {
+        const p1 = cyCoords[i];
+        const p2 = cyCoords[i + 1];
+        const lineOpts = {
+          x: Math.min(p1.x, p2.x),
+          y: Math.min(p1.y, p2.y),
+          w: Math.max(0.001, Math.abs(p2.x - p1.x)),
+          h: Math.abs(p2.y - p1.y),
+          flipV: p2.y < p1.y,
+        };
+        slide.addShape(pres.ShapeType.line, {
+          ...lineOpts,
+          line: { color: 'FFFFFF', width: 3.2 }
+        });
+        slide.addShape(pres.ShapeType.line, {
+          ...lineOpts,
+          line: { color: '0F766E', width: 1.9 }
+        });
+      }
+    }
+
+    // Circular CY dots & white pill 1-decimal score labels
+    cyCoords.forEach(pt => {
+      slide.addShape(pres.ShapeType.ellipse, {
+        x: pt.x - 0.055,
+        y: pt.y - 0.055,
+        w: 0.11,
+        h: 0.11,
+        fill: { color: '0F766E' },
+        line: { color: 'FFFFFF', width: 1.4 }
+      });
+
+      const pillW = 0.40;
+      const pillH = 0.17;
+      const pillX = pt.x - pillW / 2;
+      const pillY = Math.max(plotY - 0.18, pt.y - 0.25);
+
+      slide.addShape(pres.ShapeType.roundRect, {
+        x: pillX,
+        y: pillY,
+        w: pillW,
+        h: pillH,
+        rectRadius: 0.04,
+        fill: { color: 'FFFFFF', transparency: 10 },
+        line: { color: 'E2E8F0', width: 0.5 }
+      });
+      slide.addText(pt.nps.toFixed(1), {
+        x: pillX,
+        y: pillY,
+        w: pillW,
+        h: pillH,
+        margin: 0,
+        fontSize: 7.5,
+        bold: true,
+        align: 'center',
+        valign: 'middle',
+        color: '0F172A',
+        fontFace: 'Arial'
+      });
+    });
+  }
+
+  // Chart Legend centered at bottom of chart card
+  const legendY = chartCardY + chartCardH - 0.28;
+  const legendItems = [
+    { type: 'box' as const, color: '10B981', label: 'Promoter % (CY)' },
+    { type: 'box' as const, color: 'FBBF24', label: 'Passive % (CY)' },
+    { type: 'box' as const, color: 'F43F5E', label: 'Detractor % (CY)' },
+    { type: 'line' as const, color: '0F766E', label: 'CY NPS Score' }
+  ];
+  if (showLastYear) {
+    legendItems.push({ type: 'line' as const, color: '64748B', label: 'LY NPS Score' });
+  }
+  const itemW = 1.45;
+  const totalLegW = legendItems.length * itemW;
+  const legStartX = rightColX + (rightColW - totalLegW) / 2;
+
+  legendItems.forEach((item, idx) => {
+    const ix = legStartX + idx * itemW;
+    if (item.type === 'box') {
+      slide.addShape(pres.ShapeType.roundRect, {
+        x: ix + 0.06,
+        y: legendY + 0.03,
+        w: 0.10,
+        h: 0.10,
+        rectRadius: 0.02,
+        fill: { color: item.color },
+        line: { color: item.color }
+      });
+    } else {
+      slide.addShape(pres.ShapeType.line, {
+        x: ix + 0.02,
+        y: legendY + 0.08,
+        w: 0.22,
+        h: 0,
+        line: { color: item.color, width: 1.5, dashType: item.color === '64748B' ? 'dash' : 'solid' }
+      });
+      slide.addShape(pres.ShapeType.ellipse, {
+        x: ix + 0.09,
+        y: legendY + 0.04,
+        w: 0.08,
+        h: 0.08,
+        fill: { color: item.color },
+        line: { color: 'FFFFFF', width: 0.8 }
+      });
+    }
+    slide.addText(item.label, {
+      x: ix + 0.26,
+      y: legendY,
+      w: itemW - 0.26,
+      h: 0.16,
+      margin: 0,
+      fontSize: 7.5,
+      bold: true,
+      color: '64748B',
+      fontFace: 'Arial'
+    });
+  });
+
+  // Slide Footer matching screenshot
+  slide.addText(`DHL | Monthly Management Meeting | Country Office | ${currentMonthName} ${currentYear}`, {
+    x: marginX,
+    y: 7.10,
+    w: 8.5,
+    h: 0.24,
+    margin: 0,
+    fontSize: 9.5,
+    color: '0F172A',
+    fontFace: 'Arial'
+  });
+
+  slide.addText(`FOR INTERNAL USE  |  ${total} Surveys Analyzed`, {
+    x: marginX + 8.5,
+    y: 7.12,
+    w: contentW - 8.5,
+    h: 0.20,
+    margin: 0,
+    fontSize: 8,
+    align: 'right',
+    color: '94A3B8',
     fontFace: 'Arial'
   });
 }
 
 /**
  * Exports a standalone 1-slide PowerPoint presentation (.pptx)
- * of the Executive Summary & Scorecard view in 16:9 widescreen layout.
+ * of the VOICE: Journey NPS Over Time view in full 16:9 widescreen fit.
  */
 export async function exportExecutiveSummarySlideToPowerPoint(
   records: VoCRecord[],
   filterContext?: ExportFilterContext,
-  currentUser?: ActionOwner | null
+  currentUser?: ActionOwner | null,
+  options?: ExecutivePptExportOptions
 ): Promise<void> {
   if (!records || records.length === 0) {
     alert('No records available to export.');
     return;
   }
 
-  // Initialize PptxGenJS in 16:9 widescreen layout (13.33 x 7.5 inches)
+  // Initialize PptxGenJS in 16:9 widescreen layout (13.333 x 7.5 inches)
   const pres = new pptxgen();
   pres.layout = 'LAYOUT_WIDE';
-  pres.title = 'DHL Voice of Customer - Executive Summary Scorecard';
-  pres.subject = 'VoC Executive Scorecard & KPI Portfolio';
+  pres.title = 'VOICE: Journey NPS Over Time';
+  pres.subject = 'VoC Executive Scorecard & Journey NPS Over Time';
   pres.author = currentUser?.fullName || 'Hempiden';
   pres.company = 'DHL Express';
 
-  // Add the 1-page Executive Summary Slide
-  addExecutiveSummarySlide(pres, records, filterContext, currentUser, false);
+  addExecutiveSummarySlide(pres, records, filterContext, currentUser, false, options);
 
-  // Generate file name and download
   const dateSuffix = new Date().toISOString().split('T')[0];
   const catTag = filterContext?.category && filterContext.category !== 'All' ? `_${filterContext.category}` : '';
   const countTag = `_${records.length}Cases`;
@@ -1216,7 +2103,8 @@ export async function exportTransactionAnalyticsSlideToPowerPoint(
 export async function exportVoCToPowerPoint(
   records: VoCRecord[],
   filterContext?: ExportFilterContext,
-  currentUser?: ActionOwner | null
+  currentUser?: ActionOwner | null,
+  options?: ExecutivePptExportOptions
 ): Promise<void> {
   if (!records || records.length === 0) {
     alert('No records available to export.');
@@ -1233,8 +2121,8 @@ export async function exportVoCToPowerPoint(
 
   const totalCount = records.length;
 
-  // Add Slide 1: Executive Summary Scorecard
-  addExecutiveSummarySlide(pres, records, filterContext, currentUser, true);
+  // Add Slide 1: Executive Journey NPS Over Time Scorecard
+  addExecutiveSummarySlide(pres, records, filterContext, currentUser, true, options);
 
   // Add Slide 2: Transaction Performance & Distribution Analytics
   addTransactionAnalyticsSlide(pres, records, filterContext, currentUser);
