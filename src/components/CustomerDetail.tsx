@@ -71,12 +71,13 @@ export default function CustomerDetail({
   onLogin, 
   onLogout 
 }: CustomerDetailProps) {
-  // Facility and Role-based Access Control
+  // Facility, Role, and Private Bucket Owner Access Control
   const recordFacility = (record.interaction || 'PNHGTW').toUpperCase();
+  const isBucketOwner = Boolean(currentUser?.id && (!record.ownerId || record.ownerId === currentUser.id));
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const isHoD = currentUser?.role === 'HoD';
   const isAssignedFacility = currentUser?.facility?.toUpperCase() === recordFacility || currentUser?.facility === 'All';
-  const hasEditPermission = isSuperAdmin || isHoD || isAssignedFacility;
+  const hasEditPermission = isBucketOwner || isSuperAdmin || isHoD || isAssignedFacility;
 
   // Presentation frame customizer state controls
   const [commentBoxBg, setCommentBoxBg] = useState<'blue' | 'yellow' | 'slate' | 'white'>('yellow');

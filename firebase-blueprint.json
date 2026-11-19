@@ -1,126 +1,447 @@
 {
   "entities": {
-    "Colleague": {
-      "title": "Colleague",
-      "description": "DHL Colleague and user account profile for authentication, OTP verification, and role-based access control.",
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile anchored to Firebase Auth UID, owning private VoC and Text Analytics subcollections.",
       "type": "object",
       "properties": {
-        "id": {
+        "uid": {
           "type": "string",
-          "description": "Unique identifier for the colleague profile."
+          "maxLength": 128,
+          "description": "Firebase Authentication UID matching the document ID."
         },
         "username": {
           "type": "string",
-          "description": "System username."
+          "maxLength": 128,
+          "description": "Normalized workspace username."
         },
         "fullName": {
           "type": "string",
-          "description": "Colleague's full name."
-        },
-        "role": {
-          "type": "string",
-          "description": "Access role (Facility Agent, HoD, or superadmin)."
-        },
-        "department": {
-          "type": "string",
-          "description": "Assigned department (Operations, Quality Assurance, Management)."
-        },
-        "facility": {
-          "type": "string",
-          "description": "Assigned DHL facility (PNHGTW, PNHASC, PNHSVC, All)."
-        },
-        "phoneNumber": {
-          "type": "string",
-          "description": "Primary login phone number."
-        },
-        "phoneNumbers": {
-          "type": "array",
-          "description": "List of associated phone numbers for login."
+          "maxLength": 150,
+          "description": "User's full display name."
         },
         "email": {
           "type": "string",
-          "description": "Outlook communication email address."
+          "maxLength": 254,
+          "description": "Authenticated user email address."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["Facility Agent", "HoD", "superadmin"],
+          "description": "Workspace access role."
+        },
+        "department": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Assigned department."
+        },
+        "facility": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Assigned facility code (e.g. PNHGTW, PNHASC, PNHSVC, All)."
+        },
+        "phoneNumber": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Primary phone number."
+        },
+        "phoneNumbers": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "description": "Associated phone numbers."
         },
         "status": {
           "type": "string",
-          "description": "Approval status (pending, approved, rejected)."
+          "enum": ["approved", "pending", "rejected"],
+          "description": "Account status."
         },
         "avatarUrl": {
           "type": "string",
-          "description": "Colleague profile avatar URL."
-        }
-      },
-      "required": ["id", "fullName", "role", "phoneNumber"]
-    },
-    "SystemSetting": {
-      "title": "SystemSetting",
-      "description": "Global system and authentication configuration settings.",
-      "type": "object",
-      "properties": {
-        "sandboxOtpEnabled": {
-          "type": "boolean",
-          "description": "Whether carrier-free sandbox OTP mode is enabled globally."
+          "maxLength": 1024,
+          "description": "Profile avatar URL."
         },
-        "lastUpdatedBy": {
+        "createdAt": {
           "type": "string",
-          "description": "Name or username of user who last modified settings."
+          "maxLength": 64,
+          "description": "ISO timestamp when profile was created."
         },
         "updatedAt": {
           "type": "string",
-          "description": "ISO timestamp of last update."
+          "maxLength": 64,
+          "description": "ISO timestamp when profile was last updated."
         }
       },
-      "required": ["sandboxOtpEnabled"]
+      "required": ["uid", "username", "fullName", "role", "status"]
     },
     "VoCRecord": {
       "title": "VoCRecord",
-      "description": "Customer Voice of Customer survey and feedback record.",
+      "description": "Private user-owned Customer Voice of Customer survey and feedback record stored inside the user's isolated bucket.",
       "type": "object",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique survey identifier."
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Sanitized unique database record identifier."
+        },
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Firebase Auth UID of the bucket owner."
+        },
+        "surveyId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Original Survey ID from uploaded spreadsheet."
         },
         "likelihood": {
           "type": "number",
+          "minimum": 0,
+          "maximum": 10,
           "description": "NPS recommendation likelihood score (0 to 10)."
         },
         "category": {
           "type": "string",
-          "description": "NPS classification: Promoter, Passive, or Detractor."
+          "enum": ["Promoter", "Passive", "Detractor"],
+          "description": "NPS classification."
         },
         "comment": {
           "type": "string",
+          "maxLength": 10000,
           "description": "Customer qualitative feedback comment."
         },
-        "interaction": {
+        "customSummary": {
           "type": "string",
-          "description": "Interaction point or facility code (e.g. PNHGTW, SGNEXP)."
+          "maxLength": 4000
+        },
+        "actionSummary": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "actionDetailsRaw": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "timeline": {
+          "type": "array",
+          "maxItems": 200
+        },
+        "comments": {
+          "type": "array",
+          "maxItems": 200
         },
         "owner": {
           "type": "string",
-          "description": "Assigned action owner colleague name."
+          "maxLength": 150,
+          "description": "Assigned follow-up owner name."
         },
         "status": {
           "type": "string",
-          "description": "Action resolution status (Open, In Progress, or Completed)."
+          "enum": ["New", "In Progress", "Completed"],
+          "description": "Action resolution status."
+        },
+        "interaction": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "followUpComments": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "deadline": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "transaction": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "alertType": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "journeyName": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "momentOfTruthName": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "transactionName": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "easeOfUse": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "responseDate": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "creationDate": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "customerName": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "contactPhone": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "contactEmail": {
+          "type": "string",
+          "maxLength": 254
+        },
+        "countryName": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "region": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "industry": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "accountName": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "awbNumber": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "rootCauseCategory": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "rootCause": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "rootCauseComment": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "topic": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "sentiment": {
+          "type": "string",
+          "enum": ["POSITIVE", "NEGATIVE", "NEUTRAL", "NO_OPINION"]
+        },
+        "responseFeedbackChannel": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 64
         }
       },
-      "required": ["id", "likelihood", "category"]
+      "required": ["id", "ownerId", "likelihood", "category", "comment", "owner", "status"]
+    },
+    "TopicSentimentRecord": {
+      "title": "TopicSentimentRecord",
+      "description": "Private user-owned Text Analytics topic sentiment row stored inside the user's isolated bucket.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "surveyId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "commentField": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "comment": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "phrase": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "topicTheme": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "parentTopic": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "subTopic": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "sentiment": {
+          "type": "string",
+          "enum": ["POSITIVE", "NEGATIVE", "NEUTRAL", "NO_OPINION", "MIXED_OPINION", "STRONGLY_POSITIVE"]
+        },
+        "mainScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "countryUnit": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "responseDate": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": ["id", "ownerId", "surveyId", "topicTheme", "sentiment", "mainScore"]
+    },
+    "TopicHighlightsDoc": {
+      "title": "TopicHighlightsDoc",
+      "description": "Private user-owned Text Analytics executive highlight summaries.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "top3": {
+          "type": "array",
+          "maxItems": 10
+        },
+        "bottom3": {
+          "type": "array",
+          "maxItems": 10
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": ["ownerId", "top3", "bottom3"]
+    },
+    "Colleague": {
+      "title": "Colleague",
+      "description": "Admin-managed colleague directory entries (PII-protected).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "uid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "username": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "fullName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "role": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "department": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "facility": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "phoneNumber": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "phoneNumbers": {
+          "type": "array",
+          "maxItems": 10
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 254
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "avatarUrl": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "required": ["id", "fullName", "role"]
+    },
+    "SystemSetting": {
+      "title": "SystemSetting",
+      "description": "Global workspace configuration managed by administrators.",
+      "type": "object",
+      "properties": {
+        "sandboxOtpEnabled": {
+          "type": "boolean"
+        },
+        "allowedCountryCodes": {
+          "type": "array",
+          "maxItems": 20
+        },
+        "lastUpdatedBy": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": ["sandboxOtpEnabled"]
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Authenticated user profile document (owner and admin read/write; role/status escalation prevented)."
+    },
+    "/users/{userId}/voc_records/{recordId}": {
+      "schema": "VoCRecord",
+      "description": "Strictly private user bucket storing each user's uploaded VoC survey records."
+    },
+    "/users/{userId}/topic_records/{recordId}": {
+      "schema": "TopicSentimentRecord",
+      "description": "Strictly private user bucket storing each user's uploaded Text Analytics topic sentiment records."
+    },
+    "/users/{userId}/topic_highlights/{docId}": {
+      "schema": "TopicHighlightsDoc",
+      "description": "Strictly private user bucket storing each user's Text Analytics highlight summaries."
+    },
     "/colleagues/{colleagueId}": {
       "schema": "Colleague",
-      "description": "Collection storing registered DHL colleague profiles, roles, and phone numbers for OTP login."
+      "description": "Admin-managed colleague directory (PII isolated to admin or matching uid)."
     },
     "/system_settings/{settingId}": {
       "schema": "SystemSetting",
-      "description": "Collection storing external system configuration and login OTP mode settings."
-    },
-    "/voc_records/{recordId}": {
-      "schema": "VoCRecord",
-      "description": "Collection storing customer VoC survey records and resolution tracking."
+      "description": "Global system settings (signed-in read, admin-only write)."
     }
   }
 }

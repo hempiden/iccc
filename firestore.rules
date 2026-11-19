@@ -1,20 +1,387 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. External Colleague Directory & User Profile accounts (used for Phone login, OTP, and RBAC)
-    match /colleagues/{colleagueId} {
-      allow read, write: if true;
-    }
-    
-    // 2. External System & Login OTP configuration settings
-    match /system_settings/{settingId} {
-      allow read, write: if true;
+
+    // =========================================================================
+    // DEFAULT-DENY CATCH-ALL (Least Privilege Baseline)
+    // Denies legacy /voc_records and all unmatched collections by default.
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
     }
 
-    // 3. Customer VoC Survey data stored and synchronized in Cloud Firestore
-    match /voc_records/{recordId} {
-      allow read, write: if true;
+    // =========================================================================
+    // CORE AUTHENTICATION, IDENTITY & TYPE VALIDATION HELPERS
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isValidId(id) {
+      return id is string
+        && id.size() >= 1
+        && id.size() <= 128
+        && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'hempiden@gmail.com'
+          && request.auth.token.email_verified == true)
+        || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function optionalString(data, field, maxLen) {
+      return !(field in data)
+        || data[field] == null
+        || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function optionalNumberRange(data, field, minVal, maxVal) {
+      return !(field in data)
+        || data[field] == null
+        || (data[field] is number && data[field] >= minVal && data[field] <= maxVal);
+    }
+
+    function optionalListMax(data, field, maxLen) {
+      return !(field in data)
+        || data[field] == null
+        || (data[field] is list && data[field].size() <= maxLen);
+    }
+
+    // =========================================================================
+    // USER PROFILE VALIDATORS
+    // =========================================================================
+    function hasValidUserProfileFields(data, userId) {
+      return data.keys().hasOnly([
+          'uid',
+          'username',
+          'fullName',
+          'email',
+          'role',
+          'department',
+          'facility',
+          'phoneNumber',
+          'phoneNumbers',
+          'status',
+          'avatarUrl',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasAll(['uid', 'username', 'fullName', 'role', 'status'])
+        && data.uid is string && data.uid == userId
+        && data.username is string && data.username.size() >= 1 && data.username.size() <= 128
+        && data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 150
+        && data.role in ['Facility Agent', 'HoD', 'superadmin']
+        && data.status in ['approved', 'pending', 'rejected']
+        && optionalString(data, 'email', 254)
+        && optionalString(data, 'department', 120)
+        && optionalString(data, 'facility', 64)
+        && optionalString(data, 'phoneNumber', 40)
+        && optionalListMax(data, 'phoneNumbers', 10)
+        && optionalString(data, 'avatarUrl', 1024)
+        && optionalString(data, 'createdAt', 64)
+        && optionalString(data, 'updatedAt', 64);
+    }
+
+    function isValidUserProfileCreate(data, userId) {
+      return hasValidUserProfileFields(data, userId)
+        && (isAdmin() || (data.role == 'Facility Agent' && data.status == 'approved'));
+    }
+
+    function isValidUserProfileUpdate(newData, oldData, userId) {
+      return hasValidUserProfileFields(newData, userId)
+        && newData.uid == oldData.uid
+        && (!('createdAt' in oldData) || newData.createdAt == oldData.createdAt)
+        && (isAdmin() || (newData.role == oldData.role && newData.status == oldData.status));
+    }
+
+    // =========================================================================
+    // VOC RECORD VALIDATORS (Private User Bucket)
+    // =========================================================================
+    function hasValidVoCRecordFields(data, userId, recordId) {
+      return data.keys().hasOnly([
+          'id',
+          'ownerId',
+          'surveyId',
+          'likelihood',
+          'category',
+          'comment',
+          'customSummary',
+          'actionSummary',
+          'actionDetailsRaw',
+          'timeline',
+          'comments',
+          'owner',
+          'status',
+          'interaction',
+          'followUpComments',
+          'deadline',
+          'transaction',
+          'alertType',
+          'journeyName',
+          'momentOfTruthName',
+          'transactionName',
+          'easeOfUse',
+          'responseDate',
+          'creationDate',
+          'customerName',
+          'contactPhone',
+          'contactEmail',
+          'countryName',
+          'region',
+          'industry',
+          'accountName',
+          'awbNumber',
+          'rootCauseCategory',
+          'rootCause',
+          'rootCauseComment',
+          'topic',
+          'sentiment',
+          'responseFeedbackChannel',
+          'updatedAt'
+        ])
+        && data.keys().hasAll(['id', 'ownerId', 'likelihood', 'category', 'comment', 'owner', 'status'])
+        && data.id is string && data.id == recordId
+        && data.ownerId is string && data.ownerId == userId
+        && data.likelihood is number && data.likelihood >= 0 && data.likelihood <= 10
+        && data.category in ['Promoter', 'Passive', 'Detractor']
+        && data.comment is string && data.comment.size() <= 10000
+        && data.owner is string && data.owner.size() <= 150
+        && data.status in ['New', 'In Progress', 'Completed']
+        && optionalString(data, 'surveyId', 128)
+        && optionalString(data, 'customSummary', 4000)
+        && optionalString(data, 'actionSummary', 4000)
+        && optionalString(data, 'actionDetailsRaw', 20000)
+        && optionalListMax(data, 'timeline', 200)
+        && optionalListMax(data, 'comments', 200)
+        && optionalString(data, 'interaction', 128)
+        && optionalString(data, 'followUpComments', 10000)
+        && optionalString(data, 'deadline', 128)
+        && optionalString(data, 'transaction', 256)
+        && optionalString(data, 'alertType', 128)
+        && optionalString(data, 'journeyName', 256)
+        && optionalString(data, 'momentOfTruthName', 256)
+        && optionalString(data, 'transactionName', 256)
+        && optionalNumberRange(data, 'easeOfUse', 0, 10)
+        && optionalString(data, 'responseDate', 64)
+        && optionalString(data, 'creationDate', 64)
+        && optionalString(data, 'customerName', 256)
+        && optionalString(data, 'contactPhone', 128)
+        && optionalString(data, 'contactEmail', 254)
+        && optionalString(data, 'countryName', 128)
+        && optionalString(data, 'region', 128)
+        && optionalString(data, 'industry', 128)
+        && optionalString(data, 'accountName', 256)
+        && optionalString(data, 'awbNumber', 128)
+        && optionalString(data, 'rootCauseCategory', 256)
+        && optionalString(data, 'rootCause', 256)
+        && optionalString(data, 'rootCauseComment', 4000)
+        && optionalString(data, 'topic', 256)
+        && (!('sentiment' in data) || data.sentiment == null || data.sentiment in ['POSITIVE', 'NEGATIVE', 'NEUTRAL', 'NO_OPINION'])
+        && optionalString(data, 'responseFeedbackChannel', 128)
+        && optionalString(data, 'updatedAt', 64);
+    }
+
+    function isValidVoCRecordUpdate(newData, oldData, userId, recordId) {
+      return hasValidVoCRecordFields(newData, userId, recordId)
+        && newData.id == oldData.id
+        && newData.ownerId == oldData.ownerId;
+    }
+
+    // =========================================================================
+    // TOPIC SENTIMENT RECORD VALIDATORS (Private User Bucket)
+    // =========================================================================
+    function hasValidTopicRecordFields(data, userId, recordId) {
+      return data.keys().hasOnly([
+          'id',
+          'ownerId',
+          'surveyId',
+          'commentField',
+          'comment',
+          'phrase',
+          'topicTheme',
+          'parentTopic',
+          'subTopic',
+          'sentiment',
+          'mainScore',
+          'countryUnit',
+          'responseDate'
+        ])
+        && data.keys().hasAll(['id', 'ownerId', 'surveyId', 'topicTheme', 'sentiment', 'mainScore'])
+        && data.id is string && data.id == recordId
+        && data.ownerId is string && data.ownerId == userId
+        && data.surveyId is string && data.surveyId.size() <= 128
+        && data.topicTheme is string && data.topicTheme.size() <= 256
+        && data.sentiment in ['POSITIVE', 'NEGATIVE', 'NEUTRAL', 'NO_OPINION', 'MIXED_OPINION', 'STRONGLY_POSITIVE']
+        && data.mainScore is number && data.mainScore >= 0 && data.mainScore <= 10
+        && optionalString(data, 'commentField', 256)
+        && optionalString(data, 'comment', 10000)
+        && optionalString(data, 'phrase', 2000)
+        && optionalString(data, 'parentTopic', 256)
+        && optionalString(data, 'subTopic', 256)
+        && optionalString(data, 'countryUnit', 128)
+        && optionalString(data, 'responseDate', 64);
+    }
+
+    function isValidTopicRecordUpdate(newData, oldData, userId, recordId) {
+      return hasValidTopicRecordFields(newData, userId, recordId)
+        && newData.id == oldData.id
+        && newData.ownerId == oldData.ownerId;
+    }
+
+    function isValidTopicHighlights(data, userId) {
+      return data.keys().hasOnly(['ownerId', 'top3', 'bottom3', 'updatedAt'])
+        && data.keys().hasAll(['ownerId', 'top3', 'bottom3'])
+        && data.ownerId is string && data.ownerId == userId
+        && data.top3 is list && data.top3.size() <= 10
+        && data.bottom3 is list && data.bottom3.size() <= 10
+        && optionalString(data, 'updatedAt', 64);
+    }
+
+    // =========================================================================
+    // COLLEAGUE & SYSTEM SETTINGS VALIDATORS
+    // =========================================================================
+    function isValidColleague(data, colleagueId) {
+      return data.keys().hasOnly([
+          'id',
+          'uid',
+          'username',
+          'fullName',
+          'role',
+          'department',
+          'facility',
+          'phoneNumber',
+          'phoneNumbers',
+          'email',
+          'status',
+          'avatarUrl'
+        ])
+        && data.keys().hasAll(['id', 'fullName', 'role'])
+        && data.id is string && data.id == colleagueId
+        && data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 150
+        && data.role is string && data.role.size() >= 1 && data.role.size() <= 64
+        && optionalString(data, 'uid', 128)
+        && optionalString(data, 'username', 128)
+        && optionalString(data, 'department', 120)
+        && optionalString(data, 'facility', 64)
+        && optionalString(data, 'phoneNumber', 40)
+        && optionalListMax(data, 'phoneNumbers', 10)
+        && optionalString(data, 'email', 254)
+        && (!('status' in data) || data.status == null || data.status in ['pending', 'approved', 'rejected'])
+        && optionalString(data, 'avatarUrl', 1024);
+    }
+
+    function isValidSystemSetting(data) {
+      return data.keys().hasOnly(['sandboxOtpEnabled', 'allowedCountryCodes', 'lastUpdatedBy', 'updatedAt'])
+        && data.keys().hasAll(['sandboxOtpEnabled'])
+        && data.sandboxOtpEnabled is bool
+        && optionalListMax(data, 'allowedCountryCodes', 20)
+        && optionalString(data, 'lastUpdatedBy', 150)
+        && optionalString(data, 'updatedAt', 64);
+    }
+
+    // =========================================================================
+    // COLLECTION RULES
+    // =========================================================================
+
+    // 1. User Profiles & Strictly Isolated Per-User Data Buckets
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId)
+        && (isOwner(userId) || isAdmin())
+        && isValidUserProfileCreate(request.resource.data, userId);
+      allow update: if isValidId(userId)
+        && (isOwner(userId) || isAdmin())
+        && isValidUserProfileUpdate(request.resource.data, resource.data, userId);
+      allow delete: if isValidId(userId) && isAdmin();
+
+      // 1a. Private User VoC Survey Records Bucket
+      match /voc_records/{recordId} {
+        allow get: if isValidId(userId) && isValidId(recordId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId)
+          && isValidId(recordId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && hasValidVoCRecordFields(request.resource.data, userId, recordId);
+        allow update: if isValidId(userId)
+          && isValidId(recordId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && isValidVoCRecordUpdate(request.resource.data, resource.data, userId, recordId);
+        allow delete: if isValidId(userId) && isValidId(recordId) && isOwner(userId);
+      }
+
+      // 1b. Private User Text Analytics Topic Records Bucket
+      match /topic_records/{recordId} {
+        allow get: if isValidId(userId) && isValidId(recordId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId)
+          && isValidId(recordId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && hasValidTopicRecordFields(request.resource.data, userId, recordId);
+        allow update: if isValidId(userId)
+          && isValidId(recordId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && isValidTopicRecordUpdate(request.resource.data, resource.data, userId, recordId);
+        allow delete: if isValidId(userId) && isValidId(recordId) && isOwner(userId);
+      }
+
+      // 1c. Private User Text Analytics Highlights Bucket
+      match /topic_highlights/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId)
+          && isValidId(docId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && isValidTopicHighlights(request.resource.data, userId);
+        allow update: if isValidId(userId)
+          && isValidId(docId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && isValidTopicHighlights(request.resource.data, userId)
+          && request.resource.data.ownerId == resource.data.ownerId;
+        allow delete: if isValidId(userId) && isValidId(docId) && isOwner(userId);
+      }
+    }
+
+    // 2. Admin Registry
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && (isOwner(adminUid) || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if isValidId(adminUid) && isAdmin();
+    }
+
+    // 3. Admin-Managed Colleague Directory (PII-isolated)
+    match /colleagues/{colleagueId} {
+      allow get: if isValidId(colleagueId)
+        && (isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid));
+      allow list: if isAdmin();
+      allow create, update: if isValidId(colleagueId)
+        && isAdmin()
+        && isValidColleague(request.resource.data, colleagueId);
+      allow delete: if isValidId(colleagueId) && isAdmin();
+    }
+
+    // 4. Global System Settings
+    match /system_settings/{settingId} {
+      allow get: if isValidId(settingId) && isSignedIn();
+      allow list: if isAdmin();
+      allow create, update: if isValidId(settingId)
+        && isAdmin()
+        && isValidSystemSetting(request.resource.data);
+      allow delete: if isValidId(settingId) && isAdmin();
     }
   }
 }
-

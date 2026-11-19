@@ -50,24 +50,25 @@ export default function SuperadminPanel({ onClose, records, currentUser, initial
   const [resetSuccessMsg, setResetSuccessMsg] = useState<string | null>(null);
 
   const handleTriggerResetData = async () => {
+    if (!currentUser?.id) return;
     const confirmed = window.confirm(
-      'Are you sure you want to clear all data and only keep the sample data in Firebase and this system?\n\nThis will remove all extra records and restore the pristine sample VoC surveys and colleague profiles in Firebase and local storage.'
+      'Are you sure you want to reset your personal workspace bucket to the sample dataset?\n\nThis will only reset your own private data bucket and will not affect any other user.'
     );
     if (!confirmed) return;
 
     setIsResettingData(true);
     setResetSuccessMsg(null);
     try {
-      await resetAllDataToSampleData(sampleRecords);
+      await resetAllDataToSampleData(currentUser.id, sampleRecords);
       await loadColleaguesList();
       if (onResetToSampleData) {
         onResetToSampleData();
       }
-      setResetSuccessMsg('All data cleared successfully! Only the sample data is retained in Firebase and this system.');
+      setResetSuccessMsg('Your private data bucket has been reset to the clean sample dataset.');
       setTimeout(() => setResetSuccessMsg(null), 6000);
     } catch (err) {
       console.error('Error clearing data:', err);
-      window.alert('Failed to reset data: ' + String(err));
+      setResetSuccessMsg('Failed to reset data: ' + String(err));
     } finally {
       setIsResettingData(false);
     }

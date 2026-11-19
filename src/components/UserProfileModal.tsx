@@ -57,18 +57,16 @@ export default function UserProfileModal({ currentUser, onUpdateCurrentUser, onC
       setError('Full name is required.');
       return;
     }
-    if (!primaryPhone.trim()) {
-      setError('Primary phone number is required.');
-      return;
-    }
 
     setSaving(true);
     setError(null);
 
-    // Prepare updated phone numbers list ensuring primary is always included
+    // Prepare updated phone numbers list if provided
     const cleanPrimary = primaryPhone.trim().replace(/\s+/g, '');
-    let updatedList = phoneNumbers.map(p => p.trim().replace(/\s+/g, ''));
-    if (!updatedList.includes(cleanPrimary)) {
+    let updatedList = phoneNumbers
+      .map(p => p.trim().replace(/\s+/g, ''))
+      .filter(Boolean);
+    if (cleanPrimary && !updatedList.includes(cleanPrimary)) {
       updatedList = [cleanPrimary, ...updatedList];
     }
 
@@ -76,9 +74,9 @@ export default function UserProfileModal({ currentUser, onUpdateCurrentUser, onC
       ...currentUser,
       fullName: fullName.trim(),
       email: email.trim(),
-      phoneNumber: cleanPrimary,
-      phoneNumbers: updatedList,
-      avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName.trim())}`
+      phoneNumber: cleanPrimary || undefined,
+      phoneNumbers: updatedList.length > 0 ? updatedList : undefined,
+      avatarUrl: currentUser.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName.trim())}`
     };
 
     try {

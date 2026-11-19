@@ -552,16 +552,16 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
           <div>
             <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
               <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-              Upload VoC Survey Records
+              Upload to My Private VoC Bucket
             </h2>
             <p className="text-xs text-gray-500 mt-1">
-              Upload previously exported DHL VoC Master Workbooks or raw survey logs.
+              Upload previously exported DHL VoC Master Workbooks or raw survey logs. Your data is stored strictly inside your own private account bucket.
             </p>
           </div>
           
           {currentCount > 0 && (
             <div className="text-xs font-medium text-gray-500 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-lg self-start md:self-auto">
-              Currently loaded: <span className="text-emerald-700 font-bold">{currentCount}</span> records
+              In your bucket: <span className="text-emerald-700 font-bold">{currentCount}</span> records
             </div>
           )}
         </div>
@@ -570,7 +570,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
         <div className="mb-5 p-3.5 bg-slate-50 rounded-xl border border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="space-y-0.5">
             <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wide block">Upload Mode</span>
-            <span className="text-[11px] text-slate-500 block">Choose how to handle the uploaded dataset.</span>
+            <span className="text-[11px] text-slate-500 block">Choose how to update your private bucket.</span>
           </div>
           <div className="flex bg-slate-200/60 p-1 rounded-lg border border-slate-200 shrink-0 self-start sm:self-auto">
             <button
@@ -582,7 +582,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Replace Entire DB (Resume)
+              Replace My Bucket
             </button>
             <button
               type="button"
@@ -593,7 +593,7 @@ export default function ExcelUploader({ onRecordsLoaded, onAppendRecords, curren
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Append Records
+              Append to My Bucket
             </button>
           </div>
         </div>

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
   FileSpreadsheet, MessageSquare, ShieldAlert, Shield, Award, Sparkles, 
   RefreshCw, RotateCcw, Truck, HelpCircle, User, Users, Activity, TrendingUp, Calendar, LogOut,
-  Presentation, Bell, Mail, Database
+  Presentation, Bell, Mail, Database, Upload, Lock
 } from 'lucide-react';
 import { VoCRecord, ActionOwner } from './types';
 import { sampleRecords } from './sampleData';
@@ -18,7 +19,20 @@ import SuperadminPanel from './components/SuperadminPanel';
 import UserProfileModal from './components/UserProfileModal';
 import NotificationCenter, { CommentNotification } from './components/NotificationCenter';
 import { TextAnalyticsDashboard } from './components/TextAnalyticsDashboard';
-import { saveVoCRecord, batchSaveVoCRecords, appendVoCRecords, seedFirestoreIfNeeded, findColleagueByPhoneNumber, clearVoCRecords, deleteVoCRecords } from './utils/firebaseSync';
+import { auth } from './utils/firebase';
+import {
+  ensureUserProfile,
+  fetchVoCRecords,
+  saveVoCRecord,
+  batchSaveVoCRecords,
+  appendVoCRecords,
+  seedUserSampleData,
+  findColleagueByPhoneNumber,
+  clearVoCRecords,
+  deleteVoCRecords,
+  clearLegacySharedStorage,
+  getUserNotificationsStorageKey
+} from './utils/firebaseSync';
 import { healRecordTimeline } from './utils/parser';
 import { exportMasterExcelWorkbook } from './utils/excelDatabase';
 import { syncRecordToPowerAutomate, syncBatchToPowerAutomate } from './utils/powerAutomateSync';
@@ -117,18 +131,9 @@ const getRecordTime = (r: VoCRecord): number => {
 export default function App() {
   const [records, setRecords] = useState<VoCRecord[]>([]);
   const [loadingDb, setLoadingDb] = useState(true);
-
-  const [currentUser, setCurrentUser] = useState<ActionOwner | null>(() => {
-    const saved = localStorage.getItem('dhl_voc_current_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Error loading persistent user:', e);
-      }
-    }
-    return null;
-  });
+  const [authReady, setAuthReady] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<ActionOwner | null>(null);
 
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [showColleagueManager, setShowColleagueManager] = useState(false);
@@ -137,15 +142,39 @@ export default function App() {
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'analytics' | 'upload'>('dashboard');
 
-  // Notifications states and handlers
-  const [readNotifications, setReadNotifications] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('dhl_voc_read_notifications');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Notifications states and handlers (strictly scoped per userId)
+  const [readNotifications, setReadNotifications] = useState<string[]>([]);
+
+  // Subscribe to Firebase Authentication state so every user gets a verified UID & isolated bucket
+  useEffect(() => {
+    clearLegacySharedStorage();
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (!fbUser) {
+        setCurrentUser(null);
+        setRecords([]);
+        setSelectedRecordId(null);
+        setReadNotifications([]);
+        setDbError(null);
+        setLoadingDb(false);
+        setAuthReady(true);
+        return;
+      }
+
+      try {
+        const profile = await ensureUserProfile(fbUser);
+        setCurrentUser(profile);
+        setDbError(null);
+      } catch (err) {
+        console.error('Error initializing authenticated user profile:', err);
+        setDbError('Could not initialize your workspace profile. Please sign in again.');
+        setCurrentUser(null);
+      } finally {
+        setAuthReady(true);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const notifications = useMemo(() => {
     if (!currentUser) return [];
@@ -200,7 +229,9 @@ export default function App() {
     setReadNotifications(prev => {
       if (prev.includes(id)) return prev;
       const next = [...prev, id];
-      localStorage.setItem('dhl_voc_read_notifications', JSON.stringify(next));
+      if (currentUser?.id) {
+        localStorage.setItem(getUserNotificationsStorageKey(currentUser.id), JSON.stringify(next));
+      }
       return next;
     });
   };
@@ -208,15 +239,42 @@ export default function App() {
   const handleMarkAllAsRead = () => {
     const ids = notifications.map(n => n.id);
     setReadNotifications(ids);
-    localStorage.setItem('dhl_voc_read_notifications', JSON.stringify(ids));
+    if (currentUser?.id) {
+      localStorage.setItem(getUserNotificationsStorageKey(currentUser.id), JSON.stringify(ids));
+    }
+  };
+
+  const handleLoadSampleIntoMyBucket = async () => {
+    if (!currentUser?.id) return;
+    setLoadingDb(true);
+    setDbError(null);
+    try {
+      const seeded = await seedUserSampleData(currentUser.id, sampleRecords);
+      const sanitized = seeded.map(r => {
+        const healed = healRecordTimeline(r);
+        return {
+          ...healed,
+          responseDate: sanitizeExcelDateString(healed.responseDate),
+          creationDate: sanitizeExcelDateString(healed.creationDate)
+        };
+      });
+      setRecords(sanitized);
+      setSelectedRecordId(null);
+    } catch (err) {
+      console.error('Error loading sample records into user bucket:', err);
+      setDbError('Failed to load sample records into your private bucket. Please try again.');
+    } finally {
+      setLoadingDb(false);
+    }
   };
 
   const handleResetToSampleData = () => {
-    setLoadingDb(true);
+    if (!currentUser?.id) return;
     const sanitized = sampleRecords.map(r => {
       const healed = healRecordTimeline(r);
       return {
         ...healed,
+        ownerId: currentUser.id,
         responseDate: sanitizeExcelDateString(healed.responseDate),
         creationDate: sanitizeExcelDateString(healed.creationDate)
       };
@@ -225,17 +283,30 @@ export default function App() {
     setLoadingDb(false);
   };
 
-  // Load and seed records locally on authentication
+  // Load ONLY the authenticated user's own private bucket records (never shows another user's data)
   useEffect(() => {
-    if (!currentUser) return;
-    
+    if (!authReady || !currentUser?.id) return;
+
+    let cancelled = false;
     setLoadingDb(true);
-    seedFirestoreIfNeeded(sampleRecords)
+    setDbError(null);
+    setSelectedRecordId(null);
+
+    try {
+      const savedNotifs = localStorage.getItem(getUserNotificationsStorageKey(currentUser.id));
+      setReadNotifications(savedNotifs ? JSON.parse(savedNotifs) : []);
+    } catch {
+      setReadNotifications([]);
+    }
+
+    fetchVoCRecords(currentUser.id)
       .then((data) => {
+        if (cancelled) return;
         const sanitized = data.map(r => {
           const healed = healRecordTimeline(r);
           return {
             ...healed,
+            ownerId: currentUser.id,
             responseDate: sanitizeExcelDateString(healed.responseDate),
             creationDate: sanitizeExcelDateString(healed.creationDate)
           };
@@ -244,11 +315,17 @@ export default function App() {
         setLoadingDb(false);
       })
       .catch((err) => {
-        console.error('Error loading local survey records:', err);
-        setRecords(sampleRecords);
+        if (cancelled) return;
+        console.error('Error loading user private bucket records:', err);
+        setRecords([]);
+        setDbError('Unable to read your private data bucket right now. Please try refreshing.');
         setLoadingDb(false);
       });
-  }, [currentUser]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, currentUser?.id]);
 
   // Dynamic Date Bounds Extraction
   const dateTimes = React.useMemo(() => {
@@ -350,32 +427,37 @@ export default function App() {
     });
   }, [filteredByTimelineAndChannel, statusFilter]);
 
-  // Synchronize records updates to local storage and trigger Power Automate webhook
+  // Synchronize record updates to ONLY the active user's private Firestore bucket
   const handleUpdateRecord = async (updatedRecord: VoCRecord) => {
-    const nextRecords = records.map(r => r.id === updatedRecord.id ? updatedRecord : r);
+    if (!currentUser?.id) return;
+    const ownedRecord: VoCRecord = { ...updatedRecord, ownerId: currentUser.id };
+    const nextRecords = records.map(r => r.id === ownedRecord.id ? ownedRecord : r);
     setRecords(nextRecords);
     
     try {
-      await saveVoCRecord(updatedRecord);
+      const saved = await saveVoCRecord(currentUser.id, ownedRecord);
+      setRecords(prev => prev.map(r => r.id === ownedRecord.id ? saved : r));
       // Automatically trigger Power Automate webhook if configured
-      syncRecordToPowerAutomate(updatedRecord, 'UPDATE');
+      syncRecordToPowerAutomate(saved, 'UPDATE');
     } catch (e) {
-      console.error('Failed to sync updated record:', e);
+      console.error('Failed to sync updated record to private bucket:', e);
+      setDbError('Failed to save your record edit to your cloud bucket.');
     }
   };
 
-  // Delete records from Firestore and local state
+  // Delete records from ONLY the active user's private bucket
   const handleDeleteRecords = async (idsToDelete: string[]) => {
+    if (!currentUser?.id) return;
     try {
       setLoadingDb(true);
-      await deleteVoCRecords(idsToDelete);
+      await deleteVoCRecords(currentUser.id, idsToDelete);
       setRecords(prev => prev.filter(r => !idsToDelete.includes(r.id)));
       if (selectedRecordId && idsToDelete.includes(selectedRecordId)) {
         setSelectedRecordId(null);
       }
     } catch (e) {
       console.error('Failed to delete selected records:', e);
-      alert('Failed to delete selected surveys. Please try again.');
+      setDbError('Failed to delete selected surveys from your private bucket.');
     } finally {
       setLoadingDb(false);
     }
@@ -386,56 +468,42 @@ export default function App() {
     return records.find(r => r.id === selectedRecordId) || null;
   }, [records, selectedRecordId]);
 
-  // Handler for uploading new files
+  // Handler for uploading new files (replaces ONLY this user's private bucket)
   const handleRecordsLoaded = async (newRecords: VoCRecord[]) => {
-    setRecords(newRecords);
-    setSelectedRecordId(null); // Clear selected
+    if (!currentUser?.id) return;
+    setSelectedRecordId(null);
     
     try {
       setLoadingDb(true);
-      await clearVoCRecords();
-      await batchSaveVoCRecords(newRecords);
-      // Automatically trigger Power Automate batch sync
-      syncBatchToPowerAutomate(newRecords, 'BATCH_OVERWRITE_UPLOAD');
+      setDbError(null);
+      await clearVoCRecords(currentUser.id);
+      const saved = await batchSaveVoCRecords(currentUser.id, newRecords);
+      setRecords(saved);
+      syncBatchToPowerAutomate(saved, 'BATCH_OVERWRITE_UPLOAD');
     } catch (e) {
-      console.error('Failed to batch save loaded records:', e);
+      console.error('Failed to batch save loaded records to user bucket:', e);
+      setDbError('Failed to save uploaded records to your private cloud bucket.');
       throw e;
     } finally {
       setLoadingDb(false);
     }
   };
 
-  // Handler for appending files
+  // Handler for appending files into ONLY this user's private bucket
   const handleAppendRecords = async (newRecords: VoCRecord[]) => {
+    if (!currentUser?.id) return;
     try {
       setLoadingDb(true);
-      // Append or merge new records with existing records in local persistence
-      const combined = await appendVoCRecords(newRecords);
-      // Update state with the full combined list
+      setDbError(null);
+      const combined = await appendVoCRecords(currentUser.id, newRecords);
       setRecords(combined);
-      // Automatically trigger Power Automate batch sync for the new rows
       syncBatchToPowerAutomate(newRecords, 'APPEND_UPLOAD');
     } catch (e) {
-      console.error('Failed to batch save appended records:', e);
+      console.error('Failed to batch save appended records to user bucket:', e);
+      setDbError('Failed to append uploaded records to your private cloud bucket.');
       throw e;
     } finally {
       setLoadingDb(false);
-    }
-  };
-
-  // Reset to original DHL sample records locally
-  const handleResetToSample = async () => {
-    if (window.confirm('This will restore the default DHL VoC sample dataset locally, overwriting changes. Proceed?')) {
-      try {
-        setLoadingDb(true);
-        setRecords(sampleRecords);
-        setSelectedRecordId(null);
-        await batchSaveVoCRecords(sampleRecords);
-      } catch (e) {
-        console.error('Failed to reset dataset:', e);
-      } finally {
-        setLoadingDb(false);
-      }
     }
   };
 
@@ -453,15 +521,21 @@ export default function App() {
     }
   }, [records]);
 
-  // Sync user session to localStorage
   const handleLogin = (user: ActionOwner) => {
     setCurrentUser(user);
-    localStorage.setItem('dhl_voc_current_user', JSON.stringify(user));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error('Error signing out:', err);
+    }
     setCurrentUser(null);
-    localStorage.removeItem('dhl_voc_current_user');
+    setRecords([]);
+    setSelectedRecordId(null);
+    setActiveTab('dashboard');
+    setReadNotifications([]);
   };
 
   // Render pending approval wall if user exists but is not approved yet
@@ -492,7 +566,19 @@ export default function App() {
     }
   };
 
-  // If no user is authenticated, block with Phone Auth SMS login wall
+  // Wait for Firebase Auth initialization before rendering login or workspace
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 font-sans text-white gap-3">
+        <RefreshCw className="w-7 h-7 text-amber-400 animate-spin" />
+        <p className="text-xs font-bold uppercase tracking-widest text-slate-300">
+          Loading Your Private Workspace...
+        </p>
+      </div>
+    );
+  }
+
+  // If no user is authenticated, render Firebase Google Sign-In wall
   if (!currentUser) {
     return <PhoneAuthLogin onLoginSuccess={(user) => handleLogin(user)} />;
   }
@@ -602,10 +688,11 @@ export default function App() {
     );
   }
 
-  // If activeTab is 'analytics', render dedicated full-screen TextAnalyticsDashboard
+  // If activeTab is 'analytics', render dedicated full-screen TextAnalyticsDashboard scoped to currentUser.id
   if (activeTab === 'analytics') {
     return (
       <TextAnalyticsDashboard 
+        userId={currentUser.id}
         vocRecords={records}
         onBackToVoC={() => {
           setActiveTab('dashboard');
@@ -671,22 +758,20 @@ export default function App() {
               <span>AI Text Analytics</span>
             </button>
 
-            {currentUser?.role === 'superadmin' && (
-              <button
-                onClick={() => {
-                  setActiveTab('upload');
-                  setSelectedRecordId(null);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === 'upload'
-                    ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500" />
-                <span>Upload Center</span>
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setActiveTab('upload');
+                setSelectedRecordId(null);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'upload'
+                  ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500" />
+              <span>Upload Center</span>
+            </button>
           </div>
         </div>
 
@@ -812,8 +897,8 @@ export default function App() {
                 onLogin={handleLogin}
                 onLogout={handleLogout}
               />
-            ) : activeTab === 'upload' && currentUser?.role === 'superadmin' ? (
-              /* Dedicated Upload Ingestion Page */
+            ) : activeTab === 'upload' ? (
+              /* Dedicated Private User Bucket Upload Ingestion Page */
               <div className="space-y-6 animate-fade-in print:hidden">
                 <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-6 md:p-8 border border-slate-800 shadow-md relative overflow-hidden">
                   <div className="absolute right-0 bottom-0 translate-x-12 translate-y-12 opacity-5 pointer-events-none">
@@ -821,14 +906,15 @@ export default function App() {
                   </div>
                   
                   <div className="relative z-10 max-w-2xl space-y-3">
-                    <span className="text-xs font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2.5 py-1 rounded-md border border-amber-400/20">
-                      Administrative Tool
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2.5 py-1 rounded-md border border-amber-400/20">
+                      <Lock className="w-3 h-3" />
+                      Private Bucket: {currentUser.email || currentUser.fullName}
                     </span>
                     <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
-                      DHL VoC Data Ingestion Center
+                      My VoC Data Ingestion Center
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-medium">
-                      Upload your weekly Customer Experience Voice of Customer survey results from Excel sheets or CSV logs. This interface allows you to append new weekly surveys dynamically or fully overwrite the existing shared Firestore database.
+                      Upload your Customer Experience Voice of Customer survey results from Excel sheets or CSV logs. All uploaded files are stored strictly inside your own private account bucket and are never visible to any other user.
                     </p>
                   </div>
                 </div>
@@ -954,44 +1040,99 @@ export default function App() {
             ) : (
               /* Welcome block & Executive KPI overview portfolio & Power BI Mirror integrated */
               <div className="space-y-6 animate-fade-in print:hidden">
+                {dbError && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold px-4 py-3 rounded-xl flex items-center justify-between gap-3">
+                    <span>{dbError}</span>
+                    <button
+                      type="button"
+                      onClick={() => setDbError(null)}
+                      className="text-rose-600 hover:text-rose-900 font-bold cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+
                 <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-6 md:p-8 border border-slate-800 shadow-md relative overflow-hidden">
                   <div className="absolute right-0 bottom-0 translate-x-12 translate-y-12 opacity-5 pointer-events-none select-none">
                     <Truck className="w-80 h-80 text-white opacity-5" />
                   </div>
                   
                   <div className="relative z-10 max-w-2xl space-y-3">
-                    <span className="text-xs font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2.5 py-1 rounded-md border border-amber-400/20">
-                      Unified Portal
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2.5 py-1 rounded-md border border-amber-400/20">
+                        Unified Portal
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-300 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-400/20">
+                        <Lock className="w-3 h-3" />
+                        Private Bucket ({currentUser.email || currentUser.fullName})
+                      </span>
+                    </div>
                     <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
                       DHL iCCC Voice & Slide Intelligence Workspace
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-medium">
-                      Power BI Weekly charts and the executive-ready slide compilation suite integrated in one cohesive dashboard. Instantly review AI-summarized feedback, case status logs, and action details without horizontal scroll.
+                      Power BI Weekly charts and the executive-ready slide compilation suite integrated in one cohesive dashboard. Your uploaded surveys are isolated in your personal cloud bucket.
                     </p>
                   </div>
                 </div>
 
-                <ExecutiveOverview 
-                  records={filteredByTimelineAndChannel} 
-                  allRecords={records} 
-                  currentUser={currentUser} 
-                  selectedTransactionFilter={transactionFilter !== 'All' ? transactionFilter : null}
-                  onSelectTransactionFilter={(tx) => setTransactionFilter(tx || 'All')}
-                />
+                {!loadingDb && records.length === 0 ? (
+                  <div className="bg-white rounded-2xl border-2 border-dashed border-amber-300 p-8 md:p-10 text-center shadow-xs space-y-4">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
+                      <Upload className="w-7 h-7" />
+                    </div>
+                    <div className="space-y-1.5 max-w-lg mx-auto">
+                      <h3 className="text-lg font-black text-slate-900">
+                        Your Personal VoC Data Bucket is Empty
+                      </h3>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Every user gets their own isolated data bucket so no one else can see your data. Upload your Excel or CSV survey file to get started, or load sample demo records into your private bucket.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('upload')}
+                        className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl flex items-center gap-2 transition-all shadow-sm cursor-pointer"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>Upload My Excel / CSV</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleLoadSampleIntoMyBucket}
+                        className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-sm cursor-pointer"
+                      >
+                        <Sparkles className="w-4 h-4 text-amber-400" />
+                        <span>Load Sample Demo Data</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <ExecutiveOverview 
+                      records={filteredByTimelineAndChannel} 
+                      allRecords={records} 
+                      currentUser={currentUser} 
+                      selectedTransactionFilter={transactionFilter !== 'All' ? transactionFilter : null}
+                      onSelectTransactionFilter={(tx) => setTransactionFilter(tx || 'All')}
+                    />
 
-                {/* Unified Interactive Power BI Mirror Component */}
-                <PowerBiMirror 
-                  records={filteredByTimelineAndChannel} 
-                  onSelectRecord={(r) => setSelectedRecordId(r.id)} 
-                  onDeleteRecords={handleDeleteRecords}
-                  presentationMode={presentationMode}
-                  onTogglePresentationMode={setPresentationMode}
-                  statusFilter={statusFilter}
-                  categoryFilter={categoryFilter}
-                  setCategoryFilter={setCategoryFilter}
-                  currentUser={currentUser}
-                />
+                    {/* Unified Interactive Power BI Mirror Component */}
+                    <PowerBiMirror 
+                      records={filteredByTimelineAndChannel} 
+                      onSelectRecord={(r) => setSelectedRecordId(r.id)} 
+                      onDeleteRecords={handleDeleteRecords}
+                      presentationMode={presentationMode}
+                      onTogglePresentationMode={setPresentationMode}
+                      statusFilter={statusFilter}
+                      categoryFilter={categoryFilter}
+                      setCategoryFilter={setCategoryFilter}
+                      currentUser={currentUser}
+                    />
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1016,7 +1157,6 @@ export default function App() {
           currentUser={currentUser} 
           onUpdateCurrentUser={(updatedUser) => {
             setCurrentUser(updatedUser);
-            localStorage.setItem('dhl_voc_current_user', JSON.stringify(updatedUser));
           }}
           onClose={() => setShowUserProfileModal(false)}
         />

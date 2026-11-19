@@ -58,55 +58,107 @@ import {
   syncTopicRecordsWithVoCLookup
 } from '../utils/vocDateLookup';
 import { exportTextAnalyticsToPowerPoint } from '../utils/textAnalyticsPptx';
+import {
+  fetchTopicRecords,
+  replaceTopicRecords,
+  fetchTopicHighlights,
+  saveTopicHighlights,
+  getUserTopicStorageKey,
+  getUserHighlightsStorageKey,
+  getUserDateFilterKey
+} from '../utils/firebaseSync';
 import * as XLSX from 'xlsx';
 
 interface TextAnalyticsDashboardProps {
+  userId: string;
   vocRecords?: VoCRecord[];
   onBackToVoC?: () => void;
 }
 
-export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ vocRecords, onBackToVoC }) => {
-  // Persistence state with deduplication by surveyID + topic/theme + phrase
+export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ userId, vocRecords, onBackToVoC }) => {
+  const topicStorageKey = getUserTopicStorageKey(userId);
+  const highlightsStorageKey = getUserHighlightsStorageKey(userId);
+  const startDateStorageKey = getUserDateFilterKey(userId, 'start');
+  const endDateStorageKey = getUserDateFilterKey(userId, 'end');
+
+  // Persistence state isolated strictly to the signed-in user's private bucket
   const [records, setRecords] = useState<TopicSentimentRecord[]>(() => {
-    let initialRecords: TopicSentimentRecord[] = [];
-    const cacheVersion = localStorage.getItem('dhl_voc_topic_sentiment_v');
-    const saved = localStorage.getItem('dhl_voc_topic_sentiment_records');
-    if (cacheVersion === 'v7_official_nps_leave_one_out' && saved) {
-      try {
+    try {
+      const saved = localStorage.getItem(topicStorageKey);
+      if (saved) {
         const parsed: TopicSentimentRecord[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          initialRecords = parsed;
+          const deduped = deduplicateRecords(parsed);
+          const { updatedRecords } = syncTopicRecordsWithVoCLookup(deduped, vocRecords);
+          return updatedRecords;
         }
-      } catch {
-        // fallback
       }
+    } catch {
+      // fallback to empty until Firestore loads
     }
-    if (initialRecords.length === 0) {
-      initialRecords = parseCSV(RAW_SAMPLE_CSV);
-      try {
-        localStorage.setItem('dhl_voc_topic_sentiment_v', 'v7_official_nps_leave_one_out');
-        localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(initialRecords));
-      } catch {
-        // ignore
-      }
-    }
-
-    // Deduplicate records
-    const deduped = deduplicateRecords(initialRecords);
-
-    // Initial VoC lookup sync using surveyID
-    const { updatedRecords } = syncTopicRecordsWithVoCLookup(deduped, vocRecords);
-    return updatedRecords;
+    return [];
   });
+  const [loadingUserBucket, setLoadingUserBucket] = useState(true);
 
-  // Re-sync with VoC Survey Records whenever vocRecords changes or on mount
+  // Load this user's private topic records & highlights from Firestore on userId change
   useEffect(() => {
+    let active = true;
+    setLoadingUserBucket(true);
+
+    Promise.all([
+      fetchTopicRecords(userId).catch((err) => {
+        console.warn('Could not load topic records from user bucket:', err);
+        return null;
+      }),
+      fetchTopicHighlights(userId).catch((err) => {
+        console.warn('Could not load topic highlights from user bucket:', err);
+        return null;
+      })
+    ]).then(([cloudRecords, cloudHighlights]) => {
+      if (!active) return;
+
+      if (cloudRecords !== null) {
+        const deduped = deduplicateRecords(cloudRecords);
+        const { updatedRecords } = syncTopicRecordsWithVoCLookup(deduped, vocRecords);
+        setRecords(updatedRecords);
+        if (updatedRecords.length > 0) {
+          let min = '';
+          let max = '';
+          updatedRecords.forEach(r => {
+            if (r.responseDate && r.responseDate.length >= 10) {
+              const d = r.responseDate.substring(0, 10);
+              if (!min || d < min) min = d;
+              if (!max || d > max) max = d;
+            }
+          });
+          if (min && !localStorage.getItem(startDateStorageKey)) setStartDateState(min);
+          if (max && !localStorage.getItem(endDateStorageKey)) setEndDateState(max);
+        }
+      }
+
+      if (cloudHighlights) {
+        setHighlights(cloudHighlights);
+      } else {
+        setHighlights(getDefaultTopicHighlights());
+      }
+
+      setLoadingUserBucket(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  // Re-sync with user's VoC Survey Records whenever vocRecords changes
+  useEffect(() => {
+    if (records.length === 0) return;
     const { updatedRecords } = syncTopicRecordsWithVoCLookup(records, vocRecords);
     const hasChanges = updatedRecords.some((r, idx) => r.responseDate !== records[idx]?.responseDate);
     if (hasChanges) {
       setRecords(updatedRecords);
       try {
-        localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(updatedRecords));
+        localStorage.setItem(topicStorageKey, JSON.stringify(updatedRecords));
       } catch {
         // ignore
       }
@@ -131,12 +183,11 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
   const [startDate, setStartDateState] = useState<string>(() => {
     try {
-      const saved = localStorage.getItem('dhl_voc_ta_start_date');
+      const saved = localStorage.getItem(startDateStorageKey);
       if (saved && saved.trim()) return saved;
     } catch {
       // ignore
     }
-    // Default to the dataset's earliest date
     let min = '';
     records.forEach(r => {
       if (r.responseDate && r.responseDate.length >= 10) {
@@ -149,12 +200,11 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
   const [endDate, setEndDateState] = useState<string>(() => {
     try {
-      const saved = localStorage.getItem('dhl_voc_ta_end_date');
+      const saved = localStorage.getItem(endDateStorageKey);
       if (saved && saved.trim()) return saved;
     } catch {
       // ignore
     }
-    // Default to the dataset's latest date
     let max = '';
     records.forEach(r => {
       if (r.responseDate && r.responseDate.length >= 10) {
@@ -165,12 +215,12 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     return max || '2026-07-31';
   });
 
-  // State setters that persist selections across browser refresh
+  // State setters that persist selections per user across browser refresh
   const setStartDate = (val: string) => {
     setStartDateState(val);
     try {
-      if (val) localStorage.setItem('dhl_voc_ta_start_date', val);
-      else localStorage.removeItem('dhl_voc_ta_start_date');
+      if (val) localStorage.setItem(startDateStorageKey, val);
+      else localStorage.removeItem(startDateStorageKey);
     } catch {
       // ignore
     }
@@ -179,8 +229,8 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
   const setEndDate = (val: string) => {
     setEndDateState(val);
     try {
-      if (val) localStorage.setItem('dhl_voc_ta_end_date', val);
-      else localStorage.removeItem('dhl_voc_ta_end_date');
+      if (val) localStorage.setItem(endDateStorageKey, val);
+      else localStorage.removeItem(endDateStorageKey);
     } catch {
       // ignore
     }
@@ -190,10 +240,10 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     setStartDateState(start);
     setEndDateState(end);
     try {
-      if (start) localStorage.setItem('dhl_voc_ta_start_date', start);
-      else localStorage.removeItem('dhl_voc_ta_start_date');
-      if (end) localStorage.setItem('dhl_voc_ta_end_date', end);
-      else localStorage.removeItem('dhl_voc_ta_end_date');
+      if (start) localStorage.setItem(startDateStorageKey, start);
+      else localStorage.removeItem(startDateStorageKey);
+      if (end) localStorage.setItem(endDateStorageKey, end);
+      else localStorage.removeItem(endDateStorageKey);
     } catch {
       // ignore
     }
@@ -259,30 +309,18 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     return { bg: '#FED7D7', text: '#0F172A' }; // Light Pastel Red (-1.3)
   };
 
-  // Custom highlights for ICCC+ Executive slide
+  // Custom highlights for ICCC+ Executive slide (scoped per userId)
   const [highlights, setHighlights] = useState<{
     top3: TopicHighlightSummary[];
     bottom3: TopicHighlightSummary[];
   }>(() => {
-    const saved = localStorage.getItem('dhl_voc_topic_highlights');
+    const saved = localStorage.getItem(highlightsStorageKey);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Automatically reset stale cache if bottom3 still has 'People' or 'Delivery' or lacks contributingPhrases or has outdated counts
-        if (
-          parsed &&
-          Array.isArray(parsed.bottom3) &&
-          (parsed.bottom3.some((b: any) => b.topic === 'People' || b.topic === 'Delivery') ||
-           !parsed.top3?.[0]?.subTopicHighlights?.[0]?.contributingPhrases ||
-           !parsed.bottom3?.[0]?.subTopicHighlights?.[0]?.contributingPhrases ||
-           parsed.bottom3?.[0]?.subTopicHighlights?.[0]?.caseCount === 85 ||
-           parsed.bottom3?.[0]?.subTopicHighlights?.[0]?.impactScore === -4.7)
-        ) {
-          const fresh = getDefaultTopicHighlights();
-          localStorage.setItem('dhl_voc_topic_highlights', JSON.stringify(fresh));
-          return fresh;
+        if (parsed && Array.isArray(parsed.top3) && Array.isArray(parsed.bottom3)) {
+          return parsed;
         }
-        return parsed;
       } catch {
         // fallback
       }
@@ -568,17 +606,32 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
     return aggregateTopicAnalytics(filteredRecords, isAllTime);
   }, [filteredRecords, isAllTime]);
 
-  // Save to local storage whenever records or highlights change (with deduplication)
+  // Save to the user's private Firestore bucket and user-scoped local storage (with deduplication)
   const saveRecords = (newRecords: TopicSentimentRecord[]) => {
     const deduped = deduplicateRecords(newRecords);
     const { updatedRecords } = syncTopicRecordsWithVoCLookup(deduped, vocRecords);
-    setRecords(updatedRecords);
-    localStorage.setItem('dhl_voc_topic_sentiment_records', JSON.stringify(updatedRecords));
+    const ownedRecords = updatedRecords.map(r => ({ ...r, ownerId: userId }));
+    setRecords(ownedRecords);
+    try {
+      localStorage.setItem(topicStorageKey, JSON.stringify(ownedRecords));
+    } catch {
+      // ignore localStorage quota errors
+    }
+    void replaceTopicRecords(userId, ownedRecords).catch((err) => {
+      console.error('Error persisting topic records to user bucket:', err);
+    });
   };
 
   const saveHighlights = (newHighlights: typeof highlights) => {
     setHighlights(newHighlights);
-    localStorage.setItem('dhl_voc_topic_highlights', JSON.stringify(newHighlights));
+    try {
+      localStorage.setItem(highlightsStorageKey, JSON.stringify(newHighlights));
+    } catch {
+      // ignore
+    }
+    void saveTopicHighlights(userId, newHighlights).catch((err) => {
+      console.error('Error persisting topic highlights to user bucket:', err);
+    });
   };
 
   // Derive top topics highlights strictly from the top topics impact listed in the chart
@@ -1139,6 +1192,37 @@ export const TextAnalyticsDashboard: React.FC<TextAnalyticsDashboardProps> = ({ 
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        {!loadingUserBucket && records.length === 0 && activeTab !== 'upload' && (
+          <div className="bg-white rounded-2xl border-2 border-dashed border-amber-300 p-8 text-center shadow-xs space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
+              <Upload className="w-6 h-6" />
+            </div>
+            <div className="space-y-1 max-w-lg mx-auto">
+              <h3 className="text-lg font-black text-slate-900">Your Private Text Analytics Bucket is Empty</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Every signed-in account has its own isolated Text Analytics bucket. Upload your own Medallia / CSV sentiment export to analyze it privately, or load the sample dataset into your bucket.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab('upload')}
+                className="px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Upload My CSV / Excel</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => saveRecords(parseCSV(RAW_SAMPLE_CSV))}
+                className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>Load Sample Analytics Data</span>
+              </button>
+            </div>
+          </div>
+        )}
         {/* Global Date Filter Bar (Responsedate Window) */}
         <div className="bg-white rounded-xl shadow-xs border border-slate-200/90 p-4 transition-all">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">

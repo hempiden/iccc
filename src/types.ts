@@ -16,6 +16,7 @@ export interface VoCComment {
 
 export interface ActionOwner {
   id: string;
+  uid?: string;
   username: string;
   fullName: string;
   role: string;
@@ -30,6 +31,7 @@ export interface ActionOwner {
 
 export interface VoCRecord {
   id: string; // Unique database record ID
+  ownerId?: string; // Firebase Auth UID of the isolated user bucket owner
   surveyId?: string; // Original Survey ID (which may have duplicates for different themes)
   likelihood: number; // NPS Score (0-10)
   category: 'Promoter' | 'Passive' | 'Detractor';
@@ -82,6 +84,7 @@ export type SentimentType = 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL' | 'NO_OPINION' |
 
 export interface TopicSentimentRecord {
   id: string;
+  ownerId?: string;
   surveyId: string;
   commentField: string;
   comment: string;

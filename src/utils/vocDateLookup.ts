@@ -1,5 +1,4 @@
 import { VoCRecord, TopicSentimentRecord } from '../types';
-import { sampleRecords } from '../sampleData';
 
 /**
  * Normalizes any raw date representation (Excel serial, ISO, MM/DD/YYYY, DD/MM/YYYY, or log timestamps)
@@ -127,27 +126,8 @@ export function extractBestInteractiveDateFromVoCRecord(record: VoCRecord): stri
 export function buildVoCDateLookupMap(passedRecords?: VoCRecord[]): Map<string, string> {
   const map = new Map<string, string>();
 
-  // Gather records from passed prop, localStorage, and sampleRecords
-  const candidates: VoCRecord[] = [];
-
-  if (passedRecords && passedRecords.length > 0) {
-    candidates.push(...passedRecords);
-  }
-
-  try {
-    const stored = localStorage.getItem('dhl_voc_local_survey_records');
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed)) {
-        candidates.push(...parsed);
-      }
-    }
-  } catch (e) {
-    console.warn('Could not read dhl_voc_local_survey_records from localStorage', e);
-  }
-
-  // Include sampleRecords as baseline
-  candidates.push(...sampleRecords);
+  // Only inspect the active user's passed VoC records to prevent cross-user data leakage
+  const candidates: VoCRecord[] = Array.isArray(passedRecords) ? [...passedRecords] : [];
 
   // Populate map with multiple key variations
   for (const r of candidates) {
